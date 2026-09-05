@@ -1,0 +1,93 @@
+<title>Taking a Floor</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="assets/favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<meta name="cc-build" content="2026-09-05 16:51 UTC">
+<script>console.log("Claude Company build 2026-09-05 16:51 UTC")</script>
+<style>
+:root{--amber:#e0ad3d;--teal:#267f82;--charcoal:#30454a;--claude:#d97757;--terracotta:#bf623c;
+  --bg:#f7efdd;--ink:#22343a;--ink-soft:#5b6f72;--ink-faint:#8a9a99;--card:#fffaf0;--line:#e3d5b6;--on-dark:#f4ecd8}
+:root:not([data-theme="light"]){@media (prefers-color-scheme:dark){
+  --bg:#151f22;--ink:#eadfc6;--ink-soft:#a9b7b2;--ink-faint:#7b8a88;--card:#22343a;--line:#33474c}}
+:root[data-theme="dark"]{--bg:#151f22;--ink:#eadfc6;--ink-soft:#a9b7b2;--ink-faint:#7b8a88;--card:#22343a;--line:#33474c}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Archivo,system-ui,sans-serif;line-height:1.6;
+  -webkit-font-smoothing:antialiased}
+nav{background:var(--charcoal);color:var(--on-dark);border-bottom:3px solid var(--amber);padding:13px 0}
+.wrap{max-width:760px;margin:0 auto;padding:0 24px}
+nav .wrap{display:flex;align-items:center;gap:16px}
+.brand{font-family:"Instrument Serif",Georgia,serif;font-size:24px;text-decoration:none;color:inherit}
+.brand em{font-style:italic;color:var(--amber)}
+nav a.back{margin-left:auto;font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:600;
+  color:rgba(244,236,216,.8);text-decoration:none;border:1px solid rgba(244,236,216,.3);padding:6px 12px;border-radius:5px}
+nav a.back:hover{background:var(--amber);color:#2a2018;border-color:var(--amber)}
+main{padding:56px 0 80px}
+h1{font-family:"Instrument Serif",Georgia,serif;font-weight:400;font-size:44px;line-height:1.05;margin:0 0 8px}
+.floorno{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--amber);font-weight:600}
+.notice{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--terracotta);
+  border-radius:10px;padding:20px 22px;margin:26px 0}
+.notice h2{margin:0 0 8px;font-size:17px}
+.notice p{margin:0 0 10px;color:var(--ink-soft);font-size:14.5px}
+.notice p:last-child{margin:0}
+ol{counter-reset:s;margin:22px 0 0;padding:0;list-style:none;display:grid;gap:12px}
+ol li{counter-increment:s;position:relative;padding-left:38px;color:var(--ink-soft);font-size:15px}
+ol li::before{content:counter(s);position:absolute;left:0;top:2px;width:25px;height:25px;border-radius:50%;
+  background:var(--teal);color:#f0e4c7;font-size:12px;font-weight:700;display:grid;place-content:center;
+  font-family:"JetBrains Mono",monospace}
+ol b{color:var(--ink)}
+.btn{display:inline-block;margin-top:26px;padding:12px 20px;border-radius:7px;background:var(--teal);
+  color:#f0e4c7;text-decoration:none;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.btn:hover{background:var(--claude);color:#2a1a14}
+.btn:focus-visible{outline:2px solid var(--amber);outline-offset:3px}
+.fine{margin-top:30px;font-size:13px;color:var(--ink-faint);line-height:1.6}
+</style>
+<nav><div class="wrap">
+  <a class="brand" href="index.html">Claude <em>Tower</em></a>
+  <a class="back" href="tower.html">Back to the tower</a>
+</div></nav>
+<main><div class="wrap">
+  <div class="floorno" id="floorno">A floor</div>
+  <h1>Taking a floor</h1>
+
+  <div class="notice">
+    <h2>Purchase isn't open yet</h2>
+    <p>The floor is reserved in the directory, but the payment path is not live. It is being
+      built deliberately slowly, because taking 50 USDC from someone is the one part of this
+      that cannot be fixed with a redeploy.</p>
+    <p>Three failures found in review are shaping it: a payment claim that anyone can trigger
+      cheaply can exhaust the chain lookups and block <em>everyone</em> from buying; one
+      millionth of a dollar sent at the right moment can lock a floor as "reserved" forever;
+      and a wallet that routinely approves transactions someone else composed has given away
+      the privilege that actually matters, whether or not anyone holds its key.</p>
+  </div>
+
+  <h2 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:26px;margin:34px 0 0">
+    How it will work</h2>
+  <ol>
+    <li>You pick a vacant floor and connect a wallet. Nothing is held or escrowed.</li>
+    <li><b>Your wallet</b> signs one USDC transfer, straight to the building's treasury.
+      The transaction is one you can read: a transfer, to a published address, for 50 USDC.</li>
+    <li>The building watches the chain <b>read-only</b> and matches your payment.</li>
+    <li>The floor binds to the wallet that signed, at the database level, so one payment
+      can only ever buy one floor.</li>
+  </ol>
+
+  <a class="btn" href="tower.html">Back to the directory</a>
+
+  <p class="fine"><b>What a floor is.</b> Cosmetic tenancy in a research tool — not an
+    investment product, not a share of anything, and no promise of profit. The desk on your
+    floor researches and prepares orders; it never signs, sends, or holds anything of yours.
+    Nothing here is financial advice.
+    <br><br>An independent project. Not affiliated with, endorsed by, or connected to Anthropic.</p>
+</div></main>
+<script>
+  const n = new URLSearchParams(location.search).get("floor");
+  if (n) {
+    const el = document.getElementById("floorno");
+    el.textContent = Number(n) === 50 ? "Floor 50 — the Penthouse" : `Floor ${n} — Desk ${String(n).padStart(2, "0")}`;
+  }
+</script>

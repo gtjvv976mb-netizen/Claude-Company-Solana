@@ -1,0 +1,14 @@
+<title>Claude Company</title>
+<meta charset="utf-8">
+<script>
+/* GitHub Pages serves files, not routes. The Node server's /floor/50 and /tower
+   paths live on in bookmarks and old links — catch them here and land them on
+   the real files instead of a dead end. */
+(function () {
+  var m = location.pathname.match(/\/floor\/(\d+)/);
+  if (m) { location.replace("/floor.html?floor=" + m[1]); return; }
+  if (/\/tower\/?$/.test(location.pathname)) { location.replace("/tower.html"); return; }
+  location.replace("/");
+})();
+</script>
+<p style="font-family:sans-serif">Redirecting to <a href="index.html">Claude Company</a>…</p>

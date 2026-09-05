@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Company Mission & Vision · paste directly into X Articles</title>
+  <style>
+    @font-face { font-family:Archivo; src:url("../../assets/fonts/Archivo-Bold.ttf") format("truetype"); font-weight:700; }
+    @font-face { font-family:Instrument; src:url("../../assets/fonts/InstrumentSerif-Regular.ttf") format("truetype"); }
+    :root { --bg:#152226; --panel:#20343a; --line:#3d565b; --cream:#f4ecd8; --muted:#b8b09d; --amber:#e0ad3d; --green:#67bf88; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--cream); font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    button,a { font:inherit; }
+    .toolbar { position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:12px; padding:14px 22px; border-bottom:1px solid var(--line); background:rgba(21,34,38,.96); backdrop-filter:blur(12px); }
+    .toolbar strong { margin-right:auto; font-family:Archivo,sans-serif; }
+    .button { border:1px solid var(--line); border-radius:999px; padding:10px 15px; background:#17282d; color:var(--cream); cursor:pointer; text-decoration:none; }
+    .button.primary { border-color:var(--green); background:#214a3a; color:#d7ffe5; }
+    .button:hover { transform:translateY(-1px); }
+    .status { min-width:125px; color:var(--green); font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .intro { max-width:1420px; margin:28px auto 18px; padding:0 24px; }
+    .intro h1 { margin:0; font:52px/1 Instrument,Georgia,serif; }
+    .intro p { max-width:930px; color:var(--muted); }
+    .notice { margin-top:18px; padding:14px 16px; border:1px solid rgba(103,191,136,.45); border-radius:12px; background:rgba(34,74,58,.32); }
+    .layout { max-width:1420px; margin:0 auto 80px; padding:0 24px; display:grid; grid-template-columns:minmax(0,850px) minmax(330px,1fr); gap:26px; align-items:start; }
+    .copy-card,.assets { border:1px solid var(--line); border-radius:18px; background:var(--panel); box-shadow:0 24px 60px rgba(0,0,0,.18); }
+    .title-row { display:flex; align-items:center; gap:14px; padding:18px 22px; border-bottom:1px solid var(--line); }
+    .title-label { color:var(--amber); font:12px ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.1em; text-transform:uppercase; }
+    #article-title { flex:1; font-weight:700; }
+    #article-body { padding:30px 38px 48px; background:#fff; color:#161616; border-radius:0 0 17px 17px; font:18px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    #article-body h2 { margin:42px 0 13px; font-size:27px; line-height:1.22; }
+    #article-body h3 { margin:30px 0 11px; font-size:21px; line-height:1.25; }
+    #article-body p { margin:0 0 18px; }
+    #article-body ul { margin:0 0 22px; padding-left:30px; }
+    #article-body li { margin:0 0 11px; }
+    #article-body blockquote { margin:24px 0; padding:13px 17px; border-left:4px solid #d97757; background:#f5f2ec; }
+    #article-body blockquote p { margin:0; }
+    #article-body a { color:#166bd3; }
+    .assets { position:sticky; top:82px; padding:22px; }
+    .assets h2 { margin:0; font:34px/1 Instrument,Georgia,serif; }
+    .assets > p { margin:8px 0 20px; color:var(--muted); font-size:14px; }
+    .asset { padding:14px 0; border-top:1px solid var(--line); }
+    .asset:first-of-type { border-top:0; }
+    .asset img { display:block; width:100%; aspect-ratio:16/9; object-fit:cover; border:1px solid var(--line); border-radius:10px; }
+    .asset.header img { aspect-ratio:5/2; }
+    .asset-head { display:flex; margin-top:10px; }
+    .asset-head strong { flex:1; font-size:14px; }
+    .asset small { display:block; margin-top:3px; color:var(--muted); line-height:1.35; }
+    .asset-actions { display:flex; gap:7px; margin-top:9px; }
+    .asset-actions .button { padding:6px 10px; font-size:12px; }
+    .alt { display:none; }
+    @media(max-width:1000px) { .layout{grid-template-columns:1fr}.assets{position:static}.toolbar{flex-wrap:wrap}.toolbar strong{width:100%} }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <strong>🏢 Mission &amp; Vision · X Articles paste kit</strong>
+    <button class="button" id="copy-title" type="button">Copy title</button>
+    <button class="button primary" id="copy-body" type="button">Copy formatted article</button>
+    <span class="status" id="copy-status" aria-live="polite"></span>
+  </div>
+
+  <header class="intro">
+    <h1>Paste it into X with no corrections.</h1>
+    <p>The title and rich-text body are copied separately. Filenames, placement notes, alt text and Markdown characters remain outside the clipboard payload.</p>
+    <div class="notice"><strong>Only the media remains manual:</strong> upload the 5:2 header, then insert the two diagrams at the section breaks shown on the right.</div>
+  </header>
+
+  <div class="layout">
+    <main class="copy-card">
+      <div class="title-row"><span class="title-label">X title field</span><span id="article-title">🏢 Claude Company: Our Mission and the Future We’re Building</span></div>
+      <article id="article-body">
+        <p>We built the charter, the trading floor and the tower before we wrote the mission in one place.</p>
+        <p>This is that statement.</p>
+        <p>The market has no shortage of bots promising speed, intelligence and impossible returns. Many ask people to surrender something first: their keys, their control or their ability to understand why a decision was made.</p>
+        <p>Claude Company begins with a different belief:</p>
+        <blockquote><p><strong>Powerful AI research should not require blind trust or surrendered custody.</strong></p></blockquote>
+        <p>The tower is playful. The mission behind it is serious. 🏢</p>
+
+        <h2>🎯 Our mission</h2>
+        <p>Our mission is to give independent Solana operators a disciplined, adversarial AI research desk they can direct and audit—while keeping trading custody, wallet keys and final execution under operator control.</p>
+        <p>That means building a firm that can investigate, disagree, refuse, record and learn without ever needing custody of a tenant’s trading funds.</p>
+
+        <h3>🔐 Research without trading custody</h3>
+        <p>Claude Company’s hosted desk does not receive private keys, sign transactions or hold trading assets.</p>
+        <p>Its final product is an <strong>unsigned call</strong>: an entry reference, invalidation level, stop, targets and a thesis written in plain language.</p>
+        <p>An operator can ignore it, approve a swap from their own wallet or pass it to WALL-ST-E—a separate executor running under local credentials, a dedicated burner and hard caps on the operator’s own machine.</p>
+        <p>The research can travel. The key does not.</p>
+        <p>That separation is not a disclaimer added after the product was designed. It is the product’s foundation.</p>
+
+        <h3>🛑 Make every “no” count</h3>
+        <p>Most trading products advertise their winners and quietly erase everything they rejected.</p>
+        <p>We want refusals to become evidence.</p>
+        <p>Before a model spends time on a token, deterministic checks look for conditions that can make a position unmanageable: disputed pricing, insufficient liquidity, live authorities and an exit that cannot be quoted at the intended size.</p>
+        <p>Survivors face five independent analysts, an adversarial Red Team and deterministic Compliance. The analysts work blind to one another so one confident framing cannot become five copies of the same opinion. The Red Team is paid to refute. Compliance can veto the entire organization.</p>
+        <p><strong>A refusal outranks an authorization.</strong></p>
+        <p>Those rejected candidates do not disappear into a black box. The system retains why decisions were made and can grade published calls and counterfactual refusals against later marks.</p>
+        <p>Detailed tenant calls and dossiers stay tenant-private. Public books show scoped house and aggregate records—not every private event inside every floor.</p>
+        <p>Accountability does not require turning tenant research into public property. 🧾</p>
+
+        <h3>🎚️ Keep the tenant in control</h3>
+        <p>A house opinion should never become an automatic order.</p>
+        <p>Each tenant controls the mandate applied to their floor: risk appetite, declared bankroll, market-cap sleeve, allowed categories, platforms and liquidity requirements. House calls reach a floor only when they clear that mandate. A tenant can also commission a metered, floor-scoped full-team workup.</p>
+        <p>The desk contributes research and conviction. The tenant defines the boundary.</p>
+        <p>Even when local automation is used, the desk’s suggested size is a ceiling—not permission to exceed local limits. The operator chooses the wallet, funds it, sets the caps and can stop the executor without asking Claude Company.</p>
+        <p><strong>The person carrying the risk keeps the final authority.</strong></p>
+
+        <h3>🧪 Learn from evidence, not mythology</h3>
+        <p>An AI research team should not call itself intelligent merely because it can explain a chart.</p>
+        <p>It should be able to examine its own record.</p>
+        <p>Claude Company retains the evidence available when a decision was made, the analysts’ disagreements, the Red Team’s attack, the final verdict and forward outcome marks. Calls can be graded. Refusals can be tested. Provider failures and operating costs can be measured too.</p>
+        <p>The standing Review seat turns a closed call into a transferable lesson for the next PM decision. A separate Codex Improvement Engineer is designed to inspect aggregate system evidence and propose bounded, testable improvements for human review—not silently rewrite the live desk or trade through it.</p>
+        <p>The Codex review architecture is deployed, but its protected worker has not yet completed its first manual review. That distinction matters: a designed feedback lane is not the same as evidence that it has already improved the desk.</p>
+        <p>We want learning without uncontrolled drift.</p>
+        <p>If the sample is too small, the honest conclusion is <strong>insufficient evidence</strong>. If a change cannot survive tests and review, it should not reach production.</p>
+
+        <h2>🔭 Our vision</h2>
+        <p>Our vision is a tenant-directed network of specialized AI desks where evidence is sourced, dissent is designed in, refusals are recorded, outcomes are graded and improvement remains bounded by human review.</p>
+        <p>We want people to access capable research teams <strong>without handing those teams ownership of the decision, the wallet or the truth</strong>.</p>
+        <p>The next generation of trading intelligence should resemble an accountable firm—not an all-powerful chatbot.</p>
+        <p>A firm has specialists.<br>A firm has opposing opinions.<br>A firm has books.<br>A firm has tenants.<br>A firm has auditors.<br>A firm has rules that even its leadership cannot overrule.</p>
+        <p>That is why Claude Company is a company rather than a single bot.</p>
+
+        <h3>🧠 Intelligence with separation of powers</h3>
+        <p>No single model should be asked to discover the market, judge its own evidence, approve its own thesis, change its own rules and execute with someone else’s money.</p>
+        <p>Claude reasons across structured evidence. Grok contributes bounded, native X intelligence. Codex is assigned the separate task of reviewing how the system could improve. Deterministic code holds the mechanical floors.</p>
+        <p>Different capabilities receive different permissions.</p>
+        <p>The goal is not to make one AI more powerful. It is to make the organization more accountable.</p>
+
+        <h3>📊 A record stronger than a promise</h3>
+        <p>We want research firms to earn trust through records people can inspect—not screenshots selected after the outcome.</p>
+        <p>Public scorekeeping can expose house activity, settled results, effective behavior versions and aggregate outcomes while private floor research remains properly scoped to its tenant.</p>
+        <p>A public scorecard cannot guarantee the next decision will work.</p>
+        <p>It can make empty claims harder to hide.</p>
+        <p>The house itself does not earn the right to claim an edge from a handful of calls. Its evaluation policy requires a real sample and conservative statistical bounds before an edge can be described as established.</p>
+
+        <h3>🤝 A building that improves without owning its occupants</h3>
+        <p>Claude Company is presented as a 50-floor research firm. Floor 50 is the house desk. Floors 1–49 are tenant floors that receive house research through their own mandates and can commission their own scoped workups.</p>
+        <p>The long-term vision is not forty-nine identical copy-trading accounts.</p>
+        <p>It is a building of independently configured research floors. The house learns from properly attributed evidence. Tenants retain their privacy. Improvements are versioned, tested and reviewed rather than smuggled into live behavior.</p>
+        <p>The building should become more capable over time—but never more entitled to its occupants’ trading funds.</p>
+
+        <h2>🧱 The constitution</h2>
+        <p>The technology will evolve. These principles should remain:</p>
+        <ul>
+          <li>🔎 <strong>Evidence comes before opinion.</strong> Numbers come from sourced data, not model invention.</li>
+          <li>⚖️ <strong>Dissent is designed in.</strong> Independent analysts and a hostile Red Team are features, not friction.</li>
+          <li>🛑 <strong>Refusals are first-class outcomes.</strong> A “no” belongs in the record.</li>
+          <li>🔐 <strong>Trading custody stays with the operator.</strong> Hosted research never needs the trading key.</li>
+          <li>🎚️ <strong>The tenant’s mandate governs the tenant’s floor.</strong> A house view is not a universal order.</li>
+          <li>🧪 <strong>Behavior changes require evidence, tests and review.</strong> Confidence does not grant write authority.</li>
+          <li>👁️ <strong>Uncertainty and failures should be visible.</strong> Missing evidence must stay missing.</li>
+        </ul>
+        <p>This is the constitution every new feature should answer to.</p>
+
+        <h2>⚠️ What we will not promise</h2>
+        <p>We will not promise guaranteed returns.</p>
+        <p>We will not pretend a young record proves an edge.</p>
+        <p>Models can misunderstand evidence. X can be manipulated. Data providers can fail. Liquidity can disappear. Memecoins can gap through stops, and a token that appears sellable can become impossible to exit at the expected price.</p>
+        <p>Noncustody protects ownership and limits authority. It does not make speculation safe. Risk caps can bound new exposure; they cannot guarantee execution, exit or profit.</p>
+        <p>$CLAUDECO is an access token used for floor access, rent and metered research. It is not a share of the company, not a strategy and not the asset the desk researches or trades for tenants.</p>
+        <p>Our promise is narrower: build the process so its authority is limited, its reasoning can be inspected, its failures can be measured and its claims can be judged against evidence.</p>
+
+        <h2>🏢 Why the tower exists</h2>
+        <p>Claude Tower turns an invisible software pipeline into a place people can understand.</p>
+        <p>You can see the specialists. You can see the Red Team exists to attack the idea. You can see that Compliance can stop it and that the final hosted output remains research until an operator acts.</p>
+        <p>The building is not decoration around the system.</p>
+        <p>It is a picture of the system we are building:</p>
+        <p><strong>Many minds. Separate powers. Visible decisions. Tenant control.</strong></p>
+        <p>The future we want is not an AI that owns your wallet.</p>
+        <p>It is an AI research company worthy of your scrutiny.</p>
+        <p>🔭 We investigate.<br>⚖️ We disagree.<br>🛑 We refuse.<br>🧾 We record.<br>🧪 We learn.<br>🔑 You decide.</p>
+        <p><strong>That is the mission of Claude Company.</strong></p>
+        <p>👉 <strong><a href="https://claudedotcompany.com">claudedotcompany.com</a></strong></p>
+        <p><em>Claude Company is an independent project and is not affiliated with or endorsed by Anthropic, xAI or OpenAI. Nothing here is financial advice, a solicitation or a promise of performance.</em></p>
+      </article>
+    </main>
+
+    <aside class="assets">
+      <h2>Media upload order</h2>
+      <p>These instructions and alt descriptions never enter the copied article.</p>
+      <div class="asset header"><img src="mission-vision-header.png" alt=""><div class="asset-head"><strong>Header · upload as cover</strong></div><small>Before pasting the body.</small><p class="alt">Wide Claude Company banner with Claude Tower at night. Text reads: Build intelligence. Keep agency. Evidence first. Adversarial by design. Noncustodial.</p><div class="asset-actions"><a class="button" href="mission-vision-header.png">Open image</a><button class="button copy-alt" type="button">Copy alt</button></div></div>
+      <div class="asset"><img src="01-mission-in-practice.png" alt=""><div class="asset-head"><strong>01 · after the mission statement</strong></div><small>Before “🔐 Research without trading custody”.</small><p class="alt">Claude Company’s mission shown as five stages: discover, verify, reason, refute and veto, then publish and learn. A boundary underneath states that the hosted desk holds no trading keys, signs nothing and takes no trading custody.</p><div class="asset-actions"><a class="button" href="01-mission-in-practice.png">Open image</a><button class="button copy-alt" type="button">Copy alt</button></div></div>
+      <div class="asset"><img src="02-vision-shift.png" alt=""><div class="asset-head"><strong>02 · inside the Vision section</strong></div><small>After the opening vision statement.</small><p class="alt">A comparison between a black-box trading bot and Claude Company’s intended standard: separated specialist roles, sourced decisions, operator-controlled execution authority and scoped outcomes that can be retained and graded.</p><div class="asset-actions"><a class="button" href="02-vision-shift.png">Open image</a><button class="button copy-alt" type="button">Copy alt</button></div></div>
+    </aside>
+  </div>
+
+  <script>
+    const status=document.getElementById("copy-status");
+    const flash=message=>{status.textContent=message;clearTimeout(flash.timer);flash.timer=setTimeout(()=>status.textContent="",2600);};
+    function clipboardPayload(node){
+      const allowed=new Set(["H2","H3","P","STRONG","EM","UL","OL","LI","A","BR","BLOCKQUOTE"]),clone=node.cloneNode(true);
+      [...clone.querySelectorAll("*")].forEach(element=>{if(!allowed.has(element.tagName)){element.replaceWith(...element.childNodes);return;}[...element.attributes].forEach(attribute=>{if(!(element.tagName==="A"&&attribute.name==="href"))element.removeAttribute(attribute.name);});});
+      const plain=node.innerText.trim().replace(/\u00a0/g," ").replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n");
+      return{html:`<div>${clone.innerHTML}</div>`,plain};
+    }
+    function legacyCopyNode(node,payload){
+      const selection=getSelection(),range=document.createRange();range.selectNodeContents(node);selection.removeAllRanges();selection.addRange(range);
+      const onCopy=event=>{event.preventDefault();event.clipboardData.setData("text/html",payload.html);event.clipboardData.setData("text/plain",payload.plain);};
+      document.addEventListener("copy",onCopy);let ok=false;try{ok=document.execCommand("copy");}finally{document.removeEventListener("copy",onCopy);selection.removeAllRanges();}if(!ok)throw new Error("browser rejected copy");
+    }
+    async function copyText(value){try{await navigator.clipboard.writeText(value);}catch{const area=document.createElement("textarea");area.value=value;area.style.cssText="position:fixed;left:-9999px";document.body.appendChild(area);area.select();const ok=document.execCommand("copy");area.remove();if(!ok)throw new Error("browser rejected copy");}}
+    async function copyRichArticle(){const article=document.getElementById("article-body"),payload=clipboardPayload(article);try{if(!navigator.clipboard?.write||typeof ClipboardItem==="undefined")throw new Error("rich clipboard unavailable");await navigator.clipboard.write([new ClipboardItem({"text/html":new Blob([payload.html],{type:"text/html"}),"text/plain":new Blob([payload.plain],{type:"text/plain"})})]);}catch{legacyCopyNode(article,payload);}}
+    document.getElementById("copy-title").addEventListener("click",async()=>{try{await copyText(document.getElementById("article-title").textContent.trim());flash("✓ Title copied");}catch{flash("Copy failed — select the title");}});
+    document.getElementById("copy-body").addEventListener("click",async()=>{try{await copyRichArticle();flash("✓ Formatted body copied");}catch{flash("Copy failed — select the white article only");}});
+    document.querySelectorAll(".copy-alt").forEach(button=>button.addEventListener("click",async()=>{try{await copyText(button.closest(".asset").querySelector(".alt").textContent.trim());flash("✓ Alt text copied");}catch{flash("Alt copy failed");}}));
+  </script>
+</body>
+</html>

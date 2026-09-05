@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WALL-ST-E · paste directly into X Articles</title>
+  <style>
+    @font-face { font-family: Archivo; src: url("../../assets/fonts/Archivo-Bold.ttf") format("truetype"); font-weight: 700; }
+    @font-face { font-family: Instrument; src: url("../../assets/fonts/InstrumentSerif-Regular.ttf") format("truetype"); }
+    :root { --bg:#152226; --panel:#20343a; --line:#3d565b; --cream:#f4ecd8; --muted:#b8b09d; --amber:#e0ad3d; --green:#67bf88; --coral:#dc806b; }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin:0; background:var(--bg); color:var(--cream); font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    button, a { font:inherit; }
+    .toolbar { position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:12px; padding:14px 22px; border-bottom:1px solid var(--line); background:rgba(21,34,38,.96); backdrop-filter:blur(12px); }
+    .toolbar strong { margin-right:auto; font-family:Archivo,sans-serif; letter-spacing:.02em; }
+    .button { border:1px solid var(--line); border-radius:999px; padding:10px 15px; background:#17282d; color:var(--cream); cursor:pointer; text-decoration:none; }
+    .button.primary { border-color:var(--green); background:#214a3a; color:#d7ffe5; }
+    .button:hover { transform:translateY(-1px); }
+    .status { min-width:125px; color:var(--green); font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .intro { max-width:1420px; margin:28px auto 18px; padding:0 24px; }
+    .intro h1 { margin:0; font:52px/1 Instrument,Georgia,serif; }
+    .intro p { max-width:900px; color:var(--muted); }
+    .notice { margin-top:18px; padding:14px 16px; border:1px solid rgba(103,191,136,.45); border-radius:12px; background:rgba(34,74,58,.32); }
+    .layout { max-width:1420px; margin:0 auto 80px; padding:0 24px; display:grid; grid-template-columns:minmax(0,850px) minmax(330px,1fr); gap:26px; align-items:start; }
+    .copy-card, .assets { border:1px solid var(--line); border-radius:18px; background:var(--panel); box-shadow:0 24px 60px rgba(0,0,0,.18); }
+    .title-row { display:flex; align-items:center; gap:14px; padding:18px 22px; border-bottom:1px solid var(--line); }
+    .title-label { color:var(--amber); font:12px ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.1em; text-transform:uppercase; }
+    #article-title { flex:1; font-weight:700; }
+    #article-body { padding:30px 38px 48px; background:#fff; color:#161616; border-radius:0 0 17px 17px; font:18px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    #article-body h2 { margin:42px 0 13px; font-size:27px; line-height:1.22; }
+    #article-body h2:first-of-type { margin-top:38px; }
+    #article-body p { margin:0 0 18px; }
+    #article-body ul, #article-body ol { margin:0 0 22px; padding-left:30px; }
+    #article-body li { margin:0 0 11px; }
+    #article-body a { color:#166bd3; }
+    .assets { position:sticky; top:82px; padding:22px; }
+    .assets h2 { margin:0; font:34px/1 Instrument,Georgia,serif; }
+    .assets > p { margin:8px 0 20px; color:var(--muted); font-size:14px; }
+    .asset { padding:14px 0; border-top:1px solid var(--line); }
+    .asset:first-of-type { border-top:0; }
+    .asset img { display:block; width:100%; aspect-ratio:16/9; object-fit:cover; border:1px solid var(--line); border-radius:10px; }
+    .asset.header img { aspect-ratio:5/2; }
+    .asset-head { display:flex; align-items:flex-start; gap:8px; margin-top:10px; }
+    .asset-head strong { flex:1; font-size:14px; }
+    .asset small { display:block; margin-top:3px; color:var(--muted); line-height:1.35; }
+    .asset-actions { display:flex; gap:7px; margin-top:9px; }
+    .asset-actions .button { padding:6px 10px; font-size:12px; }
+    .alt { display:none; }
+    @media (max-width:1000px) { .layout { grid-template-columns:1fr; } .assets { position:static; } .toolbar { flex-wrap:wrap; } .toolbar strong { width:100%; } }
+    @media print { .toolbar,.intro,.assets,.title-row { display:none; } .layout { display:block; margin:0; padding:0; } .copy-card { border:0; } #article-body { padding:0; } }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <strong>🤖 WALL-ST-E · X Articles paste kit</strong>
+    <button class="button" id="copy-title" type="button">Copy title</button>
+    <button class="button primary" id="copy-body" type="button">Copy formatted article</button>
+    <span class="status" id="copy-status" aria-live="polite"></span>
+  </div>
+
+  <header class="intro">
+    <h1>Paste it into X with no cleanup.</h1>
+    <p>The title and body are separate because X has a separate title field. The formatted copy contains no Markdown, filenames, alt-text notes, image placeholders or instructions to delete.</p>
+    <div class="notice"><strong>Only two manual publishing actions remain:</strong> upload the cover, then insert the six figures at the section breaks shown in the image panel. That is required by X’s composer; it is not text cleanup.</div>
+  </header>
+
+  <div class="layout">
+    <main class="copy-card">
+      <div class="title-row"><span class="title-label">X title field</span><span id="article-title">🤖 Meet WALL-ST-E: The Autotrader Our Servers Can’t Touch</span></div>
+      <article id="article-body">
+        <p>🔑 Many hosted trading bots ask you to deposit funds or trust key material to infrastructure you do not run. That creates one enormous point of failure: somebody else’s server.</p>
+        <p>🏗️ We built the opposite.</p>
+        <p>WALL-ST-E runs on <strong>your</strong> host and signs with a dedicated burner wallet whose private key never leaves that machine. Claude Company publishes research calls and floor-level size ceilings, but our servers cannot start, stop or unpause the local process, sign a transaction or change its live caps.</p>
+        <p>🔒 The burner key, Jupiter API key, private RPC credentials and durable journal all stay local.</p>
+        <p>📡 The owner-only WALL-ST-E tab can display a sanitized, self-reported heartbeat, readiness state, active caps and confirmed read-only balance for the burner’s <strong>public</strong> address. That is an observation channel—not a control plane. The website still cannot inspect a secret or command the executor.</p>
+        <p><strong>We publish the research. Your machine decides whether anything gets signed.</strong></p>
+
+        <h2>🏢 The building</h2>
+        <p>Claude Company is a 50-floor Solana research firm. Its trading organization has fourteen core seats plus Regime and Review: a screener, five blind analysts, a Red Team paid to attack the thesis, Risk, a PM, Compliance and a final authorizing seat among them.</p>
+        <p>🕵️ Before paid models reason about a token, deterministic checks look for known mechanical traps: live mint or freeze authority, an exit that cannot be quoted cleanly, thin liquidity and other conditions that can make a position impossible to manage.</p>
+        <p>Those checks reduce risk. They do not guarantee a token is safe. ⚠️</p>
+        <p>When a candidate clears the full desk, Claude Company publishes an <strong>unsigned call</strong>: an entry reference, stop, target and plain-language thesis. A tenant floor then applies its own mandate—appetite, declared bankroll, market-cap sleeve, categories, platforms and liquidity floor—and produces a size ceiling for that floor.</p>
+        <p>🎯 <strong>The desk has conviction. The operator owns the risk.</strong></p>
+
+        <h2>🛣️ Two ways to trade an offered call</h2>
+        <p>👆 <strong>You approve.</strong> Every live call offered to your floor has a Buy button. It opens Jupiter with the token and suggested amount prefilled. Connect a supported wallet, inspect the swap and approve—or walk away. If the embedded widget cannot load, the page falls back to an external market page.</p>
+        <p>🤖 <strong>WALL-ST-E enforces.</strong> The local poller reads the same floor feed, applies another set of gates and uses only the dedicated burner on the operator’s machine.</p>
+        <p>🚫 Browser and webhook broadcasting remain disabled. In both paths, signing stays outside Claude Company.</p>
+
+        <h2>🧰 Hiring your robot</h2>
+        <p>The fresh installer is built for a supported Linux systemd host. The floor number is passed on the command line, the feed credential is entered privately, and a dedicated burner is generated locally when one does not already exist. A separate macOS LaunchAgent path can supervise an already configured executor; it does not create or fund one.</p>
+        <p>The safe sequence is deliberately boring:</p>
+        <ol>
+          <li>📦 <strong>Install.</strong> Pin the reviewed release, bind one floor feed and protect the local wallet, credentials and state files.</li>
+          <li>🧪 <strong>Rehearse.</strong> Start in paper mode. WALL-ST-E evaluates entries on future live calls without signing. Paper mode does not simulate or track a complete paper-trade lifecycle, and the first start intentionally skips every old feed item.</li>
+          <li>🔐 <strong>Arm.</strong> Live mode requires an exact detached release commit, a Jupiter key, two private HTTPS RPC endpoints with different provider hostnames, a durable journal and a local terminal acknowledgement that exactly matches the burner’s public address. A reviewed raised-cap profile requires a second acknowledgement bound to that wallet and all three literal cap values. You are still responsible for ensuring the two RPC services are genuinely independent.</li>
+          <li>💸 <strong>Fund last.</strong> Only after reviewing the paper decisions and host logs should you fund the burner with an amount you can lose.</li>
+        </ol>
+        <p>🧱 The default live canary is limited to <strong>0.005 SOL of input per entry</strong>, <strong>0.01 SOL of new deployment over a rolling 24 hours</strong> and a <strong>0.01 SOL rolling realized-loss entry brake</strong>.</p>
+        <p>An operator can deliberately choose a reviewed supported profile up to <strong>0.05 SOL per trade</strong>, <strong>0.5 SOL rolling deployment</strong> and a <strong>0.15 SOL rolling realized-loss entry brake</strong>. Raising any default requires all three values and a versioned sentence that names the exact burner wallet and exact values; it is typed at a real local terminal and fails closed on any mismatch. The website and feed cannot perform that ceremony.</p>
+        <p>On macOS, <code>arm-caps</code> additionally requires the LaunchAgent to be stopped and disabled and the entry-pause sentinel to exist. It updates all three caps atomically, starts nothing and leaves entries paused. The operator must load the same pinned release, obtain a clean monitor result and separately decide whether to remove the pause. Linux enforces the same exact wallet-and-values acknowledgement during a raised-cap live installation.</p>
+        <p>⚠️ The reviewed maxima are ceilings, not recommendations.</p>
+
+        <h2>🛡️ How he decides to sign</h2>
+        <p>Every 15 seconds by default, WALL-ST-E checks for new events. A call is a candidate—not an order.</p>
+        <p>It must still pass the local gauntlet:</p>
+        <ul>
+          <li>🔗 <strong>Feed integrity:</strong> the floor, cluster, authentication and cursor must be valid.</li>
+          <li>⏱️ <strong>Freshness:</strong> the call must be no more than 45 minutes old, and the independently monitored entry mark no more than 15 minutes old.</li>
+          <li>📍 <strong>Entry discipline:</strong> the mark must remain inside the authored zone when one exists—or a bounded fallback around the reference—and stay above the stop.</li>
+          <li>📐 <strong>Local risk:</strong> stop risk, book heat, open positions, rolling deployment and loss limits, spendable balance and the desk’s size ceiling must all permit the trade.</li>
+          <li>🪐 <strong>Executable cost:</strong> Jupiter’s forward and reverse quotes must stay inside the impact, fee, slippage and round-trip-loss rails.</li>
+          <li>🧾 <strong>Transaction binding:</strong> the built transaction must contain the exact wallet, mints, amount, custody accounts, programs, signers and expiry WALL-ST-E authorized.</li>
+        </ul>
+        <p>✅ Only then does the local host create a signature. WALL-ST-E simulates those exact signed bytes, durably records a passing attempt, and submits it.</p>
+        <p>If the network result is ambiguous, he reconciles the <strong>same signature</strong> instead of silently inventing a replacement order. Two RPC views are used when proving whether an uncertain attempt is safely dead. 🔍</p>
+
+        <h2>📈 How he manages a position</h2>
+        <p>The server’s paper record and the local executor share one versioned price policy:</p>
+        <ul>
+          <li>🛑 The authored stop is enforced from entry.</li>
+          <li>🟡 At <strong>1.35×</strong>, the stop ratchets to breakeven.</li>
+          <li>🟠 At <strong>1.5×</strong>, a 25% trailing stop arms behind the high-water mark.</li>
+          <li>🎯 The authored target or shared <strong>2×</strong> rule closes the recorded position in full.</li>
+          <li>⏳ An unresolved position ages out after 12 hours.</li>
+        </ul>
+        <p>🚨 The desk can also publish an unconditional exit when a new authority appears, the round-trip exit loss rises above 12%, or liquidity falls below 60% of its call-time level. Persistent market-data darkness and a thesis that no longer re-verifies can also close the call.</p>
+        <p>WALL-ST-E processes and latches exit events before considering new entries.</p>
+        <p>⚠️ <strong>Latched does not mean magically guaranteed.</strong> A hard stop, custody ambiguity, RPC failure or the 50% emergency exit-impact ceiling can still prevent automatic execution and require manual action.</p>
+        <p>💰 Exit proceeds return to the burner’s custody. Moving them to another wallet is a separate manual transfer using the key you control.</p>
+
+        <h2>🚦 The brakes</h2>
+        <p>WALL-ST-E has two local sentinel files, and they do different jobs.</p>
+        <p>🟡 <strong>Pause entries</strong> blocks new buys while position monitoring, managed exits and pending-attempt reconciliation continue.</p>
+        <p>🔴 <strong>Hard stop</strong> blocks every new submission, including automated exits. Transactions already signed or submitted still reconcile, and open positions need manual supervision while the sentinel remains present.</p>
+        <p>🛑 Stopping the systemd service is a host-level emergency brake, but stopping a process does not close an on-chain position.</p>
+        <p>The website cannot create, remove or inspect either file. It can receive and display an owner-authenticated, sanitized heartbeat and status report, but that report contains no signer, private credential or remote-control capability.</p>
+        <p>🖥️ Verify the real mode, journal, signatures and fills on the machine running the poller and on a Solana explorer you trust.</p>
+        <p>🟢 The green <strong>Live</strong> indicator in the cover belongs to the research desk connection—not the autotrader. WALL-ST-E telemetry is self-reported by the operator’s machine; seeing it does not let Claude Company operate the bot. That distinction is the entire point.</p>
+
+        <h2>⚠️ The honest part</h2>
+        <p>Nothing in this architecture makes the calls profitable. Memecoins can gap, lose liquidity and become impossible to exit at the expected price. The desk’s public record is young and is not evidence of an edge.</p>
+        <p>📉 The trade and deployment caps bound <strong>new exposure</strong>. The realized-loss brake blocks future entries after recorded rolling losses reach its threshold; it does not guarantee a maximum realized loss or a successful exit. Treat every amount placed in the dedicated burner as capital that can go to zero.</p>
+        <p>What we can state precisely is narrower—and more useful:</p>
+        <p>🔐 <strong>Claude Company never receives your executor key or custodies your trading assets. The live canary signs only on the operator’s host, under local rules and operator-acknowledged caps.</strong></p>
+        <p>Your keys. 🔑<br>Your machine. 🖥️<br>Your robot. 🤖</p>
+        <p>👉 <strong><a href="https://claudedotcompany.com">claudedotcompany.com</a></strong></p>
+      </article>
+    </main>
+
+    <aside class="assets">
+      <h2>Image upload order</h2>
+      <p>These instructions and alt descriptions are outside the copied article.</p>
+
+      <div class="asset header"><img src="wall-st-e-article-cover.png" alt=""><div class="asset-head"><strong>Header · upload as cover</strong></div><small>Before pasting the body.</small><p class="alt">WALL-ST-E, a yellow 3D robot, beside two status rows. The research desk shows a green Live indicator, while WALL-ST-E telemetry is marked Self-Reported and sanitized with no controls. Text reads: Meet WALL-ST-E. The autotrader our servers cannot control. Paper by default. Key stays local.</p><div class="asset-actions"><a class="button" href="wall-st-e-article-cover.png">Open image</a><button class="button copy-alt" type="button">Copy alt</button></div></div>
+      <div class="asset"><img src="01-custody-boundary.png" alt=""><div class="asset-head"><strong>01 · after the introduction</strong></div><small>Before “🏢 The building”.</small><p class="alt">Diagram separating Claude Company’s research server from an operator-controlled WALL-ST-E host. Calls and exits travel to the host; owner-authenticated sanitized status travels back. The burner key, local policy, journal, Jupiter key and private RPCs stay on the operator side.</p><div class="asset-actions"><a class="button" href="01-custody-boundary.png">Open image</a><button class="button copy-alt" type="button">Copy alt</button></div></div>
+      <div class="asset"><img src="02-two-ways-to-trade.png" alt=""><div class="asset-head"><strong>02 · after the two paths</strong></div><small>Before “🧰 Hiring your robot”.</small><p class="alt">Two-lane flow. Manual: offered call, Jupiter, user wallet approval. Autotrader: floor poll, local safety gates, burner signature. Both keep signing outside Claude Company.</p><div class="asset-actions"><a class="button" href="02-two-ways-to-trade.png">Open image</a><button class="button copy-alt" type="button">Copy alt</button></div></div>
+      <div class="asset"><img src="03-install-rehearse-arm-fund.png" alt=""><div class="asset-head"><strong>03 · after the live caps</strong></div><small>Before “🛡️ How he decides to sign”.</small><p class="alt">Four-step WALL-ST-E activation runway: Install, Rehearse on paper, Arm through exact local wallet-and-values acknowledgement, then Fund Last. Default caps are 0.005 SOL per trade, 0.01 SOL rolling deployment and a 0.01 SOL realized-loss entry brake; reviewed supported maxima are 0.05, 0.5 and 0.15 SOL respectively. The pause remains after macOS cap arming.</p><div class="asset-actions"><a class="button" href="03-install-rehearse-arm-fund.png">Open image</a><button class="button copy-alt" type="button">Copy alt</button></div></div>
+      <div class="asset"><img src="04-entry-gauntlet.png" alt=""><div class="asset-head"><strong>04 · after signature reconciliation</strong></div><small>Before “📈 How he manages a position”.</small><p class="alt">Six local gates: feed integrity, fresh entry, local risk size, executable costs, transaction binding, and sign-simulate-journal. Any failed gate means no submitted trade.</p><div class="asset-actions"><a class="button" href="04-entry-gauntlet.png">Open image</a><button class="button copy-alt" type="button">Copy alt</button></div></div>
+      <div class="asset"><img src="05-position-policy.png" alt=""><div class="asset-head"><strong>05 · before exit proceeds</strong></div><small>After the “Latched” warning.</small><p class="alt">Shared position policy: authored stop, breakeven at 1.35 times, a 25 percent trailing stop at 1.5 times, then target or time exit. Desk safety exits outrank price.</p><div class="asset-actions"><a class="button" href="05-position-policy.png">Open image</a><button class="button copy-alt" type="button">Copy alt</button></div></div>
+      <div class="asset"><img src="06-local-brakes.png" alt=""><div class="asset-head"><strong>06 · after the brake behavior</strong></div><small>Before “The website cannot…”.</small><p class="alt">Pause Entries blocks new buys while managed exits continue. Hard Stop blocks every new submission, including exits, while already signed attempts reconcile and open positions require manual supervision. The owner dashboard can observe sanitized status but cannot change either local control.</p><div class="asset-actions"><a class="button" href="06-local-brakes.png">Open image</a><button class="button copy-alt" type="button">Copy alt</button></div></div>
+    </aside>
+  </div>
+
+  <script>
+    const status = document.getElementById("copy-status");
+    const flash = (message) => {
+      status.textContent = message;
+      clearTimeout(flash.timer);
+      flash.timer = setTimeout(() => { status.textContent = ""; }, 2600);
+    };
+
+    function clipboardPayload(node) {
+      const allowed = new Set(["H2", "H3", "P", "STRONG", "EM", "UL", "OL", "LI", "A", "BR"]);
+      const clone = node.cloneNode(true);
+      [...clone.querySelectorAll("*")].forEach((element) => {
+        if (!allowed.has(element.tagName)) {
+          element.replaceWith(...element.childNodes);
+          return;
+        }
+        [...element.attributes].forEach((attribute) => {
+          if (!(element.tagName === "A" && attribute.name === "href")) element.removeAttribute(attribute.name);
+        });
+      });
+      const plain = node.innerText.trim().replace(/\u00a0/g, " ")
+        .replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
+      return { html: `<div>${clone.innerHTML}</div>`, plain };
+    }
+
+    function legacyCopyNode(node, payload) {
+      const selection = getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      const onCopy = (event) => {
+        event.preventDefault();
+        event.clipboardData.setData("text/html", payload.html);
+        event.clipboardData.setData("text/plain", payload.plain);
+      };
+      document.addEventListener("copy", onCopy);
+      let ok = false;
+      try { ok = document.execCommand("copy"); }
+      finally {
+        document.removeEventListener("copy", onCopy);
+        selection.removeAllRanges();
+      }
+      if (!ok) throw new Error("browser rejected copy");
+    }
+
+    async function copyText(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        const area = document.createElement("textarea");
+        area.value = text;
+        area.style.cssText = "position:fixed;left:-9999px";
+        document.body.appendChild(area);
+        area.select();
+        const ok = document.execCommand("copy");
+        area.remove();
+        if (!ok) throw new Error("browser rejected copy");
+      }
+    }
+
+    async function copyRichArticle() {
+      const article = document.getElementById("article-body");
+      const payload = clipboardPayload(article);
+      try {
+        if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") throw new Error("rich clipboard unavailable");
+        await navigator.clipboard.write([new ClipboardItem({
+          "text/html": new Blob([payload.html], { type: "text/html" }),
+          "text/plain": new Blob([payload.plain], { type: "text/plain" }),
+        })]);
+      } catch {
+        legacyCopyNode(article, payload);
+      }
+    }
+
+    document.getElementById("copy-title").addEventListener("click", async () => {
+      try { await copyText(document.getElementById("article-title").textContent.trim()); flash("✓ Title copied"); }
+      catch { flash("Copy failed — select the title"); }
+    });
+    document.getElementById("copy-body").addEventListener("click", async () => {
+      try { await copyRichArticle(); flash("✓ Formatted body copied"); }
+      catch { flash("Copy failed — select the white article only"); }
+    });
+    document.querySelectorAll(".copy-alt").forEach((button) => button.addEventListener("click", async () => {
+      try { await copyText(button.closest(".asset").querySelector(".alt").textContent.trim()); flash("✓ Alt text copied"); }
+      catch { flash("Alt copy failed"); }
+    }));
+  </script>
+</body>
+</html>

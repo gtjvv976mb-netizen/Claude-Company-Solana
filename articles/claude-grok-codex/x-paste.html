@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude + Grok + Codex · paste directly into X Articles</title>
+  <style>
+    @font-face { font-family:Archivo; src:url("../../assets/fonts/Archivo-Bold.ttf") format("truetype"); font-weight:700; }
+    @font-face { font-family:Instrument; src:url("../../assets/fonts/InstrumentSerif-Regular.ttf") format("truetype"); }
+    :root { --bg:#152226; --panel:#20343a; --line:#3d565b; --cream:#f4ecd8; --muted:#b8b09d; --amber:#e0ad3d; --green:#67bf88; --codex:#6f91ff; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--cream); font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    button,a { font:inherit; }
+    .toolbar { position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:12px; padding:14px 22px; border-bottom:1px solid var(--line); background:rgba(21,34,38,.96); backdrop-filter:blur(12px); }
+    .toolbar strong { margin-right:auto; font-family:Archivo,sans-serif; }
+    .button { border:1px solid var(--line); border-radius:999px; padding:10px 15px; background:#17282d; color:var(--cream); cursor:pointer; text-decoration:none; }
+    .button.primary { border-color:var(--green); background:#214a3a; color:#d7ffe5; }
+    .button:hover { transform:translateY(-1px); }
+    .status { min-width:125px; color:var(--green); font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .intro { max-width:1420px; margin:28px auto 18px; padding:0 24px; }
+    .intro h1 { margin:0; font:52px/1 Instrument,Georgia,serif; }
+    .intro p { max-width:930px; color:var(--muted); }
+    .notice { margin-top:18px; padding:14px 16px; border:1px solid rgba(103,191,136,.45); border-radius:12px; background:rgba(34,74,58,.32); }
+    .layout { max-width:1420px; margin:0 auto 80px; padding:0 24px; display:grid; grid-template-columns:minmax(0,850px) minmax(330px,1fr); gap:26px; align-items:start; }
+    .copy-card,.assets { border:1px solid var(--line); border-radius:18px; background:var(--panel); box-shadow:0 24px 60px rgba(0,0,0,.18); }
+    .title-row { display:flex; align-items:center; gap:14px; padding:18px 22px; border-bottom:1px solid var(--line); }
+    .title-label { color:var(--amber); font:12px ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.1em; text-transform:uppercase; }
+    #article-title { flex:1; font-weight:700; }
+    #article-body { padding:30px 38px 48px; background:#fff; color:#161616; border-radius:0 0 17px 17px; font:18px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    #article-body h2 { margin:42px 0 13px; font-size:27px; line-height:1.22; }
+    #article-body h3 { margin:30px 0 11px; font-size:21px; line-height:1.25; }
+    #article-body p { margin:0 0 18px; }
+    #article-body ul,#article-body ol { margin:0 0 22px; padding-left:30px; }
+    #article-body li { margin:0 0 11px; }
+    #article-body blockquote { margin:24px 0; padding:13px 17px; border-left:4px solid #d97757; background:#f5f2ec; }
+    #article-body blockquote p { margin:0; }
+    #article-body a { color:#166bd3; }
+    .assets { position:sticky; top:82px; padding:22px; }
+    .assets h2 { margin:0; font:34px/1 Instrument,Georgia,serif; }
+    .assets > p { margin:8px 0 20px; color:var(--muted); font-size:14px; }
+    .asset { padding:14px 0; border-top:1px solid var(--line); }
+    .asset:first-of-type { border-top:0; }
+    .asset img { display:block; width:100%; aspect-ratio:16/9; object-fit:cover; border:1px solid var(--line); border-radius:10px; }
+    .asset.header img { aspect-ratio:5/2; }
+    .asset-head { display:flex; margin-top:10px; }
+    .asset-head strong { flex:1; font-size:14px; }
+    .asset small { display:block; margin-top:3px; color:var(--muted); line-height:1.35; }
+    .asset-actions { display:flex; gap:7px; margin-top:9px; }
+    .asset-actions .button { padding:6px 10px; font-size:12px; }
+    .alt { display:none; }
+    @media(max-width:1000px) { .layout{grid-template-columns:1fr}.assets{position:static}.toolbar{flex-wrap:wrap}.toolbar strong{width:100%} }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <strong>🤝 Claude + Grok + Codex · X Articles paste kit</strong>
+    <button class="button" id="copy-title" type="button">Copy title</button>
+    <button class="button primary" id="copy-body" type="button">Copy formatted article</button>
+    <span class="status" id="copy-status" aria-live="polite"></span>
+  </div>
+
+  <header class="intro">
+    <h1>Paste it into X with no corrections.</h1>
+    <p>The title and rich-text body are copied separately. Filenames, placement notes, alt text and Markdown characters stay outside the clipboard payload.</p>
+    <div class="notice"><strong>Only the media remains manual:</strong> upload the 5:2 header, then insert the two diagrams at the section breaks shown on the right.</div>
+  </header>
+
+  <div class="layout">
+    <main class="copy-card">
+      <div class="title-row"><span class="title-label">X title field</span><span id="article-title">🤝 Why Claude Company Needed Claude, Grok and Codex</span></div>
+      <article id="article-body">
+        <p>Most AI trading systems are built around one seductive idea: give one model everything and let it decide.</p>
+        <p>That is also how you create one enormous blind spot. 👁️</p>
+        <p>A memecoin desk has to answer several different questions at once:</p>
+        <ul>
+          <li>🔗 Is the token mechanically safe enough to investigate?</li>
+          <li>🌊 Is the market real enough to enter and exit?</li>
+          <li>⚡ What is happening on X right now?</li>
+          <li>🧠 Does the evidence support a tradeable thesis?</li>
+          <li>🛠️ Is the system itself learning—or quietly repeating the same mistakes?</li>
+        </ul>
+        <p>Those are not one job. So we stopped pretending one model should own all of them.</p>
+        <p>Claude Company gives Claude, Grok and Codex different responsibilities, different inputs and different limits.</p>
+        <blockquote><p><strong>Claude reasons. Grok listens to X. Codex audits the machine.</strong></p></blockquote>
+        <p>This is not three chatbots voting on the same coin. It is a separation of powers. 🏢</p>
+
+        <h2>🧠 Claude: the reasoning desk</h2>
+        <p>Claude is the default reasoning layer across Claude Company’s trading team. It is not the whole company, and it does not get the first or final word on everything.</p>
+        <p>Plain code goes first. Before a paid model reasons about a candidate, deterministic checks look for mechanical failures: live authorities, an exit that cannot be quoted, disputed price data, inadequate liquidity and other conditions that can make a position impossible to manage.</p>
+        <p>Only survivors reach the judgment seats.</p>
+        <p>Five specialist analysts then work in parallel and <strong>blind to one another</strong>: Forensics, Liquidity, Flow, Narrative and Technical. They are not allowed to anchor on a colleague’s answer. Agreement matters only when it was not arranged. 🙈</p>
+        <p>After them comes a Red Team whose job is not to be balanced. Its job is to explain why the thesis loses money. Risk derives size and invalidation. The PM must answer the attack in writing. Execution drafts an unsigned ticket. Deterministic Compliance can still veto it. A Claude-powered CEO seat is the last authorizing judgment.</p>
+        <p>Why use Claude here? Because this part of the job is evidence synthesis: hold a long, structured case in view, preserve disagreements, compare a thesis with its refutation and explain the decision in plain language.</p>
+        <p>But a Claude approval is still only an approval to publish research. It is <strong>not</strong> a blockchain transaction. Claude Company’s hosted desk never receives a private key, never signs and never sends. 🔐</p>
+
+        <h2>⚡ Grok: the live X intelligence layer</h2>
+        <p>Memecoin lore often begins on X before it becomes legible in a chart. The creator account, the first joke, the copied script, the deleted history and the moment a niche reference becomes a mainstream story may all live there.</p>
+        <p>In our stack, Grok has three bounded jobs.</p>
+
+        <h3>1️⃣ Read X for the shortlisted candidates</h3>
+        <p>The desk does not spend a Grok search on every token it sees. Free safety checks run first. Only a candidate that clears them can receive a native X read.</p>
+        <p>That read looks for evidence the chain alone cannot provide:</p>
+        <ul>
+          <li>👤 Who is actually promoting the token?</li>
+          <li>🧾 Does that account have a real history or only token launches?</li>
+          <li>🧨 Were prior launches tied to the same account accused of rugging?</li>
+          <li>📣 Is attention carried by distinct voices or one script pasted everywhere?</li>
+          <li>🗓️ Is the underlying event true, still unfolding and early—or already fading?</li>
+          <li>💸 Does the attention look organic, paid or botted?</li>
+        </ul>
+        <p>Grok returns that as structured evidence with citations. The Narrative seat, Red Team and decision chain can use it, challenge it or discount it.</p>
+        <p>Grok does not turn attention into an automatic buy. If the X read is unavailable, it stays missing. The system does not invent certainty to fill the gap. 🚫</p>
+
+        <h3>2️⃣ Scan X first, then search the chain</h3>
+        <p>The normal research path starts with tokens that already exist and asks what story sits behind them. Grok also supports the reverse path: look for an accelerating, nameable theme on X, translate it into literal search terms, then let plain code look for matching Solana pairs.</p>
+        <p>That is discovery, not a shortcut. Every resulting candidate still faces the same deterministic screen, blind analysts, Red Team, Risk, Compliance and custody boundary. The system is designed to look earlier; it does not claim to consistently front-run a narrative or a coin.</p>
+
+        <h3>3️⃣ Act as an optional PM brain for a tenant floor</h3>
+        <p>A floor owner can choose Grok for that floor’s Portfolio Manager seat. The brain changes; the constitution does not.</p>
+        <p>The same evidence contract, Red Team challenge, risk sizing, deterministic Compliance veto and no-keys wall remain in place. If Grok cannot return the required structured decision, the run falls back to the Claude PM instead of breaking the floor.</p>
+        <p>That is the point of the integration: <strong>Grok adds live cultural context without receiving unlimited authority.</strong></p>
+
+        <h2>🛠️ Codex: the Improvement Engineer</h2>
+        <p>Codex is not another analyst, another PM or a second Red Team.</p>
+        <p>Codex works <strong>outside the trading pipeline</strong>. Its job is to inspect the instrument, not play it.</p>
+        <p>On a manually dispatched review, an isolated worker checks out the exact deployed source commit and gives Codex a read-only view of the repository plus a tightly filtered review bundle. That bundle contains aggregate house scorecards, evaluation coverage, operating failures, model spend, and exact prompt, policy and test provenance.</p>
+        <p>It excludes tenant rows, raw workups, market text, wallets, sessions, executor configuration and credentials.</p>
+        <p>When activated and manually dispatched, Codex can return a small set of structured proposals covering tests, evaluation, observability, workflow, security, cost and—only with enough evidence—decision behavior. It cannot edit a file, apply a patch, commit, push, merge, deploy, rank a token, size a position, publish a call or trade. 🧱</p>
+        <p>Every proposal still needs an ordinary human-reviewed change, the full test suite and an explicit merge.</p>
+        <p>Even recommendations that could alter decision behavior face a mechanical evidence gate: at least <strong>100 distinct published assets</strong> with current 24-hour observations and at least <strong>80% resolved-mark coverage</strong>. Below that bar, “insufficient evidence” is the correct answer.</p>
+        <p>Codex does not make the desk autonomous. It makes improvement more testable, more attributable and harder to fake.</p>
+        <p>One honest status note: <strong>the Codex architecture is deployed, but the protected review worker has not yet been activated or completed its first manual run.</strong> Until the review credentials are configured and that workflow passes, Codex is a governed improvement lane—not an active voice on the trading desk.</p>
+
+        <h2>🤝 Not a committee—a system</h2>
+        <p>The easiest way to misunderstand the integration is to imagine Claude, Grok and Codex in one group chat, arguing until two models outvote the third.</p>
+        <p>That is not what happens.</p>
+        <p>Their work arrives at different moments:</p>
+        <ol>
+          <li>⚙️ <strong>Code filters</strong> mechanical traps and bad data.</li>
+          <li>⚡ <strong>Grok gathers X evidence</strong> for a candidate that survived.</li>
+          <li>🧠 <strong>Claude-powered seats reason</strong> independently, attack the thesis, size it and decide whether an unsigned call deserves publication.</li>
+          <li>🛑 <strong>Deterministic policy vetoes</strong> anything that breaks the house rules.</li>
+          <li>🧾 <strong>The result is recorded</strong> with its evidence, disagreements and outcome marks.</li>
+          <li>🛠️ <strong>Once activated and manually dispatched, Codex reviews the accumulated system evidence</strong> and proposes improvements outside production.</li>
+          <li>👤 <strong>A human decides</strong> whether any proposal becomes a tested change.</li>
+        </ol>
+        <p>The loop is deliberate: live context feeds research; research creates measurable decisions; measured decisions create evidence for improvement.</p>
+        <p>There is no direct path from a social signal to a wallet, and no direct path from a Codex recommendation back into production.</p>
+
+        <h2>🔐 The boundary all three share</h2>
+        <p>No model holds the operator’s trading key.</p>
+        <p>Claude cannot sign. Grok cannot bypass the rails. Codex cannot change the live desk.</p>
+        <p>If an operator chooses hands-off execution, WALL-ST-E is a separate poller running on the operator’s own machine under local caps, local credentials and a dedicated burner. The research system can publish a call; it cannot make that local machine obey.</p>
+        <p>That boundary matters more than the model names.</p>
+
+        <h2>⚠️ The honest part</h2>
+        <p>Adding more models does not guarantee better calls or profitable trading.</p>
+        <p>X can be manipulated. Models can misunderstand evidence. APIs can fail. More providers create more cost, latency and operational complexity. Memecoins can gap through stops or lose the liquidity needed for an exit.</p>
+        <p>The architecture does not make those risks disappear. It makes responsibilities explicit, failures observable and authority bounded.</p>
+        <p>We did not integrate three systems because one was weak. We did it because asking one system to <strong>see the market, judge the trade and audit itself</strong> is bad company design.</p>
+        <p>Claude works the research. 🧠<br>Grok works the moment. ⚡<br>Codex audits the system. 🛠️<br>Code holds the line. 🧱<br>You hold the keys. 🔑</p>
+        <p><strong>Three minds. Separate powers. One desk.</strong></p>
+        <p>👉 <strong><a href="https://claudedotcompany.com">claudedotcompany.com</a></strong></p>
+        <p><em>Claude Company is an independent project and is not affiliated with or endorsed by Anthropic, xAI or OpenAI. Nothing here is financial advice or a promise of performance.</em></p>
+      </article>
+    </main>
+
+    <aside class="assets">
+      <h2>Media upload order</h2>
+      <p>These instructions and alt descriptions never enter the copied article.</p>
+      <div class="asset header"><img src="claude-grok-codex-header.png" alt=""><div class="asset-head"><strong>Header · upload as cover</strong></div><small>Before pasting the body.</small><p class="alt">Wide Claude Company banner showing three voxel figures for Claude, Grok and Codex. Text reads: Three minds. Separate powers. Claude reasons, Grok listens to X, Codex audits.</p><div class="asset-actions"><a class="button" href="claude-grok-codex-header.png">Open image</a><button class="button copy-alt" type="button">Copy alt</button></div></div>
+      <div class="asset"><img src="01-three-bounded-jobs.png" alt=""><div class="asset-head"><strong>01 · before the Claude section</strong></div><small>After “It is a separation of powers.”</small><p class="alt">Three-column role map. Claude turns verified evidence into structured research but cannot sign. Grok turns X into structured evidence but cannot bypass the rails. Codex reviews code and aggregate scorecards but cannot edit, deploy or trade.</p><div class="asset-actions"><a class="button" href="01-three-bounded-jobs.png">Open image</a><button class="button copy-alt" type="button">Copy alt</button></div></div>
+      <div class="asset"><img src="02-integration-loop.png" alt=""><div class="asset-head"><strong>02 · after the seven-step loop</strong></div><small>Before “The loop is deliberate…”.</small><p class="alt">Flow diagram: deterministic code screens, Grok adds X evidence, Claude reasons, code vetoes or publishes an unsigned call, and outcomes are measured. A dashed branch leads to a manual read-only Codex proposal and then human review and CI, with no direct production write.</p><div class="asset-actions"><a class="button" href="02-integration-loop.png">Open image</a><button class="button copy-alt" type="button">Copy alt</button></div></div>
+    </aside>
+  </div>
+
+  <script>
+    const status = document.getElementById("copy-status");
+    const flash = message => { status.textContent=message; clearTimeout(flash.timer); flash.timer=setTimeout(()=>status.textContent="",2600); };
+    function clipboardPayload(node) {
+      const allowed=new Set(["H2","H3","P","STRONG","EM","UL","OL","LI","A","BR","BLOCKQUOTE"]);
+      const clone=node.cloneNode(true);
+      [...clone.querySelectorAll("*")].forEach(element=>{
+        if(!allowed.has(element.tagName)){ element.replaceWith(...element.childNodes); return; }
+        [...element.attributes].forEach(attribute=>{ if(!(element.tagName==="A"&&attribute.name==="href")) element.removeAttribute(attribute.name); });
+      });
+      const plain=node.innerText.trim().replace(/\u00a0/g," ").replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n");
+      return { html:`<div>${clone.innerHTML}</div>`, plain };
+    }
+    function legacyCopyNode(node,payload) {
+      const selection=getSelection(),range=document.createRange(); range.selectNodeContents(node); selection.removeAllRanges(); selection.addRange(range);
+      const onCopy=event=>{ event.preventDefault(); event.clipboardData.setData("text/html",payload.html); event.clipboardData.setData("text/plain",payload.plain); };
+      document.addEventListener("copy",onCopy); let ok=false;
+      try { ok=document.execCommand("copy"); } finally { document.removeEventListener("copy",onCopy); selection.removeAllRanges(); }
+      if(!ok) throw new Error("browser rejected copy");
+    }
+    async function copyText(value) {
+      try { await navigator.clipboard.writeText(value); }
+      catch { const area=document.createElement("textarea"); area.value=value; area.style.cssText="position:fixed;left:-9999px"; document.body.appendChild(area); area.select(); const ok=document.execCommand("copy"); area.remove(); if(!ok) throw new Error("browser rejected copy"); }
+    }
+    async function copyRichArticle() {
+      const article=document.getElementById("article-body"),payload=clipboardPayload(article);
+      try {
+        if(!navigator.clipboard?.write||typeof ClipboardItem==="undefined") throw new Error("rich clipboard unavailable");
+        await navigator.clipboard.write([new ClipboardItem({ "text/html":new Blob([payload.html],{type:"text/html"}), "text/plain":new Blob([payload.plain],{type:"text/plain"}) })]);
+      } catch { legacyCopyNode(article,payload); }
+    }
+    document.getElementById("copy-title").addEventListener("click",async()=>{ try{await copyText(document.getElementById("article-title").textContent.trim());flash("✓ Title copied");}catch{flash("Copy failed — select the title");} });
+    document.getElementById("copy-body").addEventListener("click",async()=>{ try{await copyRichArticle();flash("✓ Formatted body copied");}catch{flash("Copy failed — select the white article only");} });
+    document.querySelectorAll(".copy-alt").forEach(button=>button.addEventListener("click",async()=>{ try{await copyText(button.closest(".asset").querySelector(".alt").textContent.trim());flash("✓ Alt text copied");}catch{flash("Alt copy failed");} }));
+  </script>
+</body>
+</html>
