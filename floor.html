@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-06 02:28 UTC">
-<script>console.log("Claude Company build 2026-09-06 02:28 UTC")</script>
+<meta name="cc-build" content="2026-09-06 02:34 UTC">
+<script>console.log("Claude Company build 2026-09-06 02:34 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -77859,10 +77859,14 @@ const SOL_VIOLET = 0x9945ff;
 const P = {                       // Markets & Makers OFFICIAL_PALETTE, Solana-tinted
   /* A NORMALLY LIT OFFICE. Fifteen of the twenty-one keys are byte-identical to the
      shipping values, and every key that moves is luminance-matched to the value it
-     replaces. The Solana identity lives in the violet/mint register (teal/glassAqua/
+     replaces. The desks take the deep MINT, not the violet: buildDesk's accent defaults to P.teal, so
+     P.teal IS the desk colour, and 0x179163 is luminance-matched to the Robinhood floor's
+     0x1f8f5f (115.7 both) so the desks read the same weight in both towers. Violet stays on
+     the medallion, --sol-violet and the sky.
+     The Solana identity lives in the violet/mint register (glassAqua/
      leaf/water) and in SOL_GREEN, which is emitted light, not paint. */
   cream:0xf0e4c7, pathStone:0xcfc7ad, timber:0xa96934, timberDark:0x5f3e29,
-  teal:0x9945ff, solarNavy:0x4a5fd8, amber:0xe0ad3d, glassAqua:0x68d7ab,
+  teal:0x179163, solarNavy:0x4a5fd8, amber:0xe0ad3d, glassAqua:0x68d7ab,
   metal:0x70828a, terracotta:0xbf623c, coral:0xdf7655, leaf:0x37b17c,
   charcoal:0x30454a, water:0x28c08c,
   claude:0xd97757,                // Claude's own coral — the CEO, and only the CEO
