@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-06 00:57 UTC">
-<script>console.log("Claude Company build 2026-09-06 00:57 UTC")</script>
+<meta name="cc-build" content="2026-09-06 01:10 UTC">
+<script>console.log("Claude Company build 2026-09-06 01:10 UTC")</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
    so the office reads as the same world. Claude's coral is #d97757, which sits a hair off
@@ -77926,6 +77926,7 @@ function applyShift3D() {
   } else {
     scene.background.set(0x152430); scene.fog.color.set(0x24333c);
   }
+  window.__skyline?.draw(day);        // the city follows the shift
 }
 window.applyShift3D = applyShift3D;
 applyShift3D();
@@ -78150,6 +78151,66 @@ function drawHouseMark(c) {
     beam.rotation.x = -0.035;
   }
 })();
+
+/* ═══ THE CITY BEYOND THE GLAZING ════════════════════════════════════════════
+   The Robinhood tower looks out on a city; this one had nothing behind its glass,
+   so the top of every frame was empty sky. Same painter, Solana's spectrum.
+
+   BOTH SHIFTS DRAW THE SAME CITY. The PRNG is one shared sequence, so each branch
+   must consume the SAME NUMBER of randoms — the Robinhood floor shipped with the
+   night branch drawing one extra per lit window, and the two shifts rendered
+   different skylines. Measured after the fix there: every tower within 1px. */
+function drawSkyline(day) {
+  const S = window.__skyline; if (!S) return;
+  const x = S.c.getContext("2d"), W = S.c.width, H = S.c.height;
+  let seed = 0x5eed;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const sky = x.createLinearGradient(0, 0, 0, H);
+  if (day) { sky.addColorStop(0, "#b9a8e8"); sky.addColorStop(0.55, "#d8cdee"); sky.addColorStop(1, "#e9dff2"); }
+  else { sky.addColorStop(0, "#150e2b"); sky.addColorStop(0.55, "#241a44"); sky.addColorStop(0.88, "#2f2b63"); sky.addColorStop(1, "#1f6f6a"); }
+  x.fillStyle = sky; x.fillRect(0, 0, W, H);
+  if (!day) {
+    const hb = x.createLinearGradient(0, H * 0.88, 0, H);
+    hb.addColorStop(0, "rgba(20,241,149,0)"); hb.addColorStop(1, "rgba(20,241,149,.30)");
+    x.fillStyle = hb; x.fillRect(0, H * 0.88, W, H * 0.12);
+  }
+  const lit = ["#14f195", "#5ef0b4", "#9945ff"];
+  let px = 12;
+  for (let i = 0; i < 12 && px < W; i++) {
+    const w = 90 + Math.floor(rnd() * 170), h = H * (0.40 + rnd() * 0.30);
+    const top = H - h;
+    /* The night tower must SEPARATE from its own sky. #241d40 against the #241a44 band
+       differed by 7 of 255 — the same invisible-silhouette bug the Robinhood city had. */
+    x.fillStyle = day ? "#8d84ab" : "#4a3d7d";
+    x.fillRect(px, top, w, h);
+    if (rnd() < 0.5) { x.fillRect(px + w * 0.35, top - 14, w * 0.3, 14); }
+    for (let wx = px + 8; wx < px + w - 8; wx += 9) {
+      for (let wy = top + 10; wy < H - 10; wy += 11) {
+        const on = rnd(), bright = rnd(), hue = rnd();   // three draws in BOTH shifts
+        if (on < 0.55) continue;
+        x.globalAlpha = day ? 0.06 + bright * 0.10 : 0.15 + bright * 0.45;
+        x.fillStyle = lit[Math.floor(hue * 3)];
+        x.fillRect(wx, wy, 3, 5);
+      }
+    }
+    x.globalAlpha = 1;
+    px += w + 14 + Math.floor(rnd() * 40);
+  }
+  x.globalAlpha = 0.30; x.fillStyle = "#14f195"; x.fillRect(0, H - 2, W, 2); x.globalAlpha = 1;
+  S.tex.needsUpdate = true;
+}
+(function buildSkyline() {
+  const c = document.createElement("canvas"); c.width = 2048; c.height = 256;
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(34.4, 4.3),
+    new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, fog: false }));
+  mesh.position.set(0, 2.6, -HALF_D - 0.18);   // outside the glazing, never inside the room
+  mesh.userData.noBake = true;
+  scene.add(mesh);
+  window.__skyline = { c, tex, mesh, draw: drawSkyline };
+  drawSkyline(document.documentElement.dataset.theme === "light");
+})();
+
 
 /* ═══ LAYOUT ══════════════════════════════════════════════════════════════
    Desk, standing spot and station coordinates. Everything downstream — the
