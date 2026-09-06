@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-06 00:46 UTC">
-<script>console.log("Claude Company build 2026-09-06 00:46 UTC")</script>
+<meta name="cc-build" content="2026-09-06 00:57 UTC">
+<script>console.log("Claude Company build 2026-09-06 00:57 UTC")</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
    so the office reads as the same world. Claude's coral is #d97757, which sits a hair off
@@ -78739,7 +78739,7 @@ function buildPlant(at) {
         emissiveIntensity: 0.16, depthWrite: false,
       }));
     medallion.rotation.x = -Math.PI / 2;
-    medallion.position.set(SPOTS.meeting[0], 0.024, SPOTS.meeting[1]);
+    medallion.position.set(0, 0.024, 0);   // the real centre of the room, not the meeting spot
     medallion.receiveShadow = true; medallion.castShadow = false;
     medallion.userData.noBake = true;
     room.add(medallion);
