@@ -18,8 +18,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
-<meta name="cc-build" content="2026-09-06 01:24 UTC">
-<script>console.log("Claude Company build 2026-09-06 01:24 UTC")</script>
+<meta name="cc-build" content="2026-09-06 02:28 UTC">
+<script>console.log("Claude Company build 2026-09-06 02:28 UTC")</script>
+<script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* ══════════════════════════════════════════════════════════════════════
    CLAUDE COMPANY — THE DEVELOPMENT
@@ -104,36 +105,89 @@
     --dusk-bar:rgba(12,8,22,.94);
   }
 }
-/* THE DAWN SHIFT — chosen, never inferred: the same tower, first light through
-   the glazing. The surfaces lift to indigo and the hero sky lifts with them.
-   Ink, brass, violet and mint all inherit from the bare :root above — only the
-   surfaces move, so nothing here can strand text on the wrong ground. */
+/* THE DAY SHIFT — chosen, never inferred: the same tower, but at eleven in the
+   morning. This is a real day: LIGHT grounds and DARK ink, the exact inverse of
+   the night above. Every surface token moves AND every ink token moves with it,
+   because a near-white ink left on a near-white ground is the one failure this
+   block exists to prevent. The venue's emitted light (--sol-green/-soft/-pale)
+   and its brand mark (--sol-violet) are NOT re-themed: light is light at any
+   hour. Only paint moves. */
 :root[data-theme="light"]{
-  --bg:#1d1436; --bg-2:#241a44; --card:#241a44;
-  --rule:#3c2d6b; --rule-soft:#31245a;
-  --panel:#1d1436; --panel-line:#31245a; --card-line:#3c2d6b;
-  --bar:#1d1436; --dock-bg:rgba(29,20,54,.86); --hint-bg:rgba(29,20,54,.92);
-  --shadow:rgba(0,0,0,.5);
-  --dusk-bar:rgba(29,20,54,.94);
+  --bg:#f7f5fc; --bg-2:#efecf7; --card:#ffffff;
+  /* --ink-faint left the handed-down day palette by one step. #7b73a0 measured
+     3.75:1 on --bg-2/#efecf7, 3.80 on the hovered row and 4.04 on --panel with a
+     validated ruler, and this tier carries running captions (figcaption, .figlabel,
+     .slugname, .note, .row .n). #6b6390 measures 4.72 / 4.78 / 5.09 / 5.51 and is
+     still a clear third step under --ink-soft. Night's --ink-faint is untouched. */
+  --ink:#1b1430; --ink-soft:#4e4470; --ink-faint:#6b6390;
+  --rule:#ddd6ec; --rule-soft:#e6e0f2;
+  /* brass at noon is DARK brass: #d1a84f is 2.0:1 on paper and unreadable.
+     Both accent tiers land on the day brass, 5.36:1 on --card. */
+  --accent:#8a6410; --accent-ink:#8a6410;
+  /* violet stays the one fill, deepened so it still carries white (7.5:1). */
+  --hot:#6d28c9; --hot-ink:#ffffff;
+  --kind-model:#8a6410;
+  --panel:#f7f5fc; --panel-line:#ddd6ec; --card-line:#e6e0f2;
+  --good:#0d7a52; --warn:#8a6410; --bad:#b8372a;
+  --bar:#efecf7; --bar-ink:#1b1430; --bar-soft:rgba(27,20,48,.64);
+  --dock-bg:rgba(247,245,252,.88); --hint-bg:rgba(247,245,252,.95);
+  --shadow:rgba(27,20,48,.18);
+  --teal:#6d28c9; --amber:#8a6410; --coral:#b8503f; --claude:#b45c3c;
+  /* the hero at noon. --dusk-* keeps its NAME (a token name is a contract) and
+     now carries the daylight values: dark type on a bright sky. */
+  --dusk-ink:#1b1430;
+  --dusk-soft:#4e4470;
+  --dusk-amber:#8a6410;
+  --dusk-bar:rgba(247,245,252,.94);
   --hero-sky:linear-gradient(180deg,
-    #1d1436 0%, #251a4c 17%, #2e1f60 33%, #3a2678 47%,
-    #4d2d92 59%, #6836ad 69%, #8b41c8 77%, #a95ce0 84%,
-    #8f80e4 90%, #52d6b4 96%, #2af0a8 100%);
-  --hero-horizon:linear-gradient(180deg,#2a2050 0%,#221846 38%,#1a1338 100%);
-  --hero-horizon-line:rgba(20,241,149,.34);
+    #9fb4e8 0%, #adbeec 17%, #bccaf0 33%, #cbd6f4 47%,
+    #d8e0f7 59%, #e3e8fa 69%, #ecedfb 77%, #f3eefb 84%,
+    #f2f0fb 90%, #e7f7f1 96%, #dcfbec 100%);
+  --hero-horizon:linear-gradient(180deg,#efecf7 0%,#e7e2f2 38%,#ddd6ec 100%);
+  --hero-horizon-line:rgba(13,122,82,.38);
 }
-:root[data-theme="light"] .shade{opacity:.5}
-/* the tower changes shift: stars out, lamps down, night masonry lifted to
-   first light, the reflections calmed. The crest stays coral — the sign is the
-   sign at any hour, on either chain. */
+/* The scrim inverts with the theme. At night it is a dark wash that lets pale
+   type sit on the sky; by day it must be a PALE wash, or the dark hero type
+   lands on a dark corner. Same two gradients, same angles — light instead. */
+:root[data-theme="light"] .shade{opacity:1;background:
+  linear-gradient(66deg, rgba(247,245,252,.95) 0%, rgba(247,245,252,.9) 26%, rgba(247,245,252,.46) 45%, rgba(247,245,252,0) 62%),
+  linear-gradient(0deg, rgba(247,245,252,.6) 0%, rgba(247,245,252,.34) 26%, rgba(247,245,252,0) 50%)}
+/* The concierge nav rests ON the sky. At night the sky is black and pale type
+   reads; by day the zenith is a real blue (#9fb4e8) and the SAME nav in day ink
+   measured 2.67:1 on the pill and 4.38:1 on the links. A glare wash under the
+   nav puts every word back on paper — 4.9 / 8.0 / 15.1:1. The scrolled state
+   keeps its own solid bar. */
+:root[data-theme="light"] .topnav{background:linear-gradient(180deg,
+  rgba(247,245,252,.95) 0%, rgba(247,245,252,.88) 62%, rgba(247,245,252,0) 100%)}
+:root[data-theme="light"] .topnav.scrolled{background:var(--dusk-bar)}
+/* On a phone the copy column and the tower occupy the SAME ground. At night that
+   is pale type on dark masonry and it reads; by day the brass eyebrow measured
+   2.2:1 over the sunlit facade. Below 720px the day scrim becomes a morning haze
+   over the tower's lower half so the whole copy block sits on paper. */
+@media (max-width:720px){
+  :root[data-theme="light"] .shade{background:
+    linear-gradient(0deg, rgba(247,245,252,.96) 0%, rgba(247,245,252,.93) 32%,
+      rgba(247,245,252,.55) 43%, rgba(247,245,252,0) 62%)}
+}
+/* the tower changes shift: stars out, lamps out, the masonry lit by the sun
+   instead of by its own windows, the water reflections calmed. The crest stays
+   coral — the sign is the sign at any hour, on either chain. */
 :root[data-theme="light"] .hero-art #stars{display:none}
-:root[data-theme="light"] .hero-art #wins{opacity:.3}
-:root[data-theme="light"] .hero-art #refl{opacity:.4}
-:root[data-theme="light"] .hero-art #trees{fill:#2f2550}
-:root[data-theme="light"] .hero-art #tower{filter:brightness(1.34) saturate(.85)}
+:root[data-theme="light"] .hero-art #wins{opacity:.18}
+:root[data-theme="light"] .hero-art #refl{opacity:.25}
+:root[data-theme="light"] .hero-art #trees{fill:#5c5484}
+:root[data-theme="light"] .hero-art #tower{filter:brightness(1.5) saturate(.8)}
+/* the figure caption stops hiding: on a bright sky it needs its full ink. */
+:root[data-theme="light"] .figcap{opacity:1}
+/* the concierge pill's mint hairline vanishes on paper; give it the violet. */
+:root[data-theme="light"] .pill{border-color:rgba(109,40,201,.55)}
+/* the 9px CLAUDE tag is dark-on-coral at night (5.35:1). On the day coral that
+   same ink falls to 3.61:1, so the tag flips to white — 4.63:1. Measured. */
+:root[data-theme="light"] .kind.claude{color:#ffffff}
+/* the sun, where the moon-glow was */
 :root[data-theme="light"] .hero::before{content:"";position:absolute;top:9%;right:15%;
-  width:78px;height:78px;border-radius:50%;z-index:1;
-  background:radial-gradient(circle,#eafff6 0 36%,#a9ffd8 58%,rgba(169,255,216,0) 72%)}
+  width:104px;height:104px;border-radius:50%;z-index:1;
+  background:radial-gradient(circle,#ffffff 0 34%,#fdf4d8 56%,rgba(253,244,216,0) 74%)}
 
 :root[data-theme="dark"]{
     --bg:#08050f; --bg-2:#120c1f; --card:#171029;

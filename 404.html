@@ -1,6 +1,18 @@
 <title>Claude Company</title>
 <meta charset="utf-8">
 <script>
+/* The two shifts. Applied before first paint, so the page never flashes the other
+   theme's ground. The choice is the viewer's own, made on the tower, and persists on
+   this device under the same cc_theme key every other page in the building reads.
+   Without this the [data-theme="light"] block below is unreachable: a visitor who
+   picked Day on the tower and then opened this page still got night. */
+(function () {
+  let t = null;
+  try { t = localStorage.getItem("cc_theme"); } catch {}
+  document.documentElement.dataset.theme = t === "light" ? "light" : "dark";
+})();
+</script>
+<script>
 /* GitHub Pages serves files, not routes. The Node server's /floor/50 and /tower
    paths live on in bookmarks and old links — catch them here and land them on
    the real files instead of a dead end. */
@@ -11,8 +23,9 @@
   location.replace("/");
 })();
 </script>
-<meta name="cc-build" content="2026-09-06 01:24 UTC">
-<script>console.log("Claude Company build 2026-09-06 01:24 UTC")</script>
+<meta name="cc-build" content="2026-09-06 02:28 UTC">
+<script>console.log("Claude Company build 2026-09-06 02:28 UTC")</script>
+<script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* SOLANA TOWER THEME — night-first. This page redirects immediately, so it carries
    only the ground, the ink and the light line. Every colour is defined on the BARE
@@ -42,10 +55,26 @@
   --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
   --shadow:rgba(0,0,0,.6);
 }
+/* THE DAY SHIFT. Not dusk — a real day: grounds light, ink dark. Only tokens that
+   already exist on the bare :root above are restated here, so no colour is
+   light-only. The emitted light and the brand mark (--sol-*) keep their bare-:root
+   values at every hour. */
 :root[data-theme="light"]{
-  --panel:#1d1436; --panel-line:#31245a; --card:#241a44; --card-line:#3c2d6b;
-  --bar:#1d1436; --shadow:rgba(0,0,0,.5);
+  /* --ink-faint left the handed-down day palette by one step. #7b73a0 measured
+     3.75:1 on --bg-2/#efecf7, 3.80 on the hovered row and 4.04 on --panel with a
+     validated ruler, and this tier carries running captions (figcaption, .figlabel,
+     .slugname, .note, .row .n). #6b6390 measures 4.72 / 4.78 / 5.09 / 5.51 and is
+     still a clear third step under --ink-soft. Night's --ink-faint is untouched. */
+  --ink:#1b1430; --ink-soft:#4e4470; --ink-faint:#6b6390;
+  --panel:#f7f5fc; --panel-line:#ddd6ec; --card:#ffffff; --card-line:#e6e0f2;
+  --good:#0d7a52; --warn:#8a6410; --bad:#b8372a;
+  --amber:#8a6410; --teal:#6d28c9; --claude:#b45c3c;
+  --bar:#efecf7; --bar-ink:#1b1430; --bar-soft:rgba(27,20,48,.64);
+  --shadow:rgba(27,20,48,.18);
 }
+/* The link hover goes to mint, which on the day panel measures 1.38. The token is
+   unchanged; by day the hover takes the day green instead (4.95). */
+:root[data-theme="light"] body > p a:hover{color:var(--good)}
 html,body{height:100%}
 body{margin:0; background:var(--bar); color:var(--ink);
   font-family:Archivo,system-ui,-apple-system,"Segoe UI",sans-serif;

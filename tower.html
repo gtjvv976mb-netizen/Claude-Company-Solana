@@ -6,8 +6,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 
-<meta name="cc-build" content="2026-09-06 01:24 UTC">
-<script>console.log("Claude Company build 2026-09-06 01:24 UTC")</script>
+<meta name="cc-build" content="2026-09-06 02:28 UTC">
+<script>console.log("Claude Company build 2026-09-06 02:28 UTC")</script>
+<script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 :root{
   /* NIGHT FIRST. The bare :root IS the Solana tower after the bell — violet-black
@@ -70,26 +71,52 @@
   --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
   --dock-bg:rgba(12,8,22,.86); --shadow:rgba(0,0,0,.6); --hint-bg:rgba(12,8,22,.9);
 }
-/* THE DAWN SHIFT. Same tower, first light through the glazing: the panels lift to
-   indigo and the bar goes with them. Ink, good/warn/bad and every brass, violet and
-   mint token inherit from the bare :root above — only the surfaces move. */
+/* THE DAY SHIFT. The same tower at eleven in the morning — a real day, not a
+   dusk: LIGHT grounds and DARK ink, the exact inverse of the night above. Both
+   halves move together, because a near-white ink left on a near-white ground is
+   the one failure this block exists to prevent. The emitted light
+   (--sol-green/-soft/-pale) and the brand mark (--sol-violet) are NOT re-themed:
+   light is light at any hour. Only paint moves. */
 :root[data-theme="light"]{
-  --panel:#1d1436; --panel-line:#31245a; --card:#241a44; --card-line:#3c2d6b;
-  --bar:#1d1436; --dock-bg:rgba(29,20,54,.86); --hint-bg:rgba(29,20,54,.92);
-  --shadow:rgba(0,0,0,.5);
+  /* --ink-faint left the handed-down day palette by one step. #7b73a0 measured
+     3.75:1 on --bg-2/#efecf7, 3.80 on the hovered row and 4.04 on --panel with a
+     validated ruler, and this tier carries running captions (figcaption, .figlabel,
+     .slugname, .note, .row .n). #6b6390 measures 4.72 / 4.78 / 5.09 / 5.51 and is
+     still a clear third step under --ink-soft. Night's --ink-faint is untouched. */
+  --ink:#1b1430; --ink-soft:#4e4470; --ink-faint:#6b6390;
+  --panel:#f7f5fc; --panel-line:#ddd6ec; --card:#ffffff; --card-line:#e6e0f2;
+  --good:#0d7a52; --warn:#8a6410; --bad:#b8372a;
+  --bar:#efecf7; --bar-ink:#1b1430; --bar-soft:rgba(27,20,48,.64);
+  --dock-bg:rgba(247,245,252,.88); --shadow:rgba(27,20,48,.18); --hint-bg:rgba(247,245,252,.95);
+  /* the paint tokens follow the ground: brass at noon is DARK brass (#d1a84f is
+     2.0:1 on paper), and the identity violet deepens so it still carries cream. */
+  --teal:#6d28c9; --amber:#8a6410; --coral:#b8503f; --claude:#b45c3c;
 }
 *{box-sizing:border-box} html,body{height:100%}
-/* DAWN SHIFT chrome: the masthead lifts to indigo first-light, never to paper —
-   every word on it must survive that ground exactly as it survived the night. */
+/* DAY SHIFT chrome: the masthead is paper now, so every word on it inverts with
+   it. Each colour below was measured against the ground it actually lands on. */
 :root[data-theme="light"] .topbar{background:var(--bar);color:var(--bar-ink)}
 :root[data-theme="light"] body{background:var(--panel)}
-:root[data-theme="light"] .firm em{color:var(--sol-soft)}
-:root[data-theme="light"] .tag{color:rgba(239,234,255,.62)}
-:root[data-theme="light"] .stat{color:rgba(239,234,255,.72)}
+:root[data-theme="light"] .firm em{color:var(--teal)}
+:root[data-theme="light"] .tag{color:var(--bar-soft)}
+:root[data-theme="light"] .stat{color:var(--bar-soft)}
 :root[data-theme="light"] .stat b{color:var(--amber)}
-:root[data-theme="light"] .home, :root[data-theme="light"] button.home{color:var(--bar-ink);border-color:#3c2d6b}
-:root[data-theme="light"] .home:hover{background:var(--amber);color:#2a2018}
-:root[data-theme="light"] .hint{color:rgba(239,234,255,.75);background:var(--hint-bg)}
+:root[data-theme="light"] .home, :root[data-theme="light"] button.home{color:var(--bar-ink);border-color:#cdc4e4}
+/* #2a2018 on the day brass is 2.97:1 — the ink flips to white, 5.36:1. */
+:root[data-theme="light"] .home:hover{background:var(--amber);color:#ffffff}
+:root[data-theme="light"] .hint{color:var(--ink-soft);background:var(--hint-bg)}
+/* the three status chips carry near-black ink on bright night fills. On the day
+   fills those same inks fall to 2.97 / 3.48 / 3.61:1, so all three flip to
+   white — 5.36 / 5.35 / 4.63:1. Measured, not assumed. */
+:root[data-theme="light"] .chip.vacant{color:#ffffff}
+:root[data-theme="light"] .chip.owned{color:#ffffff}
+:root[data-theme="light"] .chip.hq{color:#ffffff}
+/* --card IS white by day, so a white hover on near-white paper is no hover at
+   all. The directory rows get a violet tint instead. */
+:root[data-theme="light"] .row:hover{background:#f1edfa}
+:root[data-theme="light"] .row[aria-selected="true"]{background:#f1edfa}
+/* the 10px HQ status word is 4.28:1 in the day coral; one step darker clears it. */
+:root[data-theme="light"] .row.hq .s{color:#a04b2e}
 body{margin:0;background:var(--charcoal);color:var(--ink);
   font-family:Archivo,system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
 
