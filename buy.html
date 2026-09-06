@@ -5,30 +5,95 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
-<meta name="cc-build" content="2026-09-05 16:51 UTC">
-<script>console.log("Claude Company build 2026-09-05 16:51 UTC")</script>
+<meta name="cc-build" content="2026-09-06 00:46 UTC">
+<script>console.log("Claude Company build 2026-09-06 00:46 UTC")</script>
 <style>
-:root{--amber:#e0ad3d;--teal:#267f82;--charcoal:#30454a;--claude:#d97757;--terracotta:#bf623c;
-  --bg:#f7efdd;--ink:#22343a;--ink-soft:#5b6f72;--ink-faint:#8a9a99;--card:#fffaf0;--line:#e3d5b6;--on-dark:#f4ecd8}
-:root:not([data-theme="light"]){@media (prefers-color-scheme:dark){
-  --bg:#151f22;--ink:#eadfc6;--ink-soft:#a9b7b2;--ink-faint:#7b8a88;--card:#22343a;--line:#33474c}}
-:root[data-theme="dark"]{--bg:#151f22;--ink:#eadfc6;--ink-soft:#a9b7b2;--ink-faint:#7b8a88;--card:#22343a;--line:#33474c}
+/* SOLANA TOWER THEME. Night-first: the bare :root IS the theme — violet-black stone,
+   smoked oak, brushed steel, aged brass, and Solana mint used only as light. The
+   media-query and [data-theme] blocks only RESTATE it; [data-theme="light"] is the
+   DAWN SHIFT and moves surfaces only. Every colour has a bare-:root definition. */
+:root{
+  --cream:#e6ddf5;      /* light foreground that sits ON a violet ground */
+  --path-stone:#cfc7ad; /* house stone. UNCHANGED — a shared-world token. */
+  --timber:#a96934;     /* house timber. UNCHANGED. */
+  --timber-dark:#5f3e29;/* house timber shadow. UNCHANGED. */
+  --teal:#9945ff;       /* THE IDENTITY SURFACE. Solana violet — the one brand colour allowed to be paint. */
+  --solar-navy:#4a5fd8; /* secondary structural blue, pulled into the violet family */
+  --amber:#d1a84f;      /* AGED BRASS. Focus rings, numerals, chips. UNCHANGED — brass stays brass. */
+  --glass-aqua:#5ee9b5; /* mint glass */
+  --metal:#7a7f9a;      /* brushed steel, violet-cooled */
+  --terracotta:#bf623c; /* house clay. UNCHANGED. */
+  --coral:#e06b57;      /* UNCHANGED. */
+  --leaf:#3fd39a;       /* mint-leaf */
+  --charcoal:#2a2440;   /* violet charcoal — the deepest structural body */
+  --water:#14f195;      /* mint water — collapses onto --sol-green */
+  --claude:#d97757;     /* Claude's own coral — NEVER re-themed, in either tower. */
+
+  /* THE EMITTED LIGHT: the building's own mint, never a surface colour.
+     --sol-violet is the paint-legal brand mark; --sol-green is the light. */
+  --sol-green:#14f195; --sol-soft:#5ef0b4; --sol-pale:#a9ffd8; --sol-violet:#9945ff;
+  /* Name parity with the Robinhood floor: aliases, never renames. */
+  --rh-green:var(--sol-green); --rh-soft:var(--sol-soft); --rh-pale:var(--sol-pale);
+
+  --ink:#efeaff;        /* body text */
+  --ink-soft:#b0a4cf;   /* secondary prose */
+  --ink-faint:#7a6d9c;  /* eyebrows, keys, timestamps */
+  --panel:#120c1f; --panel-line:#241a3a;
+  --card:#171029; --card-line:#2e2148;
+  --good:#3ee6a8; --warn:#e0ad3d; --bad:#ff6b5a;
+  --on-dark:#efeaff;
+  /* the shell */
+  --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
+  --dock-bg:rgba(12,8,22,.86); --shadow:rgba(0,0,0,.6); --hint-bg:rgba(12,8,22,.9);
+  /* page-local names, kept (never removed) and pointed at the theme */
+  --bg:#08050f; --line:#2e2148;
+}
+:root:not([data-theme="light"]){
+  @media (prefers-color-scheme:dark){
+    --ink:#efeaff; --ink-soft:#b0a4cf; --ink-faint:#7a6d9c;
+    --panel:#120c1f; --panel-line:#241a3a; --card:#171029; --card-line:#2e2148;
+    --good:#3ee6a8; --warn:#e0ad3d; --bad:#ff6b5a;
+    --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
+    --dock-bg:rgba(12,8,22,.86); --shadow:rgba(0,0,0,.6); --hint-bg:rgba(12,8,22,.9);
+    --bg:#08050f; --line:#2e2148;
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#efeaff; --ink-soft:#b0a4cf; --ink-faint:#7a6d9c;
+  --panel:#120c1f; --panel-line:#241a3a; --card:#171029; --card-line:#2e2148;
+  --good:#3ee6a8; --warn:#e0ad3d; --bad:#ff6b5a;
+  --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
+  --dock-bg:rgba(12,8,22,.86); --shadow:rgba(0,0,0,.6); --hint-bg:rgba(12,8,22,.9);
+  --bg:#08050f; --line:#2e2148;
+}
+/* THE DAWN SHIFT. Same tower, first light through the glazing: the surfaces lift to
+   indigo and the bar goes with them. Ink, good/warn/bad and every brass, violet and
+   mint token inherit from the bare :root above — only the surfaces move. */
+:root[data-theme="light"]{
+  --panel:#1d1436; --panel-line:#31245a; --card:#241a44; --card-line:#3c2d6b;
+  --bar:#1d1436; --dock-bg:rgba(29,20,54,.86); --hint-bg:rgba(29,20,54,.92);
+  --shadow:rgba(0,0,0,.5);
+  --bg:#1d1436; --line:#3c2d6b;
+}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Archivo,system-ui,sans-serif;line-height:1.6;
   -webkit-font-smoothing:antialiased}
-nav{background:var(--charcoal);color:var(--on-dark);border-bottom:3px solid var(--amber);padding:13px 0}
+nav{background:var(--bar);color:var(--bar-ink);padding:13px 0;
+  border-bottom:1px solid var(--sol-green);
+  border-image:linear-gradient(90deg,var(--sol-violet) 0%,var(--sol-green) 100%) 1;
+  box-shadow:0 1px 14px rgba(20,241,149,.22), 0 1px 26px rgba(153,69,255,.18)}
 .wrap{max-width:760px;margin:0 auto;padding:0 24px}
 nav .wrap{display:flex;align-items:center;gap:16px}
 .brand{font-family:"Instrument Serif",Georgia,serif;font-size:24px;text-decoration:none;color:inherit}
-.brand em{font-style:italic;color:var(--amber)}
+.brand em{font-style:italic;color:var(--sol-soft)}
 nav a.back{margin-left:auto;font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:600;
-  color:rgba(244,236,216,.8);text-decoration:none;border:1px solid rgba(244,236,216,.3);padding:6px 12px;border-radius:5px}
+  color:rgba(239,234,255,.8);text-decoration:none;border:1px solid rgba(239,234,255,.3);padding:6px 12px;border-radius:5px}
 nav a.back:hover{background:var(--amber);color:#2a2018;border-color:var(--amber)}
 main{padding:56px 0 80px}
 h1{font-family:"Instrument Serif",Georgia,serif;font-weight:400;font-size:44px;line-height:1.05;margin:0 0 8px}
 .floorno{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.16em;text-transform:uppercase;
   color:var(--amber);font-weight:600}
-.notice{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--terracotta);
+.notice{background:var(--card);border:1px solid var(--card-line);border-left:4px solid var(--terracotta);
   border-radius:10px;padding:20px 22px;margin:26px 0}
 .notice h2{margin:0 0 8px;font-size:17px}
 .notice p{margin:0 0 10px;color:var(--ink-soft);font-size:14.5px}
@@ -36,12 +101,12 @@ h1{font-family:"Instrument Serif",Georgia,serif;font-weight:400;font-size:44px;l
 ol{counter-reset:s;margin:22px 0 0;padding:0;list-style:none;display:grid;gap:12px}
 ol li{counter-increment:s;position:relative;padding-left:38px;color:var(--ink-soft);font-size:15px}
 ol li::before{content:counter(s);position:absolute;left:0;top:2px;width:25px;height:25px;border-radius:50%;
-  background:var(--teal);color:#f0e4c7;font-size:12px;font-weight:700;display:grid;place-content:center;
+  background:var(--teal);color:var(--cream);font-size:12px;font-weight:700;display:grid;place-content:center;
   font-family:"JetBrains Mono",monospace}
 ol b{color:var(--ink)}
 .btn{display:inline-block;margin-top:26px;padding:12px 20px;border-radius:7px;background:var(--teal);
-  color:#f0e4c7;text-decoration:none;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
-.btn:hover{background:var(--claude);color:#2a1a14}
+  color:var(--cream);text-decoration:none;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.btn:hover{background:var(--sol-green);color:#04160e}
 .btn:focus-visible{outline:2px solid var(--amber);outline-offset:3px}
 .fine{margin-top:30px;font-size:13px;color:var(--ink-faint);line-height:1.6}
 </style>

@@ -6,41 +6,62 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-05 16:51 UTC">
-<script>console.log("Claude Company build 2026-09-05 16:51 UTC")</script>
+<meta name="cc-build" content="2026-09-06 00:46 UTC">
+<script>console.log("Claude Company build 2026-09-06 00:46 UTC")</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
    so the office reads as the same world. Claude's coral is #d97757, which sits a hair off
    the house coral #df7655 — close enough to belong, distinct enough to be the CEO. */
 :root{
-  --cream:#f0e4c7; --path-stone:#cfc7ad; --timber:#a96934; --timber-dark:#5f3e29;
-  --teal:#267f82; --solar-navy:#287e9d; --amber:#e0ad3d; --glass-aqua:#73c9d2;
-  --metal:#70828a; --terracotta:#bf623c; --coral:#df7655; --leaf:#66a348;
-  --charcoal:#30454a; --water:#21b8c4; --claude:#d97757;
+  /* NIGHT FIRST. The bare :root IS the Solana tower after the bell — violet-black
+     stone, smoked oak, brushed steel, aged brass, and Solana mint used only as light.
+     Brass (--amber) stays brass everywhere it is used; mint never becomes paint.
+     The house warm tokens (timber, path-stone, terracotta, coral, claude, amber) are
+     untouched from the Robinhood floor on purpose: brass is the COMPANY, the
+     violet/mint spectrum is the VENUE. */
+  --cream:#e6ddf5; --path-stone:#cfc7ad; --timber:#a96934; --timber-dark:#5f3e29;
+  --teal:#9945ff; --solar-navy:#4a5fd8; --amber:#d1a84f; --glass-aqua:#5ee9b5;
+  --metal:#7a7f9a; --terracotta:#bf623c; --coral:#e06b57; --leaf:#3fd39a;
+  --charcoal:#2a2440; --water:#14f195; --claude:#d97757;
+  /* THE EMITTED LIGHT: the building's own mint, never a surface colour.
+     --sol-violet is the paint-legal brand mark; --sol-green is the light. */
+  --sol-green:#14f195; --sol-soft:#5ef0b4; --sol-pale:#a9ffd8; --sol-violet:#9945ff;
+  /* Name parity with the reference floor: any rule lifted verbatim from the
+     Robinhood office still resolves. Aliases, never renames — nothing is removed. */
+  --rh-green:var(--sol-green); --rh-soft:var(--sol-soft); --rh-pale:var(--sol-pale);
 
-  --ink:#22343a; --ink-soft:#5b6f72; --ink-faint:#8a9a99;
-  --panel:#f6edd8; --panel-line:#ddceac; --card:#fffaf0; --card-line:#e6d8ba;
-  --good:#4f8f52; --warn:#c08a2e; --bad:#b0503f;
-  --on-dark:#f4ecd8;
-  /* the shell: masthead bar, dock, ground. Day = the broadsheet; night = the charcoal. */
-  --bar:#efe6cf; --bar-ink:#22343a; --bar-soft:rgba(34,52,58,.66);
-  --dock-bg:rgba(246,237,216,.9); --shadow:rgba(66,50,22,.2); --hint-bg:rgba(246,237,216,.92);
+  --ink:#efeaff; --ink-soft:#b0a4cf; --ink-faint:#7a6d9c;
+  --panel:#120c1f; --panel-line:#241a3a; --card:#171029; --card-line:#2e2148;
+  --good:#3ee6a8; --warn:#e0ad3d; --bad:#ff6b5a;
+  --on-dark:#efeaff;
+  /* the shell: masthead bar, dock, ground. Night = the violet tower; the DAWN SHIFT
+     ('light') lifts the same room to indigo first-light, never to paper. */
+  --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
+  --dock-bg:rgba(12,8,22,.86); --shadow:rgba(0,0,0,.6); --hint-bg:rgba(12,8,22,.9);
 }
 :root:not([data-theme="light"]){
   @media (prefers-color-scheme: dark){
-    --ink:#eadfc6; --ink-soft:#a9b7b2; --ink-faint:#7b8a88;
-    --panel:#1b2b2f; --panel-line:#2d4247; --card:#22343a; --card-line:#354c51;
-    --good:#7bbd80; --warn:#e0ad3d; --bad:#d9806e;
-    --bar:#30454a; --bar-ink:#f4ecd8; --bar-soft:rgba(244,236,216,.66);
-  --dock-bg:rgba(27,43,47,.86); --shadow:rgba(0,0,0,.32); --hint-bg:rgba(27,43,47,.92);
+    --ink:#efeaff; --ink-soft:#b0a4cf; --ink-faint:#7a6d9c;
+    --panel:#120c1f; --panel-line:#241a3a; --card:#171029; --card-line:#2e2148;
+    --good:#3ee6a8; --warn:#e0ad3d; --bad:#ff6b5a;
+    --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
+  --dock-bg:rgba(12,8,22,.86); --shadow:rgba(0,0,0,.6); --hint-bg:rgba(12,8,22,.9);
   }
 }
 :root[data-theme="dark"]{
-  --ink:#eadfc6; --ink-soft:#a9b7b2; --ink-faint:#7b8a88;
-  --panel:#1b2b2f; --panel-line:#2d4247; --card:#22343a; --card-line:#354c51;
-  --good:#7bbd80; --warn:#e0ad3d; --bad:#d9806e;
-  --bar:#30454a; --bar-ink:#f4ecd8; --bar-soft:rgba(244,236,216,.66);
-  --dock-bg:rgba(27,43,47,.86); --shadow:rgba(0,0,0,.32); --hint-bg:rgba(27,43,47,.92);
+  --ink:#efeaff; --ink-soft:#b0a4cf; --ink-faint:#7a6d9c;
+  --panel:#120c1f; --panel-line:#241a3a; --card:#171029; --card-line:#2e2148;
+  --good:#3ee6a8; --warn:#e0ad3d; --bad:#ff6b5a;
+  --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
+  --dock-bg:rgba(12,8,22,.86); --shadow:rgba(0,0,0,.6); --hint-bg:rgba(12,8,22,.9);
+}
+/* THE DAWN SHIFT. Same tower, first light through the glazing: the panels lift to
+   indigo and the bar goes with them. Ink, good/warn/bad and every brass, violet and
+   mint token inherit from the bare :root above — only the surfaces move. */
+:root[data-theme="light"]{
+  --panel:#1d1436; --panel-line:#31245a; --card:#241a44; --card-line:#3c2d6b;
+  --bar:#1d1436; --dock-bg:rgba(29,20,54,.86); --hint-bg:rgba(29,20,54,.92);
+  --shadow:rgba(0,0,0,.5);
 }
 
 *{box-sizing:border-box}
@@ -60,7 +81,10 @@ body{
   position:relative; z-index:5;
   display:flex; align-items:baseline; gap:16px; flex-wrap:nowrap;
   padding:12px 20px; background:var(--bar); color:var(--bar-ink);
-  border-bottom:3px solid var(--amber);
+  /* the building's light line, not a brass bar — the Solana spectrum */
+  border-bottom:1px solid var(--sol-green);
+  border-image:linear-gradient(90deg,var(--sol-violet) 0%,var(--sol-green) 100%) 1;
+  box-shadow:0 1px 14px rgba(20,241,149,.22), 0 1px 26px rgba(153,69,255,.18);
 }
 .topbar .spacer{flex:1 1 auto; min-width:0}
 .shift{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:10px;letter-spacing:.08em;
@@ -85,15 +109,15 @@ body{
 }
 @media (max-width:560px){ .topstats{gap:12px} }
 .firm{font-family:"Instrument Serif",Georgia,serif; font-size:29px; line-height:1; letter-spacing:.005em}
-.firm em{font-style:italic; color:var(--warn)}
+.firm em{font-style:italic; color:var(--sol-soft)}
 .tag{font-size:11.5px; text-transform:uppercase; letter-spacing:.16em; color:var(--bar-soft); font-weight:600}
 .topbar .spacer{margin-left:auto}
 .stat{display:flex; gap:6px; align-items:baseline; font-size:12.5px; color:var(--bar-soft)}
-.stat b{font-family:"JetBrains Mono",ui-monospace,monospace; font-size:14px; color:var(--warn); font-variant-numeric:tabular-nums}
+.stat b{font-family:"JetBrains Mono",ui-monospace,monospace; font-size:14px; color:var(--amber); font-variant-numeric:tabular-nums}
 .live{display:inline-flex; align-items:center; gap:7px; font-size:11px; letter-spacing:.12em; text-transform:uppercase; font-weight:600}
-.live .dot{width:8px;height:8px;border-radius:50%;background:var(--leaf); animation:pulse 2.4s infinite}
+.live .dot{width:8px;height:8px;border-radius:50%;background:var(--sol-green); animation:pulse 2.4s infinite}
 .live.sim .dot{background:var(--amber); animation:none}
-@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(102,163,72,.7)}70%{box-shadow:0 0 0 9px rgba(102,163,72,0)}100%{box-shadow:0 0 0 0 rgba(102,163,72,0)}}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(20,241,149,.7)}70%{box-shadow:0 0 0 9px rgba(20,241,149,0)}100%{box-shadow:0 0 0 0 rgba(20,241,149,0)}}
 
 .wrap{position:relative; height:calc(100vh - 58px)}
 
@@ -104,7 +128,7 @@ body{
   position:absolute; left:50%; transform:translateX(-50%); top:70px; z-index:6;
   max-width:min(560px, calc(100% - 32px));
   padding:10px 16px; border-radius:8px; font-size:13px; line-height:1.5; text-align:center;
-  background:rgba(27,43,47,.92); color:var(--on-dark);
+  background:var(--hint-bg); color:var(--on-dark);
   border:1px solid var(--amber); box-shadow:0 8px 24px rgba(0,0,0,.35);
 }
 #privnote a{color:var(--amber); font-weight:600}
@@ -120,7 +144,7 @@ body{
 }
 .loading.gone{display:none}
 .loading .t{font-family:"Instrument Serif",Georgia,serif; font-size:27px}
-.loading .s{font-size:12px; color:rgba(244,236,216,.6); letter-spacing:.1em; text-transform:uppercase}
+.loading .s{font-size:12px; color:rgba(239,234,255,.55); letter-spacing:.1em; text-transform:uppercase}
 
 /* The rail used to be a permanent 330px column that ate a third of the room even
    when it had nothing to say. It is a pop-up now: the dock is always there, the
@@ -129,7 +153,7 @@ body{
   position:absolute; right:14px; top:14px; z-index:9; display:flex; gap:4px;
   max-width:calc(100% - 28px); overflow-x:auto; scrollbar-width:none;
   padding:5px; border-radius:9px;
-  background:var(--dock-bg); border:1px solid var(--panel-line);
+  background:var(--dock-bg); border:1px solid rgba(20,241,149,.18);
   backdrop-filter:blur(7px); box-shadow:0 6px 18px var(--shadow);
 }
 .dock::-webkit-scrollbar{display:none}
@@ -141,7 +165,7 @@ body{
 }
 .dtab:hover{color:var(--ink); background:var(--panel-line)}
 .dtab[aria-selected="true"]{
-  background:var(--amber); border-color:var(--amber); color:#2a2018;
+  background:var(--sol-green); border-color:var(--sol-green); color:#04160e;
 }
 .dtab:focus-visible,.subtab:focus-visible,.railclose:focus-visible{
   outline:2px solid var(--amber);outline-offset:2px;
@@ -151,7 +175,7 @@ body{
    corner badge now: visible, and weightless. */
 .dtab .dot{
   position:absolute; top:4px; right:5px; width:6px; height:6px; border-radius:50%;
-  background:var(--coral); opacity:0;
+  background:var(--coral); box-shadow:0 0 6px var(--coral); opacity:0;
 }
 .dtab .dot.on{opacity:1}
 
@@ -166,7 +190,7 @@ body{
   max-height:min(72vh, calc(100% - 82px));
   display:none; flex-direction:column; min-height:0;
   background:var(--panel); border:1px solid var(--panel-line); border-radius:9px;
-  box-shadow:0 18px 44px rgba(0,0,0,.42); overflow:hidden;
+  box-shadow:0 18px 44px rgba(0,0,0,.6), 0 0 0 1px rgba(153,69,255,.08); overflow:hidden;
 }
 .rail.open{display:flex; animation:dossierIn .15s ease-out}
 .railhead{
@@ -252,7 +276,7 @@ body{
   border:1px solid var(--card-line);border-radius:9px;background:var(--panel)}
 .setup-step .n{width:25px;height:25px;display:grid;place-content:center;border-radius:50%;
   background:var(--amber);color:#2a2018;font:700 10px "JetBrains Mono",monospace}
-.setup-step.done .n{background:var(--good);color:#fff}
+.setup-step.done .n{background:var(--good);color:#04160e}
 .setup-step h5{margin:1px 0 4px;font-size:12px}.setup-step p{margin:0;color:var(--ink-soft);font-size:11px;line-height:1.45}
 .commandbox{margin-top:7px;padding:8px;border:1px dashed var(--card-line);border-radius:7px;
   background:var(--card);font:9.5px/1.5 "JetBrains Mono",monospace;overflow-wrap:anywhere;white-space:pre-wrap}
@@ -290,6 +314,7 @@ body{
 .dp-in:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 .dp-btn{font:inherit;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
   padding:6px 11px;border-radius:7px;border:0;background:var(--teal);color:var(--cream);cursor:pointer}
+.dp-btn:hover:not(:disabled){background:var(--sol-green);color:#04160e}
 .dp-btn:disabled{opacity:.5;cursor:default}
 .dp-btn.ghost{background:transparent;color:var(--ink-soft);border:1px solid var(--card-line)}
 /* margin:0 — these are <p> elements, so the browser was adding 11.5px ABOVE AND
@@ -323,7 +348,7 @@ body{
 @keyframes dossierIn{from{opacity:0; transform:translateY(-6px)} to{opacity:1; transform:none}}
 .dossier .dhead{
   position:relative; padding:11px 15px 9px; border-bottom:1px solid var(--card-line);
-  background:linear-gradient(180deg,#283d43,var(--card));
+  background:linear-gradient(180deg,#1d1436,var(--card));
 }
 .dossier .dstamp{
   font-size:9.5px; letter-spacing:.22em; text-transform:uppercase; color:var(--ink-faint);
@@ -355,7 +380,7 @@ body{
 .dossier .dv{margin:0; color:var(--ink-soft)}
 .dossier .dv.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px}
 .dossier .dq{
-  margin:0; padding:9px 11px; background:#1b2b2f; border:1px solid var(--card-line);
+  margin:0; padding:9px 11px; background:var(--panel); border:1px solid var(--card-line);
   border-radius:3px; font-family:"Instrument Serif",Georgia,serif; font-size:15px;
   line-height:1.4; color:var(--ink);
 }
@@ -363,8 +388,8 @@ body{
   display:inline-block; padding:2px 7px; border-radius:2px; font-size:9.5px;
   letter-spacing:.13em; text-transform:uppercase; border:1px solid;
 }
-.dossier .dkind.model{color:#e0ad3d; border-color:#6b5624; background:#312a17}
-.dossier .dkind.code{color:#7bbd80; border-color:#37543a; background:#1c2b1e}
+.dossier .dkind.model{color:#e0ad3d; border-color:#6b5624; background:#2a2312}
+.dossier .dkind.code{color:#3ee6a8; border-color:#1c5a44; background:#0b241b}
 .dossier .dkind.claude{color:#d97757; border-color:#6d3b2c; background:#33211b}
 .dossier .dkind.codex{color:#9fdcff; border-color:#3f5fa8; background:#1b2a58}
 .dossier .dnote{
@@ -373,7 +398,7 @@ body{
 }
 .dossier .dstat{
   display:flex; gap:14px; margin:0 0 12px; padding:9px 11px;
-  background:#1b2b2f; border:1px solid var(--card-line); border-radius:3px;
+  background:var(--panel); border:1px solid var(--card-line); border-radius:3px;
 }
 .dossier .dstat div{flex:1}
 .dossier .dstat b{display:block; font-size:15px; font-weight:600; color:var(--ink)}
@@ -386,8 +411,8 @@ body{
   border:1px solid var(--panel-line);font-family:"JetBrains Mono",ui-monospace,monospace;
   font-size:10.5px;color:var(--ink-soft);backdrop-filter:blur(3px)}
 .pulse .pill{font-weight:700;letter-spacing:.08em;padding:2px 8px;border-radius:3px;flex:none}
-.pulse .pill.run{background:#2f5c37;color:#cfe8cf}
-.pulse .pill.paused{background:#7a5a24;color:#ffe9bd}
+.pulse .pill.run{background:#0d3a2b;color:#a9ffd8}
+.pulse .pill.paused{background:#3d2f0f;color:#ffe9bd}
 .pulse .preason{opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pulse .pnums{flex:none;white-space:nowrap}
 .pulse .pnums b{color:var(--warn);font-weight:600}
@@ -408,7 +433,7 @@ body{
 .wr-bar{height:5px;border-radius:3px;background:var(--panel-line);overflow:hidden}
 .wr-bar i{display:block;height:100%;background:#d97757;border-radius:3px}
 .wr-held{font-size:10px;letter-spacing:.1em;color:var(--warn)}
-.killrow .kr-since.good{color:var(--good,#4f8f52)} .killrow .kr-since.bad{color:var(--bad,#b0503f)}
+.killrow .kr-since.good{color:var(--good,#3ee6a8)} .killrow .kr-since.bad{color:var(--bad,#ff6b5a)}
 .planbar{position:relative;height:7px;border-radius:4px;margin:7px 0 3px;
   background:linear-gradient(90deg,var(--bad) 0 18%,var(--panel-line) 18% 82%,var(--good) 82% 100%)}
 .planbar .cur{position:absolute;top:-3px;width:3px;height:13px;background:var(--warn);border-radius:2px}
@@ -421,7 +446,7 @@ body{
 .alertbar.on{display:flex}
 .alertrow{display:flex;align-items:center;gap:12px;padding:11px 16px;background:var(--warn,#c08a2e);
   color:#241c0c;font-size:13px;font-weight:600;box-shadow:0 6px 20px rgba(0,0,0,.28)}
-.alertrow.urgent{background:var(--bad,#b0503f);color:#fff}
+.alertrow.urgent{background:var(--bad,#ff6b5a);color:#2a0e09}
 .alertrow .why{font-weight:400;opacity:.9;font-size:12px}
 .alertrow .go{margin-left:auto;display:flex;gap:8px;flex:none}
 .alertrow a,.alertrow button{font:inherit;font-size:11px;font-weight:700;letter-spacing:.06em;
@@ -440,23 +465,23 @@ body{
   border:1px solid var(--card-line);border-radius:5px}
 .callspanel.on{display:flex}
 .call{background:var(--card);border:1px solid var(--card-line);border-radius:9px;padding:8px 10px}
-.call.offered{border-left:3px solid var(--good,#4f8f52)}
+.call.offered{border-left:3px solid var(--good,#3ee6a8)}
 .call.skipped{opacity:.62}
 .call header{display:flex;align-items:baseline;gap:8px;margin-bottom:5px}
 .call .sym{font-family:"Instrument Serif",Georgia,serif;font-size:19px}
 .call .cat{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;
   padding:2px 6px;border-radius:4px;background:var(--teal);color:var(--cream)}
-.call .cat.memecoin{background:var(--terracotta)} .call .cat.established{background:var(--leaf,#66a348)}
+.call .cat.memecoin{background:var(--terracotta)} .call .cat.established{background:var(--leaf,#3fd39a)}
 .call .state{margin-left:auto;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--ink-faint)}
-.call .state.live{color:var(--good,#4f8f52)}
+.call .state.live{color:var(--good,#3ee6a8)}
 .call p{margin:0 0 7px;font-size:12.5px;color:var(--ink-soft);line-height:1.45}
 .call .nums{display:flex;gap:12px;flex-wrap:wrap;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--ink-faint)}
 .call .nums b{color:var(--ink)}
 .whales{margin-top:8px;padding:8px 10px;border-radius:7px;background:var(--panel);border:1px solid var(--card-line)}
 .wh-head{font-size:12px;font-weight:700;color:var(--ink-soft)}
-.wh-head.up{color:var(--good,#4f8f52)} .wh-head.down{color:var(--bad,#b0503f)}
+.wh-head.up{color:var(--good,#3ee6a8)} .wh-head.down{color:var(--bad,#ff6b5a)}
 .wh-row{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--ink-faint);margin-top:3px}
-.wh-row.buy{color:var(--good,#4f8f52)} .wh-row.sell{color:var(--bad,#b0503f)}
+.wh-row.buy{color:var(--good,#3ee6a8)} .wh-row.sell{color:var(--bad,#ff6b5a)}
 .call .why{margin-top:6px;font-size:11.5px;color:var(--ink-faint);font-style:italic}
 .call .act{margin-top:9px;display:flex;gap:7px}
 .bud-bal{font-family:"Instrument Serif",Georgia,serif;font-size:28px;margin:4px 0 2px}
@@ -478,15 +503,15 @@ select.dp-in{cursor:pointer}
 .rp-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
 .rp-chip{font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:600;
   padding:2px 6px;border-radius:4px;background:transparent;color:var(--ink-faint);border:1px solid var(--panel-line)}
-.rp-chip.done{background:var(--good,#4f8f52);color:#fff;border-color:transparent}
+.rp-chip.done{background:var(--good,#3ee6a8);color:#04160e;border-color:transparent}
 .memo{background:var(--card); border:1px solid var(--card-line); border-radius:8px; padding:12px}
 .memo header{display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:6px}
 .memo .sym{font-family:"Instrument Serif",Georgia,serif; font-size:20px; color:var(--ink)}
 .memo .when{font-size:10.5px;color:var(--ink-faint);margin-left:auto}
 .memo .verdict{font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; padding:3px 7px; border-radius:4px}
-.v-PROPOSE,.v-APPROVED{background:var(--good); color:#fff}
+.v-PROPOSE,.v-APPROVED{background:var(--good); color:#04160e}
 .v-WATCH,.v-HELD{background:var(--warn); color:#26201a}
-.v-DECLINED,.v-VETOED,.v-killed,.v-screened_out{background:var(--bad); color:#fff}
+.v-DECLINED,.v-VETOED,.v-killed,.v-screened_out{background:var(--bad); color:#2a0e09}
 .v-PASS{background:var(--ink-faint); color:#fff}
 .memo p{margin:0 0 6px; font-size:12.5px; line-height:1.5; color:var(--ink-soft)}
 .memo .kv{display:flex; gap:12px; font-family:"JetBrains Mono",monospace; font-size:11px; color:var(--ink-faint); flex-wrap:wrap}
@@ -528,7 +553,7 @@ select.dp-in{cursor:pointer}
 .legend span{display:flex; flex-direction:column; align-items:center; gap:4px; font-size:9.5px; line-height:1.25;
   text-align:center; color:var(--ink-soft)}
 .legend i{width:56px;height:99px;border-radius:9px; display:block; background-size:contain; background-repeat:no-repeat; background-position:center;
-  border:1px solid var(--card-line,#3a4b50)}
+  border:1px solid var(--card-line,#3a3350)}
 /* A tile carrying a turntable STRIP steps through its frames; it only spins
    while the Crew tab is actually open, so a hidden panel costs nothing. */
 /* Stepped by a single JS ticker (steps(var(--fr)) is not valid CSS, and the
@@ -77773,14 +77798,24 @@ const THREE = { ACESFilmicToneMapping, AddEquation, AddOperation, AdditiveAnimat
    needs hiding or fading between the camera and a character.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const P = {                       // Markets & Makers OFFICIAL_PALETTE
+/* The Solana spectrum lives OUTSIDE the palette on purpose: P.amber stays aged brass
+   everywhere it is used today, and these are only ever emitted light (edge lines,
+   lamps, verdict chips) or the loss colour on a chip. */
+const SOL_GREEN = 0x14f195, SOL_SOFT = 0x5ef0b4, SOL_PALE = 0xa9ffd8, LOSS = 0xff5a4a;
+const SOL_VIOLET = 0x9945ff;
+
+const P = {                       // Markets & Makers OFFICIAL_PALETTE, Solana-tinted
+  /* A NORMALLY LIT OFFICE. Fifteen of the twenty-one keys are byte-identical to the
+     shipping values, and every key that moves is luminance-matched to the value it
+     replaces. The Solana identity lives in the violet/mint register (teal/glassAqua/
+     leaf/water) and in SOL_GREEN, which is emitted light, not paint. */
   cream:0xf0e4c7, pathStone:0xcfc7ad, timber:0xa96934, timberDark:0x5f3e29,
-  teal:0x267f82, solarNavy:0x287e9d, amber:0xe0ad3d, glassAqua:0x73c9d2,
-  metal:0x70828a, terracotta:0xbf623c, coral:0xdf7655, leaf:0x66a348,
-  charcoal:0x30454a, water:0x21b8c4,
+  teal:0x9945ff, solarNavy:0x4a5fd8, amber:0xe0ad3d, glassAqua:0x68d7ab,
+  metal:0x70828a, terracotta:0xbf623c, coral:0xdf7655, leaf:0x37b17c,
+  charcoal:0x30454a, water:0x28c08c,
   claude:0xd97757,                // Claude's own coral — the CEO, and only the CEO
   codex:0x6f91ff,                 // Codex pet blue — the advisory improvement engineer
-  floor:0xc4b596, path:0xb2a385, wall:0x84836c, trim:0x6d5738, sky:0x243d3a,
+  floor:0xc4b596, path:0xb2a385, wall:0x84836c, trim:0x6d5738, sky:0x352f55,
 };
 
 /* ── renderer ─────────────────────────────────────────────────────────────── */
@@ -78035,6 +78070,29 @@ function cyl(parent, r, h, at, colour, seg = 10) {
 const HALF_W = 17, HALF_D = 12.5;               // a 34 × 25 floor
 const room = new THREE.Group();
 scene.add(room);
+
+/* The Solana mark: three slanted bars, the wordmark's violet-to-mint gradient
+   running across them, laid into the floor. */
+function drawHouseMark(c) {
+  const x = c.getContext("2d"), W = c.width;
+  x.clearRect(0, 0, W, W);
+  const g = x.createLinearGradient(W * 0.18, W * 0.30, W * 0.82, W * 0.70);
+  g.addColorStop(0, "#9945FF"); g.addColorStop(1, "#14F195");
+  x.fillStyle = g;
+  const barH = W * 0.115, gap = W * 0.075, skew = W * 0.135;
+  const x0 = W * 0.22, x1 = W * 0.78;
+  const top = W * 0.5 - (barH * 3 + gap * 2) / 2;
+  for (let i = 0; i < 3; i++) {
+    const y = top + i * (barH + gap);
+    const lean = (i === 1) ? -skew : skew;   // the middle bar leans the other way
+    x.beginPath();
+    x.moveTo(x0 + Math.max(lean, 0), y);
+    x.lineTo(x1 + Math.max(lean, 0), y);
+    x.lineTo(x1 + Math.min(lean, 0), y + barH);
+    x.lineTo(x0 + Math.min(lean, 0), y + barH);
+    x.closePath(); x.fill();
+  }
+}
 
 (function buildShell() {
   const floor = new THREE.Mesh(
@@ -78660,13 +78718,35 @@ function buildPlant(at) {
   }
 
   // the meeting table is furniture, not fog — walk around it
-  solidRect(SPOTS.meeting[0], SPOTS.meeting[1], 2.6, 1.5);
 
-  // meeting rug
-  const rug = new THREE.Mesh(new THREE.CircleGeometry(3.0, 32),
-    new THREE.MeshStandardMaterial({ color: P.teal, roughness: 0.95, transparent: true, opacity: 0.34 }));
-  rug.rotation.x = -Math.PI / 2; rug.position.set(SPOTS.meeting[0], 0.022, SPOTS.meeting[1]);
-  rug.receiveShadow = true; room.add(rug);
+
+    /* ── THE MARK IN THE FLOOR ──────────────────────────────────────────────
+       The middle of the room used to be a green pool with a neon ring. It is
+       now the house mark, inlaid in the floor the way a lobby has a medallion.
+       Painted once to a canvas, so it costs one texture and no geometry, and
+       it still answers STATION_FX.meeting: the handle and the pulse()
+       registration below are what stationFlash() looks up. */
+    solidRect(SPOTS.meeting[0], SPOTS.meeting[1], 2.6, 1.5);
+    const markC = document.createElement("canvas"); markC.width = markC.height = 1024;
+    drawHouseMark(markC);
+    const markTex = new THREE.CanvasTexture(markC);
+    markTex.colorSpace = THREE.SRGBColorSpace; markTex.anisotropy = 4;
+    const medallion = new THREE.Mesh(
+      new THREE.PlaneGeometry(6.0, 6.0),
+      new THREE.MeshStandardMaterial({
+        map: markTex, transparent: true, roughness: 0.82, metalness: 0.04,
+        emissive: new THREE.Color(0x9945FF), emissiveMap: markTex,
+        emissiveIntensity: 0.16, depthWrite: false,
+      }));
+    medallion.rotation.x = -Math.PI / 2;
+    medallion.position.set(SPOTS.meeting[0], 0.024, SPOTS.meeting[1]);
+    medallion.receiveShadow = true; medallion.castShadow = false;
+    medallion.userData.noBake = true;
+    room.add(medallion);
+    /* This floor has DESK_LIGHTS but none of the fork's glow rig (GLOWS/GLOW_SCALE/pulse),
+       so the medallion registers through the breathing-light list that does exist here. */
+    pulse(medallion, { period: 9.0, floor: 0.86 });   // this floor's pulse() modulates colour
+    window.__medallion = medallion;
 
   for (const at of [[-16, 11.4], [16, 11.4], [-16, -11.4], [16, -11.4]]) buildPlant(at);
 })();

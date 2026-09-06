@@ -6,59 +6,117 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 
-<meta name="cc-build" content="2026-09-05 16:51 UTC">
-<script>console.log("Claude Company build 2026-09-05 16:51 UTC")</script>
+<meta name="cc-build" content="2026-09-06 00:46 UTC">
+<script>console.log("Claude Company build 2026-09-06 00:46 UTC")</script>
 <style>
 :root{
-  --cream:#f0e4c7; --teal:#267f82; --amber:#e0ad3d; --glass:#73c9d2; --leaf:#66a348;
-  --charcoal:#30454a; --coral:#df7655; --claude:#d97757; --timber:#a96934; --metal:#70828a;
-  --ink:#22343a; --ink-soft:#5b6f72; --ink-faint:#8a9a99;
-  --panel:#f6edd8; --panel-line:#ddceac; --card:#fffaf0; --card-line:#e6d8ba;
-  --good:#4f8f52; --on-dark:#f4ecd8;
+  /* NIGHT FIRST. The bare :root IS the Solana tower after the bell — violet-black
+     stone, smoked oak, brushed steel, aged brass, and Solana mint used only as light.
+     Brass (--amber) stays brass everywhere it is used; mint never becomes paint.
+     The house warm tokens (timber, path-stone, terracotta, coral, claude, amber) are
+     untouched from the Robinhood floor on purpose: brass is the COMPANY, the
+     violet/mint spectrum is the VENUE. */
+  --cream:#e6ddf5;      /* the light foreground that sits ON a violet ground */
+  --path-stone:#cfc7ad; /* house stone. UNCHANGED — a shared-world token. */
+  --timber:#a96934;     /* house timber. UNCHANGED. */
+  --timber-dark:#5f3e29;/* house timber shadow. UNCHANGED. */
+  --teal:#9945ff;       /* THE IDENTITY SURFACE. Solana violet — the one brand colour allowed to be paint. */
+  --solar-navy:#4a5fd8; /* secondary structural blue, pulled into the violet family. */
+  --amber:#d1a84f;      /* AGED BRASS. Focus rings, numerals, vacant chip, canopy. UNCHANGED in role. */
+  --glass-aqua:#5ee9b5; /* mint glass — translucent partitions, glazing tint. */
+  --glass:var(--glass-aqua);  /* legacy alias — this page's older name for the same glass. */
+  --metal:#7a7f9a;      /* brushed steel, violet-cooled. */
+  --terracotta:#bf623c; /* house clay. UNCHANGED. */
+  --coral:#e06b57;      /* UNCHANGED. */
+  --leaf:#3fd39a;       /* mint-leaf — planting. */
+  --charcoal:#2a2440;   /* violet charcoal — the deepest structural body, and this page's ground. */
+  --water:#14f195;      /* mint water — collapses onto --sol-green. */
+  --claude:#d97757;     /* Claude's own coral — the crest and the CEO. NEVER re-themed. */
+
+  /* THE EMITTED LIGHT: the building's own mint, never a surface colour.
+     --sol-violet is the paint-legal brand mark; --sol-green is the light. */
+  --sol-green:#14f195; --sol-soft:#5ef0b4; --sol-pale:#a9ffd8; --sol-violet:#9945ff;
+  /* Name parity with the reference floor: any rule lifted verbatim from the
+     Robinhood office still resolves. Aliases, never renames — nothing is removed. */
+  --rh-green:var(--sol-green); --rh-soft:var(--sol-soft); --rh-pale:var(--sol-pale);
+
+  --ink:#efeaff;        /* body text. Violet-tinted white. */
+  --ink-soft:#b0a4cf;   /* secondary prose. */
+  --ink-faint:#7a6d9c;  /* eyebrows, keys, timestamps. */
+  --panel:#120c1f;      /* the rail's ground. */
+  --panel-line:#241a3a; /* the rail's hairline. */
+  --card:#171029;       /* every card, row and chip ground. */
+  --card-line:#2e2148;  /* card hairline. */
+  --good:#3ee6a8;       /* mint status — one step softer than the emitted light. */
+  --warn:#e0ad3d;       /* brass status. UNCHANGED. */
+  --bad:#ff6b5a;        /* loss. UNCHANGED. */
+  --on-dark:#efeaff;    /* text over the stage. */
+  /* the shell: masthead bar, ground. Night = the violet tower; the DAWN SHIFT
+     ('light') lifts the same room to indigo first-light, never to paper. */
+  --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
+  --dock-bg:rgba(12,8,22,.86); --shadow:rgba(0,0,0,.6); --hint-bg:rgba(12,8,22,.9);
 }
 :root:not([data-theme="light"]){ @media (prefers-color-scheme: dark){
-  --ink:#eadfc6; --ink-soft:#a9b7b2; --ink-faint:#7b8a88;
-  --panel:#1b2b2f; --panel-line:#2d4247; --card:#22343a; --card-line:#354c51; --good:#7bbd80;
+  --ink:#efeaff; --ink-soft:#b0a4cf; --ink-faint:#7a6d9c;
+  --panel:#120c1f; --panel-line:#241a3a; --card:#171029; --card-line:#2e2148;
+  --good:#3ee6a8; --warn:#e0ad3d; --bad:#ff6b5a;
+  --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
+  --dock-bg:rgba(12,8,22,.86); --shadow:rgba(0,0,0,.6); --hint-bg:rgba(12,8,22,.9);
 }}
 :root[data-theme="dark"]{
-  --ink:#eadfc6; --ink-soft:#a9b7b2; --ink-faint:#7b8a88;
-  --panel:#1b2b2f; --panel-line:#2d4247; --card:#22343a; --card-line:#354c51; --good:#7bbd80;
+  --ink:#efeaff; --ink-soft:#b0a4cf; --ink-faint:#7a6d9c;
+  --panel:#120c1f; --panel-line:#241a3a; --card:#171029; --card-line:#2e2148;
+  --good:#3ee6a8; --warn:#e0ad3d; --bad:#ff6b5a;
+  --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
+  --dock-bg:rgba(12,8,22,.86); --shadow:rgba(0,0,0,.6); --hint-bg:rgba(12,8,22,.9);
+}
+/* THE DAWN SHIFT. Same tower, first light through the glazing: the panels lift to
+   indigo and the bar goes with them. Ink, good/warn/bad and every brass, violet and
+   mint token inherit from the bare :root above — only the surfaces move. */
+:root[data-theme="light"]{
+  --panel:#1d1436; --panel-line:#31245a; --card:#241a44; --card-line:#3c2d6b;
+  --bar:#1d1436; --dock-bg:rgba(29,20,54,.86); --hint-bg:rgba(29,20,54,.92);
+  --shadow:rgba(0,0,0,.5);
 }
 *{box-sizing:border-box} html,body{height:100%}
-/* DAY SHIFT chrome: every word on the masthead must survive the cream. */
-:root[data-theme="light"] .topbar{background:#efe6cf;color:#22343a}
-:root[data-theme="light"] body{background:#e7ded9}
-:root[data-theme="light"] .firm em{color:#8a651c}
-:root[data-theme="light"] .tag{color:rgba(34,52,58,.62)}
-:root[data-theme="light"] .stat{color:rgba(34,52,58,.72)}
-:root[data-theme="light"] .stat b{color:#8a651c}
-:root[data-theme="light"] .home, :root[data-theme="light"] button.home{color:#22343a;border-color:#b9ac89}
-:root[data-theme="light"] .home:hover{background:#c99b3f;color:#2a2018}
-:root[data-theme="light"] .hint{color:rgba(34,52,58,.75);background:rgba(240,236,222,.75)}
+/* DAWN SHIFT chrome: the masthead lifts to indigo first-light, never to paper —
+   every word on it must survive that ground exactly as it survived the night. */
+:root[data-theme="light"] .topbar{background:var(--bar);color:var(--bar-ink)}
+:root[data-theme="light"] body{background:var(--panel)}
+:root[data-theme="light"] .firm em{color:var(--sol-soft)}
+:root[data-theme="light"] .tag{color:rgba(239,234,255,.62)}
+:root[data-theme="light"] .stat{color:rgba(239,234,255,.72)}
+:root[data-theme="light"] .stat b{color:var(--amber)}
+:root[data-theme="light"] .home, :root[data-theme="light"] button.home{color:var(--bar-ink);border-color:#3c2d6b}
+:root[data-theme="light"] .home:hover{background:var(--amber);color:#2a2018}
+:root[data-theme="light"] .hint{color:rgba(239,234,255,.75);background:var(--hint-bg)}
 body{margin:0;background:var(--charcoal);color:var(--ink);
   font-family:Archivo,system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
 
 .topbar{position:relative;z-index:5;display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;
-  padding:12px 20px;background:var(--charcoal);color:var(--on-dark);border-bottom:3px solid var(--amber)}
+  padding:12px 20px;background:var(--bar);color:var(--bar-ink);
+  border-bottom:1px solid var(--sol-green);
+  border-image:linear-gradient(90deg,var(--sol-violet) 0%,var(--sol-green) 100%) 1;
+  box-shadow:0 1px 14px rgba(20,241,149,.22), 0 1px 26px rgba(153,69,255,.18)}
 .firm{font-family:"Instrument Serif",Georgia,serif;font-size:26px;line-height:1}
-.firm em{font-style:italic;color:var(--amber)}
-.tag{font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:rgba(244,236,216,.6);font-weight:600}
+.firm em{font-style:italic;color:var(--sol-soft)}
+.tag{font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:var(--bar-soft);font-weight:600}
 .topbar .spacer{margin-left:auto}
-.stat{display:flex;gap:6px;align-items:baseline;font-size:12px;color:rgba(244,236,216,.72)}
+.stat{display:flex;gap:6px;align-items:baseline;font-size:12px;color:var(--bar-soft)}
 .stat b{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--amber);font-variant-numeric:tabular-nums}
-.home{color:var(--on-dark);text-decoration:none;font-size:11px;letter-spacing:.12em;
-  text-transform:uppercase;font-weight:600;border:1px solid rgba(244,236,216,.3);padding:5px 11px;border-radius:5px}
+.home{color:var(--bar-ink);text-decoration:none;font-size:11px;letter-spacing:.12em;
+  text-transform:uppercase;font-weight:600;border:1px solid rgba(239,234,255,.3);padding:5px 11px;border-radius:5px}
 .home:hover{background:var(--amber);color:#2a2018;border-color:var(--amber)}
-button.home{font-family:inherit;cursor:pointer;background:transparent;color:var(--on-dark)}
-button.home.on{background:var(--good,#4f8f52);color:#fff;border-color:transparent}
+button.home{font-family:inherit;cursor:pointer;background:transparent;color:var(--bar-ink)}
+button.home.on{background:var(--sol-green);color:#04160e;border-color:transparent}
 .wallet{padding:12px 16px;border-bottom:1px solid var(--panel-line);font-size:12px;color:var(--ink-soft);display:none}
 .wallet.on{display:block}
 .wallet .addr{font-family:"JetBrains Mono",monospace;color:var(--ink);font-size:11.5px}
 .wallet .bal{margin-top:5px}
 .wallet .bal b{font-family:"JetBrains Mono",monospace;color:var(--ink)}
-.wallet .mine{margin-top:6px;color:var(--good,#4f8f52);font-weight:600}
+.wallet .mine{margin-top:6px;color:var(--good,#3ee6a8);font-weight:600}
 .msg{margin-top:10px;font-size:12px;line-height:1.5}
-.msg.err{color:var(--bad,#b0503f)} .msg.ok{color:var(--good,#4f8f52)}
+.msg.err{color:var(--bad,#ff6b5a)} .msg.ok{color:var(--good,#3ee6a8)}
 
 .wrap{display:grid;grid-template-columns:minmax(0,1fr) 340px;height:calc(100vh - 58px)}
 /* MOBILE: hiding the rail deleted the entire lease flow on phones. The page
@@ -84,7 +142,7 @@ button.home.on{background:var(--good,#4f8f52);color:#fff;border-color:transparen
 #stage canvas.dragging{cursor:grabbing}
 #stage canvas.overFloor{cursor:pointer}
 .hint{position:absolute;left:14px;bottom:12px;z-index:3;font-size:10.5px;letter-spacing:.1em;
-  text-transform:uppercase;color:rgba(244,236,216,.66);background:rgba(48,69,74,.55);
+  text-transform:uppercase;color:rgba(239,234,255,.66);background:var(--hint-bg);
   padding:5px 10px;border-radius:5px}
 
 .rail{background:var(--panel);border-left:1px solid var(--panel-line);display:flex;flex-direction:column;min-height:0}
@@ -97,13 +155,13 @@ button.home.on{background:var(--good,#4f8f52);color:#fff;border-color:transparen
 .chip{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
   padding:3px 8px;border-radius:4px;margin-top:8px}
 .chip.vacant{background:var(--amber);color:#2a2018}
-.chip.owned{background:var(--good);color:#fff}
+.chip.owned{background:var(--good);color:#04160e}
 .chip.hq{background:var(--claude);color:#2a1a14}
 .act{display:flex;gap:8px;margin-top:13px;flex-wrap:wrap}
 .btn{font:inherit;font-size:11.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
   padding:9px 14px;border-radius:6px;border:0;cursor:pointer;text-decoration:none;display:inline-block}
 .btn.primary{background:var(--teal);color:var(--cream)}
-.btn.primary:hover{background:var(--claude);color:#2a1a14}
+.btn.primary:hover{background:var(--sol-green);color:#04160e}
 .btn.ghost{background:transparent;color:var(--ink-soft);border:1px solid var(--panel-line)}
 .btn:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 .price{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--ink-soft);margin-top:9px}
@@ -118,9 +176,9 @@ button.home.on{background:var(--good,#4f8f52);color:#fff;border-color:transparen
 .row .s{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint)}
 .row.owned .s{color:var(--good)} .row.hq .s{color:var(--claude)} .row.vacant .s{color:var(--amber)}
 .row .p{margin-left:auto;font-size:10.5px;opacity:.72;white-space:nowrap;font-variant-numeric:tabular-nums}
-.row .p.up{color:var(--good);opacity:1} .row .p.down{color:#d97757;opacity:1}
+.row .p.up{color:var(--good);opacity:1} .row .p.down{color:var(--bad);opacity:1}
 .perf{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 2px;font-size:12px;font-variant-numeric:tabular-nums}
-.perf b{display:block;font-size:15px} .perf .up b{color:var(--good)} .perf .down b{color:#d97757}
+.perf b{display:block;font-size:15px} .perf .up b{color:var(--good)} .perf .down b{color:var(--bad)}
 .cost{font-size:12px;opacity:.85;margin:6px 0 2px;line-height:1.45}
 .offline{font-size:12px;opacity:.75;padding:10px 2px}
 .note{padding:10px 14px;font-size:10.5px;color:var(--ink-faint);border-top:1px solid var(--panel-line);line-height:1.5}
@@ -77194,8 +77252,8 @@ const THREE = { ACESFilmicToneMapping, AddEquation, AddOperation, AdditiveAnimat
 
 const P = {
   cream:0xf0e4c7, pathStone:0xcfc7ad, timber:0xa96934, timberDark:0x5f3e29,
-  teal:0x267f82, solarNavy:0x287e9d, amber:0xe0ad3d, glassAqua:0x73c9d2,
-  metal:0x70828a, terracotta:0xbf623c, coral:0xdf7655, leaf:0x66a348,
+  teal:0x9945ff, solarNavy:0x4a5fd8, amber:0xe0ad3d, glassAqua:0x68d7ab,
+  metal:0x70828a, terracotta:0xbf623c, coral:0xdf7655, leaf:0x37b17c,
   charcoal:0x30454a, grass:0x73a83f, claude:0xd97757,
 };
 
@@ -77356,7 +77414,7 @@ const floorY = (n) => BASE_Y + (n - 1) * FLOOR_H;   // n is 1-based
   // The entrance is the whole first impression: a double-height glazed lobby,
   // a deep canopy on brass columns, front steps down to the plaza, and the
   // firm's mark glowing above the door (the glow itself is in the lit bake).
-  box([6.8, 2.3, 0.5], [0, BASE_Y + 1.15, FOOT_Z / 2 - 0.1], 0x1d2a30);        // lobby glass, dark
+  box([6.8, 2.3, 0.5], [0, BASE_Y + 1.15, FOOT_Z / 2 - 0.1], 0x26203c);        // lobby glass, dark
   box([0.34, 2.3, 0.5], [0, BASE_Y + 1.15, FOOT_Z / 2 + 0.05], P.timberDark);  // door mullion
   box([7.6, 0.3, 2.6], [0, BASE_Y + 2.45, FOOT_Z / 2 + 1.3], P.amber);         // canopy
   for (const cx of [-3.4, 3.4]) box([0.3, 2.4, 0.3], [cx, BASE_Y + 1.2, FOOT_Z / 2 + 2.3], P.amber);
@@ -77559,7 +77617,7 @@ for (let n = 1; n <= FLOORS; n++) {
 const LIT = {
   hq:     new THREE.Color().setHex(0xd97757, THREE.SRGBColorSpace),
   owned:  new THREE.Color().setHex(0xf2d79a, THREE.SRGBColorSpace),
-  vacant: new THREE.Color().setHex(0x4d7f86, THREE.SRGBColorSpace),
+  vacant: new THREE.Color().setHex(0x6f66aa, THREE.SRGBColorSpace),
 };
 function paintFloors() {
   for (const f of floors) glass.setColorAt(f.n - 1, LIT[f.state]);
@@ -77986,9 +78044,9 @@ function chooseWallet() {
       /* A blocked popup is indistinguishable from a broken button. Say what is
          wrong, in the page, with a real link the browser will honour. */
       const ov = document.createElement("div");
-      ov.style.cssText = "position:fixed;inset:0;z-index:80;background:rgba(10,14,16,.6);display:grid;place-items:center";
+      ov.style.cssText = "position:fixed;inset:0;z-index:80;background:rgba(8,5,15,.62);display:grid;place-items:center";
       const bx = document.createElement("div");
-      bx.style.cssText = "background:var(--panel,#1b2b2f);color:inherit;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:20px 22px;max-width:340px;display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.5";
+      bx.style.cssText = "background:var(--panel,#120c1f);color:inherit;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:20px 22px;max-width:340px;display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.5";
       bx.innerHTML = "<div style='font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.7'>No wallet found</div>" +
         "<div>This browser has no Solana wallet extension available to the page.</div>" +
         "<div style='opacity:.8;font-size:12px'>If Phantom IS installed: unlock it, then press Connect again \u2014 a locked wallet does not announce itself. On a phone, open this page inside your wallet's own browser.</div>" +
@@ -78005,9 +78063,9 @@ function chooseWallet() {
     }
     if (list.length === 1) return resolve(list[0][1]);
     const overlay = document.createElement("div");
-    overlay.style.cssText = "position:fixed;inset:0;z-index:80;background:rgba(10,14,16,.6);display:grid;place-items:center";
+    overlay.style.cssText = "position:fixed;inset:0;z-index:80;background:rgba(8,5,15,.62);display:grid;place-items:center";
     const box = document.createElement("div");
-    box.style.cssText = "background:var(--panel,#1b2b2f);color:inherit;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:18px 20px;min-width:260px;display:flex;flex-direction:column;gap:8px";
+    box.style.cssText = "background:var(--panel,#120c1f);color:inherit;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:18px 20px;min-width:260px;display:flex;flex-direction:column;gap:8px";
     box.innerHTML = "<div style='font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.7'>Sign in with</div>";
     for (const [name, entry] of list) {
       const btn = document.createElement("button");

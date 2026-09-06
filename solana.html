@@ -11,12 +11,15 @@
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://claudedotcompany.com/assets/banner-1200x630.png">
+<!-- The Solana world lives at its own address now; the copy still served from the
+     apex is the same page, so point search engines at the real home. -->
+<link rel="canonical" href="https://solana.claudedotcompany.com/">
 <link rel="icon" href="assets/favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
-<meta name="cc-build" content="2026-09-05 16:51 UTC">
-<script>console.log("Claude Company build 2026-09-05 16:51 UTC")</script>
+<meta name="cc-build" content="2026-09-06 00:46 UTC">
+<script>console.log("Claude Company build 2026-09-06 00:46 UTC")</script>
 <style>
 /* ══════════════════════════════════════════════════════════════════════
    CLAUDE COMPANY — THE DEVELOPMENT
@@ -26,86 +29,125 @@
 
 /* ── 1 · tokens ─────────────────────────────────────────────────────── */
 :root{
-  /* house palette — unchanged */
-  --cream:#f0e4c7; --path-stone:#cfc7ad; --timber:#a96934; --timber-dark:#5f3e29;
-  --teal:#267f82; --amber:#e0ad3d; --glass:#73c9d2; --metal:#70828a;
-  --terracotta:#bf623c; --coral:#df7655; --leaf:#66a348; --charcoal:#30454a;
-  --claude:#d97757;
+  /* NIGHT FIRST. The bare :root IS the Solana tower after the bell — violet-black
+     stone, smoked oak, brushed steel, aged brass, and Solana mint used only as
+     light. Brass (--amber) stays brass everywhere it is used; mint never becomes
+     paint. The house warm tokens (path-stone, timber, terracotta, coral, claude)
+     are untouched on purpose: brass is the COMPANY, the violet/mint spectrum is
+     the VENUE. */
+  --cream:#e6ddf5; --path-stone:#cfc7ad; --timber:#a96934; --timber-dark:#5f3e29;
+  --teal:#9945ff; --solar-navy:#4a5fd8; --amber:#d1a84f; --glass:#5ee9b5;
+  --glass-aqua:#5ee9b5; --metal:#7a7f9a; --terracotta:#bf623c; --coral:#e06b57;
+  --leaf:#3fd39a; --charcoal:#2a2440; --water:#14f195; --claude:#d97757;
 
-  /* the sheet (light — "the morning edition") */
-  --bg:#faf4e6;          /* paper            */
-  --bg-2:#f2e8d1;        /* tinted band      */
-  --card:#fffdf5;        /* inset stock      */
-  --ink:#1d2f34;         /* body ink         */
-  --ink-soft:#48595d;    /* secondary ink    */
-  --ink-faint:#5f6f6d;   /* captions, slugs  */
-  --rule:#cdbc95;        /* hairline         */
-  --rule-soft:#e2d5b4;   /* lighter hairline */
-  --accent:#bf623c;      /* display accent (terracotta) — large type only */
-  --accent-ink:#8f4a1e;  /* accent at caption size — passes AA on paper   */
-  --hot:#e0ad3d;         /* the one fill below the fold                   */
-  --hot-ink:#2a2018;
-  --kind-model:#1f6b6e;  /* the "model" tag, dark enough for 9px on paper */
-  --on-dark:#f4ecd8;
+  /* THE EMITTED LIGHT: the building's own mint, never a surface colour.
+     --sol-violet is the paint-legal brand mark; --sol-green is the light. */
+  --sol-green:#14f195; --sol-soft:#5ef0b4; --sol-pale:#a9ffd8; --sol-violet:#9945ff;
+  /* Name parity with the Robinhood trading floor: a rule lifted verbatim from
+     that office still resolves here. Aliases, never renames — nothing removed. */
+  --rh-green:var(--sol-green); --rh-soft:var(--sol-soft); --rh-pale:var(--sol-pale);
 
-  /* the evening (hero) — fixed in both schemes: it is a picture of dusk */
-  --dusk-ink:#f8f0dc;
-  --dusk-soft:#e9dcbd;
-  --dusk-amber:#eec27a;
-  --dusk-bar:rgba(18,15,34,.94);
+  /* the sheet (night — "the evening edition") */
+  --bg:#08050f;          /* the ground       */
+  --bg-2:#120c1f;        /* tinted band      */
+  --card:#171029;        /* inset stock      */
+  --ink:#efeaff;         /* body ink         17.21:1 on the ground */
+  --ink-soft:#b0a4cf;    /* secondary ink     8.72:1 */
+  --ink-faint:#7a6d9c;   /* captions, slugs   4.33:1 */
+  --rule:#2e2148;        /* hairline         */
+  --rule-soft:#241a3a;   /* lighter hairline */
+  --accent:#d1a84f;      /* display accent (aged brass) — large type only  */
+  --accent-ink:#e0ad3d;  /* accent at caption size — 9.83:1 on the ground  */
+  --hot:#9945ff;         /* the one fill below the fold — Solana violet    */
+  --hot-ink:#ffffff;     /* violet is paint-legal, and it carries white: the
+                            .btn.solid CTA and the .skip link are 11-13px, so
+                            cream's 3.45:1 was not enough. White is 4.52:1. */
+  --kind-model:#e0ad3d;  /* the "model" tag — brass, as in the dossier */
+  --on-dark:#efeaff;
+
+  /* the trading floor's token contract, so a rule lifted from office3d resolves */
+  --panel:#120c1f; --panel-line:#241a3a; --card-line:#2e2148;
+  --good:#3ee6a8; --warn:#e0ad3d; --bad:#ff6b5a;
+  --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
+  --dock-bg:rgba(12,8,22,.86); --shadow:rgba(0,0,0,.6); --hint-bg:rgba(12,8,22,.9);
+
+  /* the evening (hero) — the tower under the Solana spectrum: violet-black
+     overhead, mint at the horizon. --dusk-amber keeps its NAME (a token name is
+     a contract) and now carries the building's mint. */
+  --dusk-ink:#f4efff;
+  --dusk-soft:#d5cbee;
+  --dusk-amber:#5ef0b4;
+  --dusk-bar:rgba(12,8,22,.94);
   --hero-sky:linear-gradient(180deg,
-    #0f0c22 0%, #171233 17%, #241a44 33%, #37255a 47%,
-    #55306a 59%, #7c4071 69%, #a85672 77%, #cf7469 83%,
-    #ec9d6b 88%, #f7bf80 93%, #f3b978 100%);
-  --hero-horizon:linear-gradient(180deg,#251a2d 0%,#181120 38%,#0d0913 100%);
-  --hero-horizon-line:rgba(244,196,120,.28);
+    #08050f 0%, #0c0820 17%, #130e31 33%, #1c1347 47%,
+    #2c1a60 59%, #45227e 69%, #6b2f9f 77%, #9945ff 84%,
+    #7b6fe6 90%, #3ecfae 96%, #14f195 100%);
+  --hero-horizon:linear-gradient(180deg,#1a1230 0%,#110b22 38%,#080513 100%);
+  --hero-horizon-line:rgba(20,241,149,.30);
 }
+/* The night is already the bare :root above; these two blocks only RESTATE it,
+   so that every colour keeps a definition on the BARE :root and the page never
+   renders one theme's text on the other theme's ground. */
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --bg:#131c1f; --bg-2:#1a2629; --card:#1d292d;
-    --ink:#ece0c6; --ink-soft:#a9b7b3; --ink-faint:#8b9a96;
-    --rule:#3a4c50; --rule-soft:#2a393d;
-    --accent:#e0ad3d; --accent-ink:#e8bb5c;
-    --hot:#e0ad3d; --hot-ink:#231a12;
-    --kind-model:#73c9d2;
-    --dusk-ink:#f8f0dc; --dusk-soft:#e9dcbd; --dusk-amber:#eec27a;
-    --dusk-bar:rgba(14,12,28,.94);
+    --bg:#08050f; --bg-2:#120c1f; --card:#171029;
+    --ink:#efeaff; --ink-soft:#b0a4cf; --ink-faint:#7a6d9c;
+    --rule:#2e2148; --rule-soft:#241a3a;
+    --accent:#d1a84f; --accent-ink:#e0ad3d;
+    --hot:#9945ff; --hot-ink:#ffffff;
+    --kind-model:#e0ad3d;
+    --panel:#120c1f; --panel-line:#241a3a; --card-line:#2e2148;
+    --good:#3ee6a8; --warn:#e0ad3d; --bad:#ff6b5a;
+    --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
+    --dock-bg:rgba(12,8,22,.86); --shadow:rgba(0,0,0,.6); --hint-bg:rgba(12,8,22,.9);
+    --dusk-ink:#f4efff; --dusk-soft:#d5cbee; --dusk-amber:#5ef0b4;
+    --dusk-bar:rgba(12,8,22,.94);
   }
 }
-/* THE DAY SHIFT — chosen, never inferred: the same tower on a clear morning.
-   The dusk stays the default and the night; flipping the switch relights the
-   hero, re-inks its type, and lets the broadsheet below run in daylight. */
+/* THE DAWN SHIFT — chosen, never inferred: the same tower, first light through
+   the glazing. The surfaces lift to indigo and the hero sky lifts with them.
+   Ink, brass, violet and mint all inherit from the bare :root above — only the
+   surfaces move, so nothing here can strand text on the wrong ground. */
 :root[data-theme="light"]{
-  --dusk-ink:#233036; --dusk-soft:#48575a; --dusk-amber:#8a651c;
-  --dusk-bar:rgba(240,236,222,.95);
+  --bg:#1d1436; --bg-2:#241a44; --card:#241a44;
+  --rule:#3c2d6b; --rule-soft:#31245a;
+  --panel:#1d1436; --panel-line:#31245a; --card-line:#3c2d6b;
+  --bar:#1d1436; --dock-bg:rgba(29,20,54,.86); --hint-bg:rgba(29,20,54,.92);
+  --shadow:rgba(0,0,0,.5);
+  --dusk-bar:rgba(29,20,54,.94);
   --hero-sky:linear-gradient(180deg,
-    #79aBd3 0%, #8db8d9 22%, #a9c9e0 44%, #c6dbe4 64%,
-    #e3e4d2 80%, #eee7cf 90%, #ecdfc0 100%);
-  --hero-horizon:linear-gradient(180deg,#d9d6c3 0%,#c6c4b0 55%,#b7b5a1 100%);
-  --hero-horizon-line:rgba(90,84,60,.28);
+    #1d1436 0%, #251a4c 17%, #2e1f60 33%, #3a2678 47%,
+    #4d2d92 59%, #6836ad 69%, #8b41c8 77%, #a95ce0 84%,
+    #8f80e4 90%, #52d6b4 96%, #2af0a8 100%);
+  --hero-horizon:linear-gradient(180deg,#2a2050 0%,#221846 38%,#1a1338 100%);
+  --hero-horizon-line:rgba(20,241,149,.34);
 }
-:root[data-theme="light"] .shade{display:none}
-/* the tower itself changes shift: stars out, lamps off, dusk masonry lifted
-   to daylight, the reflections calmed. The crest stays coral — the sign is
-   the sign at any hour. */
+:root[data-theme="light"] .shade{opacity:.5}
+/* the tower changes shift: stars out, lamps down, night masonry lifted to
+   first light, the reflections calmed. The crest stays coral — the sign is the
+   sign at any hour, on either chain. */
 :root[data-theme="light"] .hero-art #stars{display:none}
 :root[data-theme="light"] .hero-art #wins{opacity:.3}
 :root[data-theme="light"] .hero-art #refl{opacity:.4}
-:root[data-theme="light"] .hero-art #trees{fill:#42583a}
-:root[data-theme="light"] .hero-art #tower{filter:brightness(1.62) saturate(.62) hue-rotate(-14deg)}
+:root[data-theme="light"] .hero-art #trees{fill:#2f2550}
+:root[data-theme="light"] .hero-art #tower{filter:brightness(1.34) saturate(.85)}
 :root[data-theme="light"] .hero::before{content:"";position:absolute;top:9%;right:15%;
   width:78px;height:78px;border-radius:50%;z-index:1;
-  background:radial-gradient(circle,#fffdf2 0 36%,#f7dd94 58%,rgba(247,221,148,0) 72%)}
+  background:radial-gradient(circle,#eafff6 0 36%,#a9ffd8 58%,rgba(169,255,216,0) 72%)}
 
 :root[data-theme="dark"]{
-  --bg:#131c1f; --bg-2:#1a2629; --card:#1d292d;
-  --ink:#ece0c6; --ink-soft:#a9b7b3; --ink-faint:#8b9a96;
-  --rule:#3a4c50; --rule-soft:#2a393d;
-  --accent:#e0ad3d; --accent-ink:#e8bb5c;
-  --hot:#e0ad3d; --hot-ink:#231a12;
-  --kind-model:#73c9d2;
-  --dusk-ink:#f8f0dc; --dusk-soft:#e9dcbd; --dusk-amber:#eec27a;
-  --dusk-bar:rgba(14,12,28,.94);
+    --bg:#08050f; --bg-2:#120c1f; --card:#171029;
+  --ink:#efeaff; --ink-soft:#b0a4cf; --ink-faint:#7a6d9c;
+  --rule:#2e2148; --rule-soft:#241a3a;
+  --accent:#d1a84f; --accent-ink:#e0ad3d;
+  --hot:#9945ff; --hot-ink:#ffffff;
+  --kind-model:#e0ad3d;
+  --panel:#120c1f; --panel-line:#241a3a; --card-line:#2e2148;
+  --good:#3ee6a8; --warn:#e0ad3d; --bad:#ff6b5a;
+  --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
+  --dock-bg:rgba(12,8,22,.86); --shadow:rgba(0,0,0,.6); --hint-bg:rgba(12,8,22,.9);
+  --dusk-ink:#f4efff; --dusk-soft:#d5cbee; --dusk-amber:#5ef0b4;
+  --dusk-bar:rgba(12,8,22,.94);
 }
 
 /* ── 2 · base ───────────────────────────────────────────────────────── */
@@ -156,16 +198,24 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--accent-ink);outline
 .nlinks a:hover{color:var(--dusk-ink);border-bottom-color:var(--amber)}
 .pill{flex:none;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:10.5px;
   font-weight:500;letter-spacing:.18em;text-transform:uppercase;text-decoration:none;
-  color:var(--dusk-amber);border:1px solid rgba(229,176,79,.85);border-radius:999px;
+  color:var(--dusk-amber);border:1px solid rgba(94,240,180,.7);border-radius:999px;
   padding:10px 20px;background:transparent;
   transition:background .12s linear,color .12s linear}
-.pill:hover{background:var(--amber);border-color:var(--amber);color:#241a0d}
+/* the two-step: mint is what the resting control becomes when you are about to
+   press it. That is the wordmark gradient expressed as an interaction. */
+.pill:hover{background:var(--sol-green);border-color:var(--sol-green);color:#04160e}
 .topnav a:focus-visible{outline-color:#f2c76e}
 .shiftbtn{font-size:15px;line-height:1;background:none;border:1px solid rgba(128,128,128,.35);
   color:var(--dusk-ink);border-radius:50%;width:32px;height:32px;cursor:pointer;flex:none}
 .shiftbtn:hover{border-color:var(--dusk-amber)}
+/* THE MASTHEAD LIGHT LINE — the one static place the wordmark gradient earns
+   its keep: violet at the left, mint at the right. It degrades to flat mint
+   wherever border-image is unsupported. One gradient, at the top of the page,
+   is the whole budget. */
 .topnav.scrolled{position:fixed;background:var(--dusk-bar);
-  border-bottom:1px solid rgba(238,194,122,.16);
+  border-bottom:1px solid var(--sol-green);
+  border-image:linear-gradient(90deg,var(--sol-violet) 0%,var(--sol-green) 100%) 1;
+  box-shadow:0 1px 14px rgba(20,241,149,.18), 0 1px 26px rgba(153,69,255,.14);
   backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
   animation:navin .28s ease}
 @keyframes navin{from{transform:translateY(-100%)}to{transform:translateY(0)}}
@@ -192,8 +242,8 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--accent-ink);outline
   height:min(88%,880px);aspect-ratio:720/1060}
 .hero-art svg{display:block;width:100%;height:100%}
 .shade{position:absolute;inset:0;z-index:3;pointer-events:none;background:
-  linear-gradient(66deg, rgba(10,7,19,.78) 0%, rgba(10,7,19,.4) 30%, rgba(10,7,19,0) 58%),
-  linear-gradient(0deg, rgba(8,6,16,.74) 0%, rgba(8,6,16,.26) 26%, rgba(8,6,16,0) 54%)}
+  linear-gradient(66deg, rgba(8,5,15,.78) 0%, rgba(8,5,15,.4) 30%, rgba(8,5,15,0) 58%),
+  linear-gradient(0deg, rgba(6,4,12,.76) 0%, rgba(6,4,12,.28) 26%, rgba(6,4,12,0) 54%)}
 .hero-copy{position:absolute;left:0;right:0;bottom:0;z-index:4;
   padding:0 clamp(18px,4.5vw,56px) clamp(30px,6vh,72px)}
 .eyebrow{margin:0 0 clamp(12px,1.8vh,20px);font-size:10.5px;letter-spacing:.24em;
@@ -298,7 +348,7 @@ h3{font-size:20px;line-height:1.2;margin:0 0 6px;letter-spacing:-.01em}
   letter-spacing:.14em;text-transform:uppercase;font-weight:500;line-height:1.2;
   background:transparent;color:var(--ink);transition:background .12s linear,color .12s linear}
 .btn.solid{background:var(--hot);border-color:var(--hot);color:var(--hot-ink);font-weight:700}
-.btn.solid:hover{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.btn.solid:hover{background:var(--sol-green);border-color:var(--sol-green);color:#04160e}
 .btn.line:hover{background:var(--ink);color:var(--bg)}
 
 /* ── 8 · the staff box — the sixteen ───────────────────────────────── */
@@ -392,8 +442,10 @@ h3{font-size:20px;line-height:1.2;margin:0 0 6px;letter-spacing:-.01em}
 #coinspark{color:var(--claude)}
 .ticker{font-size:10.5px;letter-spacing:.2em;color:var(--accent-ink);margin:0 0 10px}
 .tokencopy{max-width:58ch}
+/* the contract plate wears the identity ring: violet is paint-legal, and this is
+   the one plate on the page that is purely and only Solana. */
 .ca{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:22px;
-  padding:12px 14px;background:var(--card);border:1px solid var(--ink);border-radius:0}
+  padding:12px 14px;background:var(--card);border:1px solid var(--teal);border-radius:0}
 .ca .calabel{font-size:9.5px;letter-spacing:.18em;color:var(--accent-ink);flex:none}
 .ca code{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;color:var(--ink);
   word-break:break-all;overflow-wrap:anywhere;flex:1;min-width:150px}
@@ -402,9 +454,9 @@ h3{font-size:20px;line-height:1.2;margin:0 0 6px;letter-spacing:-.01em}
   background:transparent;color:var(--ink);border-radius:0;padding:7px 12px;
   cursor:pointer;flex:none}
 .cacopy:hover{background:var(--ink);color:var(--bg)}
-.cacopy.done{background:var(--leaf);border-color:var(--leaf);color:#12240f}
+.cacopy.done{background:var(--leaf);border-color:var(--leaf);color:#04160e}
 .tokenlinks{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
-.verified{margin-top:16px;font-size:12px;line-height:1.6;color:var(--ink-faint)}
+.verified{margin-top:16px;font-size:12px;line-height:1.6;color:var(--ink-soft)}
 
 /* ── 13 · colophon ──────────────────────────────────────────────────── */
 footer{border-top:4px double var(--ink);padding:clamp(30px,4vw,46px) 0 clamp(34px,5vw,54px);
@@ -418,12 +470,12 @@ footer a{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:10.5px;le
   border-bottom:1px solid var(--rule)}
 footer a:hover{color:var(--ink);border-bottom-color:var(--accent)}
 .fine{margin-top:22px;padding-top:16px;border-top:1px solid var(--rule-soft);
-  font-size:11.5px;line-height:1.6;color:var(--ink-faint);max-width:78ch}
+  font-size:11.5px;line-height:1.6;color:var(--ink-soft);max-width:78ch}
 
 /* ── 14 · print ─────────────────────────────────────────────────────── */
 @media print{
   .topnav,.tokenlinks,.cacopy,.skip,.shade{display:none}
-  .hero{height:auto;min-height:0;background:#181228}
+  .hero{height:auto;min-height:0;background:#0f0a1e}
   body{background:#fff;color:#000;font-size:11pt}
   .sheet{padding:18pt 0;break-inside:avoid}
   a{text-decoration:none}
@@ -477,19 +529,19 @@ footer a:hover{color:var(--ink);border-bottom-color:var(--accent)}
 <section class="hero" id="top" aria-label="Claude Tower at dusk">
   <div class="hero-art" aria-hidden="false">
     <svg id="towersvg" viewBox="0 0 720 1060" preserveAspectRatio="xMidYMax meet" role="img" focusable="false"
-      aria-label="Claude Tower at dusk: a fifty-floor slab with scattered lit amber windows, the crown floor glowing brightest, a spark mark above the roof, low trees at the base, and the lit windows reflected in dark glossy ground.">
+      aria-label="Claude Tower at dusk: a fifty-floor slab with scattered lit mint windows, the crown floor glowing brightest, a spark mark above the roof, low trees at the base, and the lit windows reflected in dark glossy ground.">
       <defs>
         <filter id="soft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="9"/></filter>
         <filter id="soft2" x="-140%" y="-140%" width="380%" height="380%"><feGaussianBlur stdDeviation="15"/></filter>
         <linearGradient id="fwash" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#4a3a62" stop-opacity=".26"/>
-          <stop offset=".45" stop-color="#4a3a62" stop-opacity="0"/>
-          <stop offset=".72" stop-color="#f0a86a" stop-opacity="0"/>
-          <stop offset="1" stop-color="#f0a86a" stop-opacity=".2"/>
+          <stop offset="0" stop-color="#3a1f66" stop-opacity=".28"/>
+          <stop offset=".45" stop-color="#3a1f66" stop-opacity="0"/>
+          <stop offset=".72" stop-color="#14f195" stop-opacity="0"/>
+          <stop offset="1" stop-color="#14f195" stop-opacity=".2"/>
         </linearGradient>
       </defs>
       <g id="stars"></g>
-      <g id="trees" fill="#140e1f">
+      <g id="trees" fill="#0b0716">
         <rect x="94" y="858" width="9" height="44"/><rect x="70" y="812" width="56" height="50"/><rect x="82" y="794" width="32" height="22"/>
         <rect x="150" y="868" width="8" height="34"/><rect x="132" y="830" width="44" height="42"/><rect x="141" y="814" width="26" height="20"/>
         <rect x="36" y="872" width="7" height="30"/><rect x="20" y="840" width="38" height="36"/>
@@ -499,48 +551,48 @@ footer a:hover{color:var(--ink);border-bottom-color:var(--accent)}
       </g>
       <g id="tower">
         <!-- four bands, stepping back at floors 16, 29 and 41 — the built tower's profile -->
-        <rect x="496" y="656" width="26" height="224" fill="#1b1529"/>
-        <rect x="488" y="474" width="24" height="182" fill="#1b1529"/>
-        <rect x="472" y="306" width="22" height="168" fill="#1b1529"/>
-        <rect x="460" y="180" width="20" height="126" fill="#1b1529"/>
+        <rect x="496" y="656" width="26" height="224" fill="#120c22"/>
+        <rect x="488" y="474" width="24" height="182" fill="#120c22"/>
+        <rect x="472" y="306" width="22" height="168" fill="#120c22"/>
+        <rect x="460" y="180" width="20" height="126" fill="#120c22"/>
         <rect x="210" y="656" width="302" height="224" fill="#332b47"/>
         <rect x="218" y="474" width="286" height="182" fill="#372e4c"/>
         <rect x="228" y="306" width="266" height="168" fill="#3b3152"/>
         <rect x="240" y="180" width="242" height="126" fill="#403558"/>
         <rect x="210" y="180" width="302" height="700" fill="url(#fwash)"/>
-        <rect x="210" y="656" width="4" height="224" fill="#dcc99c" opacity=".45"/>
-        <rect x="218" y="474" width="4" height="182" fill="#dcc99c" opacity=".4"/>
-        <rect x="228" y="306" width="4" height="168" fill="#dcc99c" opacity=".35"/>
+        <rect x="210" y="656" width="4" height="224" fill="#8a8fa8" opacity=".45"/>
+        <rect x="218" y="474" width="4" height="182" fill="#8a8fa8" opacity=".4"/>
+        <rect x="228" y="306" width="4" height="168" fill="#8a8fa8" opacity=".35"/>
         <!-- terraces at each setback: a stone lip and planters, as built -->
-        <g fill="#cfc0a0" opacity=".8">
+        <g fill="#7a7f9a" opacity=".8">
           <rect x="206" y="652" width="310" height="5"/>
           <rect x="214" y="470" width="294" height="5"/>
           <rect x="224" y="302" width="274" height="5"/>
         </g>
-        <g fill="#5d8f4a">
+        <g fill="#2f8f6d">
           <rect x="214" y="644" width="12" height="9"/><rect x="496" y="644" width="12" height="9"/>
           <rect x="222" y="462" width="11" height="9"/><rect x="486" y="462" width="11" height="9"/>
           <rect x="232" y="294" width="10" height="9"/><rect x="472" y="294" width="10" height="9"/>
         </g>
-        <rect x="238" y="177" width="246" height="22" fill="#ffd987" opacity=".8" filter="url(#soft)"/>
+        <rect x="238" y="177" width="246" height="22" fill="#5ef0b4" opacity=".8" filter="url(#soft)"/>
         <g id="wins"></g>
-        <rect x="204" y="876" width="348" height="26" fill="#1e1830"/>
-        <rect x="308" y="866" width="106" height="7" fill="#e9b158" opacity=".9"/>
-        <rect x="312" y="873" width="5" height="29" fill="#8a6540"/>
-        <rect x="404" y="873" width="5" height="29" fill="#8a6540"/>
+        <rect x="204" y="876" width="348" height="26" fill="#150f26"/>
+        <rect x="308" y="866" width="106" height="7" fill="#14f195" opacity=".9"/>
+        <rect x="312" y="873" width="5" height="29" fill="#5a5570"/>
+        <rect x="404" y="873" width="5" height="29" fill="#5a5570"/>
         <rect x="298" y="900" width="126" height="4" fill="#3a3050"/>
         <rect x="306" y="904" width="110" height="4" fill="#332a47"/>
-        <rect x="338" y="880" width="44" height="22" fill="#f2bd63"/>
-        <rect x="326" y="884" width="6" height="18" fill="#e9b158" opacity=".8"/>
-        <rect x="388" y="884" width="6" height="18" fill="#e9b158" opacity=".8"/>
-        <rect x="232" y="161" width="258" height="4" fill="#d9c69c" opacity=".8"/>
+        <rect x="338" y="880" width="44" height="22" fill="#3ee6a8"/>
+        <rect x="326" y="884" width="6" height="18" fill="#14f195" opacity=".8"/>
+        <rect x="388" y="884" width="6" height="18" fill="#14f195" opacity=".8"/>
+        <rect x="232" y="161" width="258" height="4" fill="#8a8fa8" opacity=".8"/>
         <rect x="232" y="164" width="258" height="16" fill="#2a2138"/>
       </g>
       <circle cx="361" cy="116" r="30" fill="#d97757" opacity=".18" filter="url(#soft2)"/>
       <g id="herospark" transform="translate(361,116) scale(1.9)" fill="#d97757" color="#d97757"><circle r="2.6" fill="currentColor"/></g>
       <g id="refl">
-        <rect x="214" y="902" width="300" height="44" fill="#d8c49c" opacity=".05"/>
-        <rect x="338" y="904" width="44" height="26" fill="#eeb964" opacity=".2"/>
+        <rect x="214" y="902" width="300" height="44" fill="#7fe8bd" opacity=".05"/>
+        <rect x="338" y="904" width="44" height="26" fill="#3ee6a8" opacity=".2"/>
       </g>
     </svg>
   </div>
@@ -770,21 +822,23 @@ if(sg){spark(sg);
 var wins=document.getElementById("wins"),refl=document.getElementById("refl"),stars=document.getElementById("stars");
 if(wins&&refl){
   var rand=mulberry(50);
-  var LIT=["#ffbb50","#f6c76d","#e8a23c","#cf9542"],UNLIT="#241e33";
+  /* Solana mint in four values — a floor is lit or it is not, and violet-black
+     glass reads colder than masonry when it is dark. */
+  var LIT=["#14f195","#5ef0b4","#0fc47a","#3ee6a8"],UNLIT="#1a1330";
   var BASE=880,FH=14,WW=24,WH=8,GROUND=902;
   /* the same setbacks the 3D tower has: bands narrow at floors 16, 29 and 41 */
   function band(f){return f>40?{x0:258,cols:6,step:32}:f>28?{x0:246,cols:7,step:31}
                         :f>15?{x0:244,cols:7,step:34}:{x0:230,cols:8,step:34};}
   for(var f=1;f<=50;f++){
     var top=BASE-f*FH;
-    if(f===50){for(var k=0;k<6;k++)R(wins,262+k*33,181,30,13,"#ffe3a6",1);continue;}
+    if(f===50){for(var k=0;k<6;k++)R(wins,262+k*33,181,30,13,"#a9ffd8",1);continue;}
     var bd=band(f),X0=bd.x0,STEP=bd.step;
     var p=(f%10===0?0.32:0.13+0.08*Math.abs(Math.sin(f*1.7)));
     for(var c=0;c<bd.cols;c++){
       var lit=rand()<p;
       var fill=lit?LIT[(rand()*4)|0]:UNLIT;
       R(wins,X0+c*STEP,top+3,WW,WH,fill,lit?(0.84+rand()*0.16).toFixed(2):1);
-      if(c===0&&f%10===0)R(wins,X0-16,top+13,STEP*bd.cols+8,2,"#d9c69c",0.34);
+      if(c===0&&f%10===0)R(wins,X0-16,top+13,STEP*bd.cols+8,2,"#14f195",0.30);
       if(lit){
         var d=GROUND-(top+3+WH);
         if(d<=260){var ro=0.26*(1-d/280);
@@ -794,7 +848,7 @@ if(wins&&refl){
   }
   if(stars){var sr=mulberry(7);
     for(var i=0;i<30;i++){var s=sr();
-      R(stars,(12+sr()*696).toFixed(1),(12+sr()*318).toFixed(1),1.6,1.6,"#efe6ff",(0.1+s*0.35).toFixed(2));}}
+      R(stars,(12+sr()*696).toFixed(1),(12+sr()*318).toFixed(1),1.6,1.6,"#e6ddf5",(0.1+s*0.35).toFixed(2));}}
 }
 
 /* the nav turns charcoal only after the evening scrolls away */

@@ -11,4 +11,53 @@
   location.replace("/");
 })();
 </script>
-<p style="font-family:sans-serif">Redirecting to <a href="index.html">Claude Company</a>…</p>
+<meta name="cc-build" content="2026-09-06 00:46 UTC">
+<script>console.log("Claude Company build 2026-09-06 00:46 UTC")</script>
+<style>
+/* SOLANA TOWER THEME — night-first. This page redirects immediately, so it carries
+   only the ground, the ink and the light line. Every colour is defined on the BARE
+   :root; the media-query and [data-theme] blocks only restate it, and the DAWN SHIFT
+   ("light") moves surfaces only. Mint is light, never paint; brass stays brass. */
+:root{
+  --ink:#efeaff; --ink-soft:#b0a4cf; --ink-faint:#7a6d9c;
+  --panel:#120c1f; --panel-line:#241a3a; --card:#171029; --card-line:#2e2148;
+  --good:#3ee6a8; --warn:#e0ad3d; --bad:#ff6b5a;
+  --amber:#d1a84f; --teal:#9945ff; --claude:#d97757;
+  --sol-green:#14f195; --sol-soft:#5ef0b4; --sol-pale:#a9ffd8; --sol-violet:#9945ff;
+  --rh-green:var(--sol-green); --rh-soft:var(--sol-soft); --rh-pale:var(--sol-pale);
+  --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
+  --shadow:rgba(0,0,0,.6);
+}
+:root:not([data-theme="light"]){
+  @media (prefers-color-scheme:dark){
+    --ink:#efeaff; --ink-soft:#b0a4cf; --ink-faint:#7a6d9c;
+    --panel:#120c1f; --panel-line:#241a3a; --card:#171029; --card-line:#2e2148;
+    --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
+    --shadow:rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#efeaff; --ink-soft:#b0a4cf; --ink-faint:#7a6d9c;
+  --panel:#120c1f; --panel-line:#241a3a; --card:#171029; --card-line:#2e2148;
+  --bar:#08050f; --bar-ink:#efeaff; --bar-soft:rgba(239,234,255,.62);
+  --shadow:rgba(0,0,0,.6);
+}
+:root[data-theme="light"]{
+  --panel:#1d1436; --panel-line:#31245a; --card:#241a44; --card-line:#3c2d6b;
+  --bar:#1d1436; --shadow:rgba(0,0,0,.5);
+}
+html,body{height:100%}
+body{margin:0; background:var(--bar); color:var(--ink);
+  font-family:Archivo,system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased; display:grid; place-content:center; text-align:center}
+body > p{margin:0; padding:14px 20px; font-size:14px; color:var(--ink-soft);
+  background:var(--panel); border:1px solid var(--panel-line); border-radius:9px;
+  /* the building's light line, not a brass bar — the Solana spectrum */
+  border-top:1px solid var(--sol-green);
+  border-image:linear-gradient(90deg,var(--sol-violet) 0%,var(--sol-green) 100%) 1;
+  box-shadow:0 1px 14px rgba(20,241,149,.22), 0 1px 26px rgba(153,69,255,.18)}
+body > p a{color:var(--teal); font-weight:600; text-decoration:none}
+body > p a:hover{color:var(--sol-green)}
+body > p a:focus-visible{outline:2px solid var(--amber); outline-offset:2px}
+</style>
+<p>Redirecting to <a href="index.html">Claude Company</a>…</p>
