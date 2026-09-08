@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-08 15:33 UTC">
-<script>console.log("Claude Company build 2026-09-08 15:33 UTC")</script>
+<meta name="cc-build" content="2026-09-08 16:00 UTC">
+<script>console.log("Claude Company build 2026-09-08 16:00 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -86056,7 +86056,8 @@ function paintFeedInto(wrap, feed, settings) {
        was a reach" sentence to the card, and the sentence belongs under the header. */
     h.append(av, sym, cat);
     el.appendChild(h);
-    stampCallWithLevel(el, h, c);
+    /* No quota stamp on a card, in any view (owner, 2026-09-08). */
+    void stampCallWithLevel;
     h.append(st, why2);
 
     const ca = document.createElement("button");
@@ -86901,7 +86902,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · dry run by default"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "8d74458f992f2b4a6b39e1e5ec2b638eac98a6de";
+    const releaseCommit = "0599002d7ac1d27bb095428e5fac942c53ce7af5";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "f3acdc1ff0d95b2d0c2208ba20c051d810e6fe85199c93dff2f434adb393fca7";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -88237,27 +88238,8 @@ async function loadOverviewDashboard() {
     el.append(leadButton("See the calls", () => goTo("calls")));
     /* The numbers below are for a reader who asked for them in Settings; the three
        chips above are what everyone else needs. No bar to open. */
-    const details = { body: dashNode("div"), wrap: dashNode("div") };
-    if (detailedView()) {
-      el.appendChild(details.body);
-      const visitorCycleSlot = dashNode("div");
-      details.body.appendChild(visitorCycleSlot);
-      paintCycleSurface(visitorCycleSlot, { history: false });
-    }
-    const metrics = dashNode("div", "dashgrid");
-    metrics.append(
-      /* Working, or not working. A tenant cannot act on the desk's API keys, its daily
-         budget or its build failures, and naming them reads as instability rather than
-         as candour. The server sends the reason only to the HQ floor, so this shows
-         one only when it was actually given one. */
-      dashMetric("Desk state", desk.chip, pulse.reason ? window.PLAIN.plainDetail(pulse.reason).slice(0, 60) : desk.sentence),
-      dashMetric("House calls", openCalls == null ? "\u2014" : String(openCalls) + " open",
-        String(building.houseCalls ?? 0) + " published all-time"),
-      dashMetric("Today", String(pulse.today?.workups ?? 0) + " coins studied",
-        String(pulse.today?.kills ?? 0) + " turned down at the first screen"),
-    );
-    details.body.appendChild(metrics);
-    el.appendChild(details.wrap);
+    /* Nothing else on a visitor's Overview: the round, the level, the strain line and
+       the tile grid are all the desk's own bookkeeping. Deleted, not hidden. */
     return;
   }
   dashLoading(el, "Opening the floor dashboard…");
@@ -88367,80 +88349,12 @@ async function loadOverviewDashboard() {
      or straining is the owner's main instrument; a tile among six tiles is not
      prominent. The slot is attached now and filled when the route answers, so an await
      cannot shuffle the panel underneath it. */
-  /* NO CYCLE ON THE OVERVIEW (owner, 2026-09-08: "WHY IS THERE A CYCLE INFO?"). The
-     round, the level and the strain signal are the desk's own machinery — a visitor
-     is here to learn what this place is, not how hard its quota is working. It lives
-     on Calls, and only for a reader who turned Detailed view on. */
-  if (detailedView()) {
-    const cycleSlot = dashNode("div");
-    el.appendChild(cycleSlot);
-    paintCycleSurface(cycleSlot, { history: false });
-  }
-  /* Everything below is Detailed view only \u2014 no bar. One exception stays on screen
-     for every reader, added to the chips above: overdue rent is a money consequence,
-     and a tenant must not have to switch a setting on to find out about it. */
-  const details = { body: dashNode("div"), wrap: dashNode("div") };
-  if (detailedView()) el.appendChild(details.body);
-
-  const metrics = dashNode("div", "dashgrid");
-  metrics.append(
-    dashMetric("Desk state", desk.chip,
-      pulse.reason ? window.PLAIN.plainDetail(pulse.reason) : (pulse.lastEventTs ? "last move " + dashAge(Date.now() - pulse.lastEventTs) : desk.sentence)),
-    dashMetric("Open calls", feedPrivate ? "PRIVATE" : String(live.length),
-      feedPrivate ? "this floor's calls are private to its tenant"
-        : room.isMine ? String(offered.length) + " for you" : "the desk's own calls"),
-    dashMetric("Your bot", bot.chip, bot.sentence),
-    dashMetric("Settled P&L", feedPrivate ? "PRIVATE" : money(feedR?.body?.record?.netPnlUsd ?? 0),
-      feedPrivate ? "the tenant performance record is unavailable in this session"
-        : String(feedR?.body?.record?.settled ?? 0) + " settled trades"),
-    dashMetric("Building", String(building.floorsLeased ?? "—") + " floors leased",
-      String(building.houseCalls ?? 0) + " house calls published"),
-    dashMetric("Today", String(pulse.today?.workups ?? 0) + " coins studied",
-      String(pulse.today?.kills ?? 0) + " turned down · " + String(pulse.today?.watches ?? 0) + " on watch")
-  );
-  details.body.appendChild(metrics);
-
-  if (room.isMine && budgetR?.status === 200) {
-    const budget = budgetR.body || {};
-    let credit = "—";
-    try {
-      credit = (Number(BigInt(budget.balanceBaseUnits || "0") /
-        10n ** BigInt(Math.max(0, Number(budget.decimals || 0) - 3))) / 1000)
-        .toLocaleString(undefined, { maximumFractionDigits: 0 }) + " CLAUDECO";
-    } catch {}
-    const section = dashNode("div", "dashsection");
-    section.append(dashNode("h4", "", "Owner essentials"));
-    const row = dashNode("div", "dashgrid");
-    const rent = feedR?.body?.rent;
-    row.append(
-      dashMetric("Building credit", credit, "research and rent only"),
-      dashMetric("Rent", rent?.overdue ? "OVERDUE" : rent?.dueAt ? dashFuture(rent.dueAt) : "—",
-        rent?.dueAt ? "due " + dashWhen(rent.dueAt) + (rent.unpaidPeriods ? " \u00b7 " + rent.unpaidPeriods + " unpaid" : "") : "no lease"),
-      dashMetric("Managing Director", room.settings?.md_brain === "grok" ? "Grok" : "Claude",
-        room.settings?.mode === "grind" ? "team is grinding" : "team is on a break")
-    );
-    section.appendChild(row);
-    details.body.appendChild(section);
-  }
-
-  const recent = dashNode("div", "dashsection");
-  recent.appendChild(dashNode("h4", "", "Recent calls"));
-  if (!feed.length) recent.appendChild(dashNode("p", "dp-note",
-    feedR?.status === 403 ? "The tenant's call sheet is private." : feedR?.status === 200 ? "No calls have been published yet." : "The call sheet did not load (" + (feedR?.status ?? "no response") + ") \u2014 retrying in 30s."));
-  if (feed.length > 3) recent.appendChild(dashNode("p", "dp-note", "Showing 3 of " + feed.length + " calls \u2014 all of them are under Calls."));
-    for (const call of feed.slice(0, 3)) {
-    /* WHEREVER CALLS ARE LISTED. This summary is a list of calls, so it carries the
-       level too \u2014 a reader must not be able to find a view of the book where an L3 and
-       an L0 are indistinguishable. */
-    const row = drow([
-      ["b grow", call.symbol || String(call.mint || "").slice(0, 6)],
-      ["span", call.status === "live" ? "open" : window.PLAIN.closeReason(call.close_reason || "closed")],
-      ["faint", (dashWhen(call.delivered_at) || (call.delivered_at ? ago(call.delivered_at) : "")) + (call.status !== "live" && call.closed_at ? " \u00b7 closed " + dashWhen(call.closed_at) : "")],
-    ]);
-    row.appendChild(cycleLevelChip(call.escalation_level));
-    recent.appendChild(row);
-  }
-  details.body.appendChild(recent);
+  /* THE CYCLE IS NOT ON THIS TAB IN ANY VIEW (owner, 2026-09-08, third time of asking).
+     Gating it behind Detailed view was not removal: the owner runs with Detailed view
+     on, so he kept seeing every word of it. There is no call site here now. */
+  /* AND NOTHING ELSE (owner, 2026-09-08). The six-tile grid, owner essentials and the
+     recent-calls list are gone from this tab: the five chips above are what a tenant
+     asked to see, and the calls have a tab of their own. */
 }
 
 const CANDIDATE_BANDS = [
@@ -88601,12 +88515,8 @@ async function loadDashboardCalls(view, { force = false } = {}) {
       el.appendChild(wrap);
       if (published.length) paintFeedInto(wrap, published, body.settings);
       else wrap.appendChild(dashNode("p", "locked", feed.length ? "No open calls right now \u2014 " + feed.length + " under Closed." : "No calls have been published to this floor yet."));
-      if (detailedView()) {
-        const callsCycleSlot = dashNode("div");
-        el.appendChild(callsCycleSlot);
-        paintCycleSurface(callsCycleSlot, { history: true });
-        el.appendChild(buildScoreline(body.record, feed));
-      }
+      /* The round surface is gone from this tab too; the record lives on Performance. */
+      void paintCycleSurface;
     } else {
       const closed = feed.filter((call) => call.status !== "live");
       el.append(plainLead("Closed calls, and coins turned down.",
@@ -89110,7 +89020,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "8d74458f992f2b4a6b39e1e5ec2b638eac98a6de";
+    const executorReleaseCommit = "0599002d7ac1d27bb095428e5fac942c53ce7af5";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
