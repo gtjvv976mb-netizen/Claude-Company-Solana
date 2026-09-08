@@ -26,7 +26,16 @@ export const EXECUTION_READINESS_ROUTE = "wsol-usdc";
 // pass their configured per-trade cap so a raised-cap process cannot claim readiness
 // from a smaller rehearsal. The probe never signs or submits.
 export const EXECUTION_READINESS_AMOUNT_LAMPORTS = 5_000_000;
-export const EXECUTION_READINESS_MAX_AMOUNT_LAMPORTS = 50_000_000;
+/* THE SIXTH COPY OF THE PER-TRADE CEILING. Must equal poller.mjs OPERATOR_MAX.maxSolPerTrade
+ * in lamports. The rehearsal is run AT the active cap (poller builds it as
+ * Math.floor(CFG.maxSolPerTrade * LAMPORTS)), so a ceiling here below the operator maximum
+ * makes a correctly-armed bot refuse its own readiness probe: the owner armed 0.4 SOL on
+ * 2026-09-07 and the first line after was "READINESS not proved: execution-readiness amount
+ * is outside the supported live-cap range". Readiness gates no entry, so nothing was blocked
+ * — but the bot reported itself degraded and the dashboard said not-ready, which is the
+ * state an operator reads as broken. test-operator-max-parity.mjs now holds this to the
+ * poller's ceiling. (jupiter.mjs cannot import poller.mjs — poller imports jupiter.) */
+export const EXECUTION_READINESS_MAX_AMOUNT_LAMPORTS = 400_000_000;
 export const EXECUTION_READINESS_RESERVE_LAMPORTS = 10_000_000;
 export const MAX_GROSS_RENT_LAMPORTS = 4_200_000;
 export const WRITABLE_SNAPSHOT_ATTEMPTS = 3;

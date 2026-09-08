@@ -15,6 +15,14 @@ const TRADING_RUNTIME_FILES = Object.freeze([
   "heartbeat-health.mjs", "sleep-assertion.mjs", "strategy.mjs", "trade-policy.mjs",
   // desk-led-v4: both are loaded by the trading process, so both are part of its identity.
   "dexscreener-consensus.mjs", "desk-mirror.mjs",
+  /* token2022.mjs was missing from this list while poller.mjs:22 and jupiter.mjs:37 both
+     import it — so a fingerprint documented as "exactly the modules loaded by the trading
+     process" covered 14 of the 15 it loads, and the one it missed is the module that
+     decides whether a Token-2022 mint can tax, block or freeze the holder. Its bytes
+     could change without changing the identity this heartbeat reports. The list is
+     derived from poller.mjs's transitive imports by test-executor-publish.mjs now, so it
+     cannot silently fall behind the import graph again. */
+  "token2022.mjs",
 ]);
 
 /** A byte identity for exactly the modules loaded by the trading process. */

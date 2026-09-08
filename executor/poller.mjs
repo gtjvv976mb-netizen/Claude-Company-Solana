@@ -85,6 +85,22 @@ const MAX_ENTRY_MARK_AGE_MS = Number(process.env.MAX_ENTRY_MARK_AGE_MIN || 15) *
 const MAX_ENTRY_DEVIATION_PCT = Number(process.env.MAX_ENTRY_DEVIATION_PCT || 10);
 const RPC = process.env.SOLANA_RPC || "https://api.mainnet-beta.solana.com";
 const SECONDARY_RPC = process.env.SOLANA_RPC_SECONDARY || "https://api.mainnet-beta.solana.com";
+/* TWO SUBDOMAINS OF ONE PROVIDER ARE ONE PROVIDER. The live gate below compared
+   full hostnames, so us1.alchemy.com and us2.alchemy.com passed as "independent"
+   — and then every cross-check built on that second opinion (the SOL/USD
+   agreement, the independent mint audit, the independent finalized confirmation)
+   was one operator checking itself while all of them still appeared to pass.
+   Independence is judged on the registrable domain. Naive eTLD+1 with the few
+   two-part suffixes that would otherwise collapse to a public suffix. Ported from
+   the Robinhood fork, where this was found and fixed first. */
+const TWO_PART_SUFFIXES = new Set(["co.uk", "org.uk", "ac.uk", "com.au", "co.jp", "co.nz", "com.br", "co.in", "com.sg"]);
+export function registrableDomain(host) {
+  const parts = String(host || "").toLowerCase().replace(/\.$/, "").split(".").filter(Boolean);
+  if (parts.length <= 2) return parts.join(".");
+  const lastTwo = parts.slice(-2).join(".");
+  return TWO_PART_SUFFIXES.has(lastTwo) ? parts.slice(-3).join(".") : lastTwo;
+}
+
 const JUPITER_API_KEY = process.env.JUPITER_API_KEY || "";
 const JUPITER_API_BASE = (process.env.JUPITER_API_BASE || "https://api.jup.ag/swap/v2").replace(/\/$/, "");
 const KEYPAIR_FILE = path.resolve(process.env.KEYPAIR || "./burner.json");
@@ -310,8 +326,8 @@ if (EXECUTE) {
     fatal("both live RPC endpoints must use HTTPS");
   if (primaryHost === "api.mainnet-beta.solana.com" || secondaryHost === "api.mainnet-beta.solana.com")
     fatal("the rate-limited public Solana RPC is not accepted for either live endpoint");
-  if (primaryHost === secondaryHost)
-    fatal("SOLANA_RPC_SECONDARY must use an independent provider hostname");
+  if (primaryHost === secondaryHost || registrableDomain(primaryHost) === registrableDomain(secondaryHost))
+    fatal("SOLANA_RPC_SECONDARY must use an independent provider, not another hostname at the same one");
   if (!JUPITER_API_BASE.startsWith("https://")) fatal("JUPITER_API_BASE must use HTTPS");
   const legacy = path.resolve(process.env.STATE_FILE || "./.cc-state.json");
   if (fs.existsSync(legacy)) {
@@ -343,7 +359,23 @@ if (EXECUTE) {
  * acknowledgement retained by some old environments. OPERATOR_MAX stays at the
  * evidence-backed configuration that cleared the live preflight, and maxOpenPositions
  * stays frozen because it multiplies every other cap. */
-const OPERATOR_MAX = Object.freeze({ maxSolPerTrade: 0.05, dailySolCap: 0.5, dailyLossLimitSol: 0.15 });
+/* OWNER, 2026-09-07: 0.4 SOL a trade, and NO DAILY DEPLOYMENT CAP.
+ *
+ * dailySolCap is set far above any reachable balance rather than deleted. The rail is
+ * woven through the boot checks (DAILY_SOL_CAP below MAX_SOL_PER_TRADE is fatal), the
+ * typed LIVE_CAPS_ACK sentence, install.sh and the dashboard, and every one of those
+ * wants a number; a sentinel would mean new machinery in four files for a rail that is
+ * already redundant. It cannot bind: the wallet's spendable balance is checked on every
+ * entry and is ~2 SOL, so the daily rail sits three orders of magnitude above the money
+ * that exists. What still bounds a day is the balance itself, the per-name risk cap,
+ * book heat, maxOpenPositions and the realized-loss brake.
+ *
+ * The loss brake moves 0.15 -> 0.4 for a reason, not for symmetry: it is applied as the
+ * TIGHTER of the absolute figure and 20% of the bankroll, so at 0.15 it was the binding
+ * number and stopped the day after roughly two stop-outs on a 0.4 position. At 0.4 the
+ * percentage becomes the binding one (0.399 on this balance), which is the owner's
+ * original "stop after losing 20% of the SOL" rule actually taking effect. */
+const OPERATOR_MAX = Object.freeze({ maxSolPerTrade: 0.4, dailySolCap: 1000, dailyLossLimitSol: 0.4 });
 const capsAckSentence = (wallet, trade, daily, loss) =>
   `I acknowledge WALL-ST-E caps v2 for ${wallet}: ${trade} SOL per trade, ${daily} SOL per day, ${loss} SOL rolling realized-loss entry brake`;
 
@@ -406,6 +438,13 @@ const CFG = {
   fNameMax: number("F_NAME_MAX", process.env.F_NAME_MAX || DEFAULTS.fNameMax, { min: 0.00001, max: 1 }),
   bookHeatMax: number("BOOK_HEAT_MAX", process.env.BOOK_HEAT_MAX || DEFAULTS.bookHeatMax, { min: 0.00001, max: 1 }),
   maxAgeHours: number("MAX_AGE_HOURS", process.env.MAX_AGE_HOURS || DEFAULTS.maxAgeHours, { min: 0.01, max: 720 }),
+  /* THE ONLY THING THE DESK'S CONVICTION CAN DO, AND ONLY BECAUSE A HUMAN HERE ASKED.
+   * A take-it-or-leave-it floor, read from THIS machine's environment. It cannot change
+   * an amount — the position is identical on the taking side — so it is not a way back
+   * to the conviction MULTIPLIER that was removed from strategy.mjs on 2026-09-07.
+   * 0 (the default) means conviction changes nothing in this process at all. */
+  minConviction: number("MIN_CONVICTION", process.env.MIN_CONVICTION || DEFAULTS.minConviction,
+    { min: 0, max: 100 }),
   scaleOutPct: 0,
 };
 if (EXECUTE && configuredDailyCap.units < configuredTradeCap.units)
@@ -1173,8 +1212,22 @@ async function onEntry(ev) {
   });
 
   const takeProfitRule = resolveTakeProfitRule(ev.take_profit_x, CFG.takeProfitX);
-  const fixed = Number(ev.fixed_sol) > 0 ? Math.min(Number(ev.fixed_sol), CFG.maxSolPerTrade) : CFG.fixedSol;
-  const perCall = { ...CFG, ...takeProfitRule, fixedSol: fixed,
+  /* SIZE IS THIS PROCESS'S, NOT THE FEED'S. `ev.fixed_sol` and `ev.size_sol` ride on
+   * every event and are read here for NOTHING.
+   *
+   * This line used to be `Number(ev.fixed_sol) > 0 ? Math.min(Number(ev.fixed_sol),
+   * CFG.maxSolPerTrade) : CFG.fixedSol`, and the min() made it look safe: the desk
+   * could only ever shrink the trade. Restoring it would be a mistake for the same
+   * reason it was removed (owner, 2026-09-07) — a party that can shrink the order is
+   * still choosing the order. The desk decides WHAT and WHEN; the size comes from
+   * FIXED_SOL / MAX_SOL_PER_TRADE and the rails in strategy.mjs, all of which are read
+   * from this machine's own environment and can only be raised by the operator typing
+   * the caps acknowledgement in front of them.
+   *
+   * The tenant who wants a different size changes it HERE, on their own box. That the
+   * server also stores a `fixed_sol` for the floor's screen is now a display fact with
+   * no authority over this wallet. */
+  const perCall = { ...CFG, ...takeProfitRule, fixedSol: CFG.fixedSol,
     networkFeeReserveSol: EXECUTE ? jupiter.cfg.expectedNetworkFeeLamports / LAMPORTS : 0 };
   const normalizedCall = { ...ev, entry_ref: 1, stop: entryReference.stopRatio,
     target: entryReference.targetRatio };
@@ -1325,6 +1378,16 @@ async function handleDeskExitEvent(ev) {
   try { new PublicKey(ev?.mint); }
   catch { throw new Error("invalid Solana mint in desk exit event"); }
   requirePositiveCallId(ev?.call_id, "desk exit call_id");
+  /* THE IDEA IS OVER, SO THE HELD ENTRY IS OVER. A call whose entry was held while
+     exposure was frozen must never be replayed after the desk has closed it — the exit
+     is the desk's determination that the trade is finished, whether or not this bot ever
+     got into it. Dropping it here also covers the case where the entry is still sitting
+     in the backlog and the exit arrives in a later batch. */
+  try {
+    const retired = journal.dropDeferredEntriesForCall(ev.call_id);
+    if (retired) log(`HELD CALL ${ev.symbol || ev.mint} (call ${ev.call_id}) retired: ` +
+      "the desk closed it before exposure unfroze, so it is not offered again");
+  } catch {}
   const eventId = ev.event_id || `${FLOOR}:${ev.id}`;
   const reason = `desk exit (${ev.code || "exit"})`;
   const pos = S.positions[ev.mint];
@@ -2421,6 +2484,51 @@ async function reconcileHeldCalls() {
  * the sequential cursor pass are unchanged from before; only their position in the tick
  * moved. Every early return here is a feed verdict, not a tick verdict — the caller still
  * runs the custody pass and the mirror afterwards. */
+/**
+ * OFFER BACK THE CALLS THE FREEZE HELD.
+ *
+ * Nothing here is a bypass of anything. Each held event goes through `onEntry`, the same
+ * function the feed calls, so it faces the same gates in the same order against the clock
+ * of the moment it runs — the band's own window (a nano call is past in a minute), the
+ * mark's age and deviation, the book, the pause and hard-stop files, the risk history,
+ * and then the bot's own sizing rails. The freeze is still absolute: if an intent is
+ * unresolved, nothing is offered at all, and if a replay signs a buy the drain stops
+ * there so only one buy is ever in flight.
+ */
+async function drainDeferredEntries() {
+  let held = [];
+  try { held = journal.deferredEntries(); } catch { return; }
+  if (!held.length) return;
+  if (journal.hasBlockingIntent()) return;
+  for (const row of held) {
+    const ev = row.event;
+    const key = String(ev.event_id || `${FLOOR}:${ev.id}`);
+    log(`HELD CALL ${ev.symbol || ev.mint} (call ${ev.call_id}) is offered again — ` +
+      `exposure unfroze ${Math.round((Date.now() - row.deferredAt) / 1000)}s after it was held`);
+    try {
+      await onEntry(ev);
+      journal.dropDeferredEntry(row.eventId);
+    } catch (error) {
+      const intent = journal.getIntent(`entry:${key}`);
+      const undecided = !intent || ["planned", "failed", "expired"].includes(intent.state);
+      if (undecided && isTransientEntryFailure(error) &&
+          journal.bumpDeferredEntryAttempt(row.eventId) <= MAX_ENTRY_RETRIES) {
+        log(`RETRY ${ev.symbol || ev.id} (held call ${ev.call_id}): ${error.message} — ` +
+          `transient, attempt ${row.attempts + 1} of ${MAX_ENTRY_RETRIES}; the call stays held`);
+        continue;
+      }
+      log(`SKIP ${ev.symbol || ev.id} (held call ${ev.call_id}): ${error.message} — ` +
+        "the held call is retired");
+      journal.dropDeferredEntry(row.eventId);
+    }
+    // A replayed entry that signed a buy freezes exposure again, by the same rule.
+    if (journal.hasBlockingIntent()) {
+      log("a held call was acted on and its buy is in flight — the rest stay held");
+      break;
+    }
+  }
+}
+
 async function consumeFeed() {
   try {
     const response = await fetch(`${API}/api/floor/${FLOOR}/executor/feed?after=${S.cursor}`, {
@@ -2482,12 +2590,22 @@ async function consumeFeed() {
         save();
         log(`primed at cursor ${S.cursor} — ${events.length} historic event(s) skipped; trading forward only`);
       } else {
-        // Exit safety is not held hostage by an earlier bad entry. Pre-latch/process
-        // every exit in the validated batch before the sequential cursor pass.
+        /* Exit safety is not held hostage by an earlier bad entry. Pre-latch/process
+         * every exit in the validated batch before the sequential cursor pass.
+         *
+         * AND EXACTLY ONCE. This pass used to hand every exit to handleDeskExitEvent and
+         * then the cursor loop below handed it over a SECOND time: measured 2026-09-07,
+         * 24 exit executions for 12 desk determinations. The second call is a retry, and
+         * a retry is worth keeping — but only for an exit whose first attempt THREW. One
+         * that was handled is remembered here and skipped below, so a determination is
+         * executed once and reads once in the log. */
         let unsafeExitPrepass = false;
+        const prepassed = new Set();
         for (const ev of events.filter((event) => event.type === "exit")) {
           try {
-            await handleDeskExitEvent(ev);
+            const disposition = await handleDeskExitEvent(ev);
+            prepassed.add(String(ev.id));
+            if (disposition === "not-held") log(`EXIT ${ev.symbol} — not held`);
           } catch (error) {
             const positionLatched = S.positions[ev.mint]?.exitExecutionRequired === true;
             let deferred = false;
@@ -2516,15 +2634,48 @@ async function consumeFeed() {
           }
           const nextCursor = advanceFrozenBatchCursor(S.cursor, events);
           if (nextCursor > S.cursor) {
+            /* HOLD THE CALLS THE CURSOR IS ABOUT TO CROSS. DO NOT ABANDON THEM.
+             *
+             * Crossing the batch is a DURABLE decision: the cursor moves past every
+             * entry in it, and an id at or below the cursor is never re-read. Measured
+             * on 2026-09-07 with one signed-but-unconfirmed buy in the journal (the
+             * ordinary consequence of an RPC timeout after signing): three published
+             * calls, feed ids 48, 49 and 50, were crossed — abandoned permanently, and
+             * not one of them appeared in the log by name.
+             *
+             * THE FREEZE ITSELF IS UNTOUCHED, and that matters: no new exposure is
+             * taken while a buy's fate is unknown, which is the whole reason the freeze
+             * exists. What changes is what happens to the CALL. It is written to the
+             * journal's deferred_entries table, verbatim and durably, and offered back
+             * to onEntry once the intent resolves — where it faces every gate again
+             * against the clock of that moment: the band window, the mark's age and
+             * deviation, the book, the pauses, the risk history, the rails. A call that
+             * went stale in the meantime is refused there, by the same rule that refuses
+             * any stale call, and a desk exit for it retires it outright. */
+            const held = events.filter((event) => event.type === "entry");
+            for (const event of held) {
+              try {
+                journal.deferEntryEvent(event);
+                log(`HOLD ${event.symbol || event.mint} (call ${event.call_id}): new exposure is frozen while ` +
+                  `intent ${blockingIntent} is unresolved — the call is held and offered again when it resolves`);
+              } catch (error) {
+                log(`SKIP ${event.symbol || event.mint} (call ${event.call_id}): could not hold the call ` +
+                  `while exposure is frozen — ${error.message}`);
+              }
+            }
             S.cursor = nextCursor;
             save();
             log(`journal intent ${blockingIntent} is unresolved — exits were preprocessed; ` +
-              `new exposure stayed frozen and cursor advanced to ${S.cursor} to expose the next batch`);
+              `new exposure stayed frozen${held.length ? `, ${held.length} entr${held.length === 1 ? "y was" : "ies were"} held for replay` : ""} ` +
+              `and cursor advanced to ${S.cursor} to expose the next batch`);
           } else {
             log(`journal intent ${blockingIntent} is unresolved — exits stay latched and new exposure is frozen`);
           }
           return;
         }
+        /* Exposure is not frozen. Anything the freeze held is offered again BEFORE this
+           batch's own entries, so a call published earlier is decided on earlier. */
+        await drainDeferredEntries();
         for (const ev of events) {
           try {
             if (ev.type === "entry") {
@@ -2532,8 +2683,10 @@ async function consumeFeed() {
               entryRetries.delete(String(ev.event_id || `${FLOOR}:${ev.id}`));
             }
             else if (ev.type === "exit") {
-              const disposition = await handleDeskExitEvent(ev);
-              if (disposition === "not-held") log(`EXIT ${ev.symbol} — not held`);
+              if (!prepassed.has(String(ev.id))) {
+                const disposition = await handleDeskExitEvent(ev);
+                if (disposition === "not-held") log(`EXIT ${ev.symbol} — not held`);
+              }
             } else throw new Error(`unknown event type ${ev.type}`);
             S.cursor = Math.max(S.cursor, Number(ev.id));
             save();

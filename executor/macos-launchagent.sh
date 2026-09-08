@@ -30,9 +30,9 @@ Commands:
 Options:
   --executor-dir DIR   Directory containing poller.mjs and launchd-runner.mjs.
   --env-file FILE      Existing owner-only .cc-executor.env (default: executor dir).
-  --max-sol SOL        arm-caps: maximum SOL per trade (up to 0.05).
-  --daily-sol-cap SOL  arm-caps: rolling 24-hour deployment cap (up to 0.5).
-  --daily-loss-cap SOL arm-caps: rolling realized-loss entry brake (up to 0.15).
+  --max-sol SOL        arm-caps: maximum SOL per trade (up to 0.4).
+  --daily-sol-cap SOL  arm-caps: rolling 24-hour deployment cap (up to 1000 — removed in effect; the wallet binds).
+  --daily-loss-cap SOL arm-caps: rolling realized-loss entry brake (up to 0.4).
 
 This lifecycle never funds a wallet, changes trading mode, removes pause or hard-stop
 sentinels, or terminates a manually-started poller. arm-caps is the sole cap-changing

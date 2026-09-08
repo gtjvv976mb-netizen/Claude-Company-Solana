@@ -81,9 +81,15 @@ async function onEvent(ev) {
   if (Date.now() - dayStart > 86400e3) { spentToday = 0; dayStart = Date.now(); }
   const c = ev.call || {};
   if (ev.type === "entry") {
-    const wantSol = Math.min(Number(c.size_sol || MAX_SOL), MAX_SOL);
+    /* THE SIZE IS THIS MACHINE'S, EVEN HERE. This read `Math.min(Number(c.size_sol ||
+     * MAX_SOL), MAX_SOL)`, letting the desk's number shrink the order. It is a dry-run
+     * adapter that never signs, so the money consequence was nil — but it is also the
+     * file somebody copies when they want "a simple one", and a min() on a remote
+     * number is exactly the pattern the live poller was just cleared of. `c.size_sol`
+     * is logged as the desk's advisory estimate and used for nothing. */
+    const wantSol = MAX_SOL;
     if (spentToday + wantSol > DAILY_CAP) return log(`SKIP entry ${c.symbol}: daily cap (${spentToday.toFixed(3)}/${DAILY_CAP} SOL spent)`);
-    log(`ENTRY ${c.symbol} (${c.mint}) — desk sized ${c.size_sol} SOL, capped to ${wantSol} SOL`,
+    log(`ENTRY ${c.symbol} (${c.mint}) — this bot sizes ${wantSol} SOL (desk's advisory ${c.size_sol ?? "none"} SOL is not binding)`,
       `| stop ${c.stop} target ${c.target}`);
     if (!EXECUTE) return log("DRY RUN — live signing is intentionally disabled in this release");
     const { sig } = await jupiterSwap({ inputMint: WSOL, outputMint: c.mint,

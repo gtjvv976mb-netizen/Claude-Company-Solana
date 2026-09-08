@@ -230,6 +230,29 @@ export class ExecutionJournal {
         reason TEXT NOT NULL,
         observed_at INTEGER NOT NULL
       ) STRICT;
+      /* ENTRIES THE FREEZE CROSSED, KEPT SO THEY ARE NOT LOST.
+       *
+       * While a signed buy's fate is unknown the poller takes no new exposure, and it
+       * still has to move the feed cursor so a NEWER exit cannot hide behind the frozen
+       * window. Those two facts together used to abandon every call published in that
+       * window: the cursor went past ids that can never be re-read. Measured 2026-09-07,
+       * three published calls went that way in one 6-second window.
+       *
+       * The event is written here instead, verbatim, and re-offered to onEntry once the
+       * intent resolves. The freeze is unchanged — nothing is bought while it holds —
+       * and the replay is not a bypass either: onEntry re-runs every gate against the
+       * clock of the moment it runs, so a call whose band window has passed is refused
+       * exactly as it would have been. */
+      CREATE TABLE IF NOT EXISTS deferred_entries (
+        event_id TEXT PRIMARY KEY,
+        feed_id INTEGER NOT NULL,
+        call_id INTEGER NOT NULL,
+        mint TEXT NOT NULL,
+        symbol TEXT,
+        event TEXT NOT NULL,
+        deferred_at INTEGER NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0
+      ) STRICT;
       CREATE TABLE IF NOT EXISTS tx_attempts (
         intent_id TEXT NOT NULL REFERENCES intents(id) ON DELETE RESTRICT,
         attempt INTEGER NOT NULL,
@@ -746,6 +769,54 @@ export class ExecutionJournal {
       entryIntentId: row.entry_intent_id, eventId: row.event_id, feedId: row.feed_id,
       callId: row.call_id, mint: row.mint, reason: row.reason, observedAt: row.observed_at,
     } : null;
+  }
+
+  /**
+   * Keep an entry the frozen-cursor path crossed, so it can be offered again when the
+   * blocking intent resolves. Idempotent: the same feed event may be seen twice.
+   */
+  deferEntryEvent(event, { now = this.now() } = {}) {
+    const eventId = String(event?.event_id || "");
+    const feedId = Number(event?.id);
+    const callId = Number(event?.call_id);
+    const mint = String(event?.mint || "");
+    if (!eventId || !Number.isSafeInteger(feedId) || feedId <= 0 ||
+        !Number.isSafeInteger(callId) || callId <= 0 || !mint)
+      throw new Error("a deferred entry needs an event id, a feed id, a call id and a mint");
+    this.db.prepare(`INSERT INTO deferred_entries
+      (event_id,feed_id,call_id,mint,symbol,event,deferred_at,attempts)
+      VALUES(?,?,?,?,?,?,?,0) ON CONFLICT(event_id) DO NOTHING`)
+      .run(eventId, feedId, callId, mint, event.symbol ? String(event.symbol) : null,
+        JSON.stringify(event), Number(now));
+    return this.deferredEntries().find((row) => row.eventId === eventId) || null;
+  }
+
+  /** Oldest first: a call published earlier is offered back earlier. */
+  deferredEntries() {
+    return this.db.prepare("SELECT * FROM deferred_entries ORDER BY feed_id").all()
+      .map((row) => ({
+        eventId: row.event_id, feedId: row.feed_id, callId: row.call_id, mint: row.mint,
+        symbol: row.symbol, deferredAt: row.deferred_at, attempts: row.attempts,
+        event: JSON.parse(row.event),
+      }));
+  }
+
+  dropDeferredEntry(eventId) {
+    return this.db.prepare("DELETE FROM deferred_entries WHERE event_id=?")
+      .run(String(eventId)).changes > 0;
+  }
+
+  /** A desk exit for the call retires the deferred entry: the idea is over. */
+  dropDeferredEntriesForCall(callId) {
+    return this.db.prepare("DELETE FROM deferred_entries WHERE call_id=?")
+      .run(Number(callId)).changes;
+  }
+
+  bumpDeferredEntryAttempt(eventId) {
+    this.db.prepare("UPDATE deferred_entries SET attempts=attempts+1 WHERE event_id=?")
+      .run(String(eventId));
+    return this.db.prepare("SELECT attempts FROM deferred_entries WHERE event_id=?")
+      .get(String(eventId))?.attempts ?? 0;
   }
 
   attempts(id) {

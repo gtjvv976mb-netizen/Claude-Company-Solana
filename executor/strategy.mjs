@@ -42,9 +42,9 @@ import { POLICY_DEFAULTS, POLICY_VERSION, pricePolicy } from "./trade-policy.mjs
 export { POLICY_VERSION };
 
 export const DEFAULTS = {
-  maxSolPerTrade: 0.05,      // hard ceiling; Kelly may size well under it
-  dailySolCap: 0.5,          // total SOL deployed per rolling day
-  dailyLossLimitSol: 0.15,   // realized losses that stop new entries for the day
+  maxSolPerTrade: 0.4,       // hard ceiling; Kelly may size well under it
+  dailySolCap: 1000,         // owner removed the daily cap; the wallet balance binds
+  dailyLossLimitSol: 0.4,    // realized losses that stop new entries for the day
   maxOpenPositions: 24,      // a sentinel; risk decides, not a count (see poller LIVE_LIMITS)
 
   /* ── SIZING: risk-at-stop, not notional ──────────────────────────────────
@@ -104,11 +104,27 @@ export const DEFAULTS = {
   /* THE FIXED FUND: the operator's per-trade CEILING (0 = size by Kelly/flat risk).
    * It bounds how much is ever bet on one call; the risk rails below may size UNDER
    * it, and Kelly's skip verdicts still decide whether to bet at all. */
-  fixedSol: 0.02,
-  /* THE SMALLEST SHARE OF THE CEILING THE TEAM'S CONFIDENCE CAN REDUCE A TRADE TO.
-   * Live conviction runs 20-51 out of 100, so an unfloored scale would put almost
-   * every trade at a fifth of size and the fees would eat the book. */
-  convictionFloor: 0.35,
+  fixedSol: 0.4,
+  /* THE DESK'S CONVICTION IS A REASON TO TAKE A CALL OR TO SKIP IT. IT IS NOT A SIZE
+   * DIAL, AND THE MULTIPLIER THAT MADE IT ONE IS GONE ON PURPOSE (2026-09-07).
+   *
+   * It read `Math.max(c.convictionFloor, Math.min(1, conviction / 100))` with a 0.35
+   * floor, and the position was multiplied by it. Every other desk field had already
+   * been taken out of the sizing path by 9eee450 — size_sol and fixed_sol are read
+   * NOWHERE — and this one survived because it looked like risk management rather than
+   * like a size instruction. It was the same thing wearing a different word: live
+   * conviction runs 20 to 51 out of 100, so the desk moved the stake over a 2.9x range
+   * (0.35x to 1.0x) through a field it authors itself. A coach who could talk a seat
+   * into scoring its conviction higher moved real money without ever writing the word
+   * size, which is exactly the laundering channel the owner's rule closes.
+   *
+   * WHAT REPLACES IT IS AN OPERATOR SWITCH, NOT A DIAL. `minConviction` lets the
+   * OPERATOR, on their own box, refuse calls the desk is lukewarm about. It is
+   * all-or-nothing by construction: the trade is taken at exactly the size the bot's
+   * own rails produce, or it is not taken. A gate that cannot change an amount cannot
+   * be used to set one. 0 disables it, and 0 is the default — conviction reaching this
+   * engine changes nothing at all unless a human turned this on. */
+  minConviction: 0,
   /* The most of the STOP DISTANCE the round trip's network fees may be. Judged against
      the risk taken rather than the position, so a wide stop may carry more fee in
      absolute terms and still be worth taking — see the note in planEntry. */
@@ -141,6 +157,25 @@ export function planEntry({ call, cfg = DEFAULTS, state }) {
         `${lossBrake.toFixed(4)} SOL — ${equityBrake < Math.abs(c.dailyLossLimitSol)
           ? `${(Number(c.dailyLossPctOfEquity) * 100).toFixed(0)}% of a ${Number(state.equitySol).toFixed(4)} SOL bankroll`
           : "the operator's absolute cap"})` };
+
+  /* THE ONE THING THE DESK'S CONVICTION MAY DO, AND ONLY IF THE OPERATOR ASKED FOR IT.
+   *
+   * A refusal is not a size: the amount is byte-identical on the taking side of this
+   * line whatever conviction says, so nothing here can be used to dial a stake up or
+   * down. Off by default (minConviction 0), which is why a lukewarm call sizes exactly
+   * like a confident one on a stock install.
+   *
+   * SILENCE IS NOT A LOW SCORE. A call that states no conviction passes the gate, because
+   * the alternative is that one missing feed field silently stops every entry — and the
+   * desk's silence has never been evidence here (the deleted multiplier treated it the
+   * same way). An operator who wants unscored calls refused wants a different gate, and
+   * should say so rather than have this one guess. */
+  if (Number(c.minConviction) > 0) {
+    const stated = Number(call.conviction);
+    if (Number.isFinite(stated) && stated < Number(c.minConviction))
+      return { action: "skip",
+        reason: `conviction ${stated}/100 is under the operator's ${c.minConviction} minimum` };
+  }
 
   // A call with no stop cannot be risk-managed; refuse it rather than hold
   // something with no floor under it.
@@ -189,23 +224,17 @@ export function planEntry({ call, cfg = DEFAULTS, state }) {
   const feeReserve = Math.max(0, Number(c.networkFeeReserveSol) || 0);
   const heat = state.bookHeat ?? 0;
 
-  /* THE TEAM'S OWN CONFIDENCE, PRICED INTO THE SIZE.
-   *
-   * Every call already carries the desk's conviction out of 100, and the bot had never
-   * once read it — the feed sends it, and nothing here looked. The owner's rule is
-   * "more risk, less size", and the team's uncertainty IS risk, so a call the desk is
-   * lukewarm about gets a smaller position than one it argues for.
-   *
-   * Floored deliberately. Live conviction runs 20 to 51 out of 100, so an unfloored
-   * scale would put nearly every trade at a fifth of size, where the round trip is
-   * mostly fees. A call with no conviction stated is not scaled at all — the desk's
-   * silence is not evidence, and the rails below still bound it. */
+  /* NO DESK FIELD MULTIPLIES THE AMOUNT FROM HERE DOWN. `call.conviction` used to, and
+   * the haircut and its fee-floor guard both stood on this spot; they are deleted, not
+   * moved. Everything below is this process's own number — its risk fraction against
+   * its own equity, its own fixedSol, its own maxSolPerTrade, its own per-name cap, its
+   * own book heat, its own daily cap, its own spendable balance, its own fee floor. */
   /* THE SMALLEST POSITION WORTH OPENING, in SOL rather than as a fraction.
    *
    * Network fees are fixed per trade, so below this size the round trip costs more than
    * maxFeeShareOfTrade of the position and the trade is mostly fees. It is hoisted here
-   * because it must bound EVERY sizing path, not only the conviction haircut: the risk
-   * rails could still clamp a position under it, and then the fee share exceeded what
+   * because it must bound EVERY sizing path, not only the one that produced `want`: the
+   * risk rails could still clamp a position under it, and then the fee share exceeded what
    * the desk assumes when it decides whether to publish a call at all. That gap broke
    * the contract the desk and the executor are supposed to keep — the desk published a
    * 16% stop on a rough coin and the bot refused it, because the rails had sized to
@@ -233,45 +262,30 @@ export function planEntry({ call, cfg = DEFAULTS, state }) {
     ? (2 * feeReserve) / (c.maxFeeShareOfStop * stopForFees)
     : 0;
 
-  const conviction = Number(call.conviction);
-  const convictionScale = Number.isFinite(conviction) && conviction > 0
-    ? Math.max(c.convictionFloor, Math.min(1, conviction / 100))
-    : 1;
-
   /* THE CEILING, then the rails. `fixedSol` is what the OPERATOR permits on one trade,
    * not an instruction to bet exactly that: the risk rails may size under it and never
    * over it. Kelly's own skip verdicts above still decide WHETHER to bet. */
   let want = (f * equity) / effectiveStopFrac;
   if (c.fixedSol > 0) { want = c.fixedSol; why = `operator ceiling ${c.fixedSol} SOL`; }
   want = Math.min(want, c.maxSolPerTrade);
-  if (call.size_sol != null) want = Math.min(want, Number(call.size_sol));
-  if (convictionScale < 1) {
-    /* SCALING DOWN STOPS HELPING ONCE FEES DOMINATE.
-     *
-     * Network fees are FIXED per trade, so halving the position doubles them as a share
-     * of it. Measured against the desk's eight most recent published calls: at the full
-     * 0.05 SOL the fee is 2.0% of the trade and four were tradeable; scaled to 0.0175
-     * by a conviction of 30 the fee becomes 5.7% and only ONE was. Shrinking the
-     * position did not reduce risk — it converted the trade into fees and then failed
-     * the executor's own cost guard.
-     *
-     * So conviction may scale down only to the point where the round trip still costs
-     * less than maxFeeShareOfTrade. Below that a smaller trade is strictly worse: the
-     * same lamports of fee against less upside. This does not overrule the owner's
-     * "more risk, less size" — it stops that rule running past the point where it
-     * inverts. */
-    const scaled = want * convictionScale;
-    if (scaled >= feeFloorSol) {
-      want = scaled;
-      why += `; conviction ${conviction}/100 sizes to ${(convictionScale * 100).toFixed(0)}%`;
-    } else if (want > feeFloorSol) {
-      want = feeFloorSol;
-      why += `; conviction ${conviction}/100 would size to ${scaled.toFixed(4)} SOL, held at ` +
-        `${feeFloorSol.toFixed(4)} where fees are ${(c.maxFeeShareOfTrade * 100).toFixed(1)}% of the trade`;
-    }
-    // If even the ceiling is under the fee floor, leave it alone — the rails below and
-    // the minimum-size check decide, and they already refuse a position of pure fees.
-  }
+  /* THE DESK'S size_sol IS NOT CONSULTED, AND THE min() THAT USED TO CONSULT IT IS GONE
+   * ON PURPOSE. Do not restore it.
+   *
+   * It read `if (call.size_sol != null) want = Math.min(want, Number(call.size_sol))`,
+   * which looks like pure prudence — it could only ever shrink the order. That is
+   * exactly why it survived so long. But shrinking IS deciding: a desk that can move
+   * the number down by an arbitrary amount is choosing how much is bought, and the
+   * owner's rule (2026-09-07) is architectural rather than a risk preference — the
+   * trading team decides WHAT to buy and WHEN to sell, and this bot decides HOW MUCH,
+   * from its own configuration and its own caps. A remote party who can set the size
+   * to 0.0001 can silence this bot as surely as one who can set it to 10.
+   *
+   * `call.size_sol` still arrives on the wire (the desk publishes it as an advisory
+   * estimate for the tenant's screen and its own record) and is deliberately read
+   * NOWHERE in the sizing path. Every limit that still binds below — the operator
+   * ceiling, maxSolPerTrade, the per-name risk cap, book heat, the daily deploy cap,
+   * the spendable balance, the fee floor — is this process's own number, which is the
+   * point. */
 
   /* SIZE DOWN TO EACH RAIL RATHER THAN REFUSING THE CALL.
    *
@@ -317,7 +331,9 @@ export function planEntry({ call, cfg = DEFAULTS, state }) {
     return { action: "skip", reason: `book heat ${(heat * 100).toFixed(1)}% + ${(actualF * 100).toFixed(1)}% exceeds ${(c.bookHeatMax * 100).toFixed(0)}%` };
 
   return { action: "buy", sol: want, f: actualF, estimatedF: f, rNet, wMin,
-    convictionScale, boundBy,
+    /* No convictionScale. There is no scale: the desk's conviction cannot move this
+       number, so there is nothing here to report about how far it moved it. */
+    boundBy,
     reason: `${why}${boundBy ? `; sized down by ${boundBy}` : ""}; actual stop risk ${(actualF * 100).toFixed(2)}%` };
 }
 

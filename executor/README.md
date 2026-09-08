@@ -11,22 +11,96 @@ remain disabled; the only live-capable path is the local `poller.mjs` service.
 Trading is risky, and these controls do not make the calls profitable. Use a new,
 dedicated burner wallet and fund it with no more than you can lose.
 
-## The first-start rule
+## Install in one command
 
-On its first successful feed read, WALL-ST-E records the newest delivery ID and
-skips everything older. It does **not** replay calls that were published before the
-poller started. This is true in dry-run and live mode.
+On a Mac, or on a Linux host you control (a small VPS is fine), paste one line and
+answer one prompt:
 
-After that cursor is established, only later deliveries are eligible. Do not delete
-the state database to force a replay; reconcile the journal and wallet first.
+```bash
+curl -fsSL https://claudedotcompany.com/install.sh | bash -s -- --floor <YOUR_FLOOR_NUMBER>
+```
 
-## Default installation: dry run
+**Both platforms are first-class and take the same command.** Everything except the
+last step is one shared path with one set of guarantees — Node, the burner wallet, the
+hidden secret prompt, the staged and per-file-checked release, the 0600 environment.
+Only the supervisor differs:
 
-Install from the exact 40-character release commit shown by the floor UI. Review the
-checkout before running it; live mode refuses piped/mutable runtime downloads. Node
->=22.13 and <25 must already be installed from a package source you trust. The installer asks for
-the floor’s executor feed secret through `/dev/tty`, creates a dedicated unfunded burner
-locally, stores secrets at mode `0600`, and installs a systemd service.
+| | Linux | macOS |
+|---|---|---|
+| Supervisor | systemd system unit `cc-executor` | per-user LaunchAgent `com.claudeco.wallste` |
+| Installed by | this script, writing a hardened unit | [`macos-launchagent.sh`](#macos-launchagent-lifecycle), invoked by this script |
+| Needs `sudo` | yes, for the system unit | **no**, nothing outside your home folder |
+| Logs | `journalctl -u cc-executor` | `~/Library/Logs/ClaudeCompany/wallste.stdout.log` |
+| Stop it | `sudo systemctl stop cc-executor` | `bash <release>/macos-launchagent.sh unload` |
+
+Windows has neither, and is covered [under WSL2](#windows-install-under-wsl2) below.
+
+**That is a dry run and it trades nothing.** The executor reads your floor's calls
+and runs the whole local policy without signing or submitting a single transaction.
+Going live is a separate, deliberate command described under
+[Explicit live installation](#explicit-live-installation), and it makes you retype
+the wallet's own public key before it will arm.
+
+The installer will:
+
+- generate a brand-new, **empty** burner wallet on that machine at
+  `~/claudeco-executor/burner.json`, mode `0600`, and never transmit it anywhere;
+- ask for the floor's executor feed secret through `/dev/tty` — never as a flag,
+  because argv lands in your shell history and in the process list;
+- offer to install a **private** copy of Node if the host has none in range: the
+  official build, verified against nodejs.org's own `SHASUMS256.txt` before anything
+  is unpacked, kept under the install directory. No `sudo`, no package manager, no
+  shell profile edited, and any system Node left exactly as it is;
+- run `node --check` on every staged file and `npm ci --ignore-scripts`, then hand the
+  finished release to the platform's supervisor — a hardened systemd unit on Linux, or
+  `macos-launchagent.sh install` and `load` on macOS. It refuses to install over a
+  WALL-ST-E agent that is already running, rather than repointing it at a new wallet.
+
+Ask the installer anything before you run it:
+
+```bash
+curl -fsSL https://claudedotcompany.com/install.sh | bash -s -- --help
+```
+
+`--help` prints the safe default, every flag, and where the key is written. If you
+would rather read the whole thing first, download it, compare its SHA-256 with the
+value shown beside the install button on the site, and run it from disk.
+
+Watch what it decides — the installer prints the right one for your platform when it
+finishes:
+
+```bash
+sudo journalctl -u cc-executor -f                                  # Linux
+tail -f ~/Library/Logs/ClaudeCompany/wallste.stdout.log            # macOS
+```
+
+### Double-click install (macOS download)
+
+`Install WALL-ST-E.command` is the same one-liner in a file a person can
+double-click. It opens Terminal, explains in plain words that nothing will be
+traded, shows the installer's SHA-256, asks for the floor number, and runs it.
+
+macOS quarantines anything downloaded from a browser, so the first launch must be
+**right-click → Open** (or `xattr -d com.apple.quarantine "Install WALL-ST-E.command"`
+in Terminal) — a plain double-click will refuse with "unidentified developer".
+
+The launcher itself can only ever start a dry run: it holds no credentials, no
+wallet and no `--live`. It asks for no administrator password, because nothing on the
+macOS path needs one.
+
+Two Mac-specific things worth knowing before you fund anything. A laptop that is
+asleep is not trading — the runner keeps the machine awake on AC power and
+[pauses entries on battery](#macos-launchagent-lifecycle) — so for a funded wallet an
+always-on host is safer. And if a WALL-ST-E agent is already loaded on that Mac, the
+installer stops before creating anything and tells you to unload it deliberately
+first, rather than repointing a running executor at a new wallet.
+
+### Prefer to clone it yourself?
+
+Piping a script into a shell is a reasonable thing to refuse. Install from the exact
+40-character release commit shown by the floor UI instead, and review the checkout
+before running it. This is also the **required** route for live mode, which refuses
+piped or mutable runtime downloads:
 
 ```bash
 git clone https://github.com/gtjvv976mb-netizen/Claude-Company.git
@@ -35,15 +109,34 @@ git checkout --detach <PUBLISHED_COMMIT_SHA>
 bash executor/install.sh --floor <YOUR_FLOOR_NUMBER>
 ```
 
-Dry run downloads the same calls and applies the same local policy without signing
-or submitting a transaction. Check its decisions before considering live mode:
+### Windows: install under WSL2
 
-```bash
-sudo journalctl -u cc-executor -f
+Windows has no systemd, so Git Bash, MSYS2 and Cygwin cannot run the executor —
+the installer detects all three and says so rather than failing obscurely. WSL2 is
+a real Linux host and everything above works there unchanged.
+
+In PowerShell, as Administrator, once:
+
+```powershell
+wsl --install -d Ubuntu
 ```
 
-For unattended feed authentication, create a mode-`0600` secret file and add
-`--secret-file`:
+Reboot if it asks. Then open the **Ubuntu** app from the Start menu and run this
+inside that Ubuntu shell — not PowerShell, not Git Bash:
+
+```bash
+sudo apt-get update && sudo apt-get install -y curl
+curl -fsSL https://claudedotcompany.com/install.sh | bash -s -- --floor <YOUR_FLOOR_NUMBER>
+```
+
+Two WSL2 facts worth knowing before you fund anything: closing the last Ubuntu
+window stops WSL2, and a stopped WSL2 stops the executor; and Windows suspending
+the VM has the same effect. For a wallet you intend to fund, a small always-on Linux
+VPS is the safer host.
+
+### Unattended feed authentication
+
+For a scripted install, create a mode-`0600` secret file and add `--secret-file`:
 
 ```bash
 umask 077
@@ -56,13 +149,28 @@ bash executor/install.sh --floor <YOUR_FLOOR_NUMBER> \
 `CC_SECRET` authenticates the read-only floor feed. It is not a wallet key and
 cannot move funds.
 
-### macOS LaunchAgent lifecycle
+## The first-start rule
 
-This is a supervisor-adoption path for an **already configured macOS executor**, not
-a fresh-wallet installer. Installation does not create an environment, wallet,
-journal, or live acknowledgement, and never funds anything. From the stable executor
-directory, install the locked dependencies and per-user supervisor. It consumes the
-existing owner-only `.cc-executor.env`; it never sources that file through a shell:
+On its first successful feed read, WALL-ST-E records the newest delivery ID and
+skips everything older. It does **not** replay calls that were published before the
+poller started. This is true in dry-run and live mode.
+
+After that cursor is established, only later deliveries are eligible. Do not delete
+the state database to force a replay; reconcile the journal and wallet first.
+
+## macOS LaunchAgent lifecycle
+
+This is the supervisor behind the macOS install above, and it is also usable on its
+own. `install.sh` does not reimplement any of it: on a Mac it prepares exactly what
+this script requires — Node, the install directory, the locally generated 0600 burner,
+the hidden secret prompt, the 0600 environment, the staged and per-file-checked
+release — and then hands `macos-launchagent.sh` **absolute** `--executor-dir` and
+`--env-file` paths for `install` and then `load`, in that order.
+
+By itself the script creates no environment, wallet, journal, or live
+acknowledgement, and it never funds anything. Run it directly when you already have a
+configured executor directory. It consumes the existing owner-only
+`.cc-executor.env`; it never sources that file through a shell:
 
 ```bash
 chmod 600 executor/.cc-executor.env
@@ -233,11 +341,63 @@ Live mode requires all of the following:
 
 - a dedicated burner wallet generated and held on the executor host;
 - two private HTTPS Solana RPC endpoints from independent providers, each supplied from
-  its own mode-`0600` file;
-- a Jupiter API key supplied from a mode-`0600` file;
+  its own mode-`0600` file — or entered through the guided prompts below, which write
+  exactly those files for you;
+- a Jupiter API key, from a mode-`0600` file or the same guided prompts;
 - `--live` on the installer command;
 - per-trade, rolling deployment, and rolling-loss caps for a supervised canary; and
 - a terminal acknowledgement made by retyping the displayed burner public key.
+
+### The guided route
+
+If you run the live install on a terminal and leave any of `--rpc-file`,
+`--secondary-rpc-file` or `--jupiter-key-file` off, the installer walks you through
+that credential instead of refusing. For each one it says what it is and why it is
+needed, points at a provider with a free tier, reads the value **hidden** from
+`/dev/tty`, and then **checks it against the provider before accepting it** — a real
+`getLatestBlockhash` for each RPC, a real (taker-less, unsignable) price quote for
+the Jupiter key. A value the provider rejects is never stored; you are shown the
+provider's own error and asked again, up to three times.
+
+Accepted values are written mode `0600` under `~/claudeco-executor`
+(`.rpc-primary`, `.rpc-secondary`, `.jupiter-key`), so a later re-run is unattended.
+Nothing you type is echoed, and no credential is ever passed as a command argument —
+not to the installer, and not to `curl`, whose request is fed in through stdin
+precisely so that an RPC URL never appears in `/proc/PID/cmdline`.
+
+The wizard runs **only** in live mode and **only** when a terminal is present. A dry
+run needs no credentials at all, and a scripted live install with all three files
+never sees a prompt.
+
+### Going live on macOS
+
+A live install on a Mac takes the same flags and asks the same two questions, and it
+additionally routes the adoption through
+[`macos-release.sh`](#macos-launchagent-lifecycle) — the same versioned-release
+workflow this project uses for its own executor. `install.sh` invokes it with absolute
+`--env-file`, `--legacy-workdir` and release paths (relative ones are refused before
+either script runs) and it does the rest itself: it clones the pinned commit, verifies
+every runtime blob against that commit, runs the executor test suite, and only then
+binds the stopped, entry-paused executor to the immutable release it built. Those
+versioned releases live under `~/claudeco-executor/versioned-releases/<commit>/`, kept
+separate from the installer's own `releases/` so nothing prunes one.
+
+Because `macos-release.sh` requires an entry pause before it will bind a release, a
+live macOS install comes up **entry-paused on purpose**. Review the wallet and the
+monitor, then lift it deliberately:
+
+```bash
+rm ~/claudeco-executor/PAUSE_ENTRIES
+```
+
+`macos-release.sh` is used **only** on this route. It gates on a live environment —
+its validator aborts with `versioned live adoption requires EXECUTE=1` and then
+demands `LIVE_TRADING_ACK`, `JUPITER_API_KEY`, `SOLANA_RPC` and
+`SOLANA_RPC_SECONDARY` — so a dry-run install cannot satisfy it, and the installer
+does not try to. A default macOS install adopts its staged release through
+`macos-launchagent.sh install` and `load` directly, and stays `EXECUTE=0`.
+
+### The scripted route
 
 Prepare the Jupiter key and RPC files without putting credentials in shell history:
 
