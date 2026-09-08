@@ -208,7 +208,25 @@ export function planEntry({ call, cfg = DEFAULTS, state }) {
   if (n < c.nMin || W == null || rNet == null) {
     f = c.fDefault;
     why = `small sample (n=${n}) — flat ${(f * 100).toFixed(2)}% risk`;
-  } else if (W <= wMin) {
+  /* THE W_min REFUSAL IS A SIZING VERDICT, SO IT ONLY BINDS WHERE KELLY ACTUALLY SIZES.
+   *
+   * With the operator's fixed fund on, `want` is overwritten by c.fixedSol a few lines
+   * below and NOTHING Kelly computes reaches the order — so this branch could only ever
+   * refuse the trade outright, never shrink it. That is a veto wearing a sizing rule's
+   * clothes, and the measured consequence is wholesale refusal: 56 trades are closed at
+   * a 50% hit rate (live call stats, 2026-09-08) and nMin is 12, so the estimate is
+   * armed; an ordinary 15% stop / 30% target bracket demands W_min 46.7% and a
+   * 15% / 25% one demands 52.5%. At W = 50% the second is refused and the first passes
+   * by three points of noise — on a 56-trade sample, which is a coin flip deciding
+   * whether the bot trades at all.
+   *
+   * NOTHING IS RELAXED BY THIS. Set FIXED_SOL to 0 and Kelly sizes again, gate and all,
+   * byte for byte as before. With the fund on, every other refusal still stands: a
+   * negative R_net (costs eat the target) a few lines up, a missing stop, the per-name
+   * risk cap, book heat, the 20%-of-equity daily loss brake, and the minimum viable
+   * size. What falls through here sizes at f = 0, which is the honest record that Kelly
+   * declined to size and the operator's own number sized instead. */
+  } else if (W <= wMin && !(c.fixedSol > 0)) {
     return { action: "skip",
       reason: `hit rate ${(W * 100).toFixed(0)}% is under the ${(wMin * 100).toFixed(0)}% this bracket needs` };
   } else {

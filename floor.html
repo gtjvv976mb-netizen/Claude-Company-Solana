@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-08 09:29 UTC">
-<script>console.log("Claude Company build 2026-09-08 09:29 UTC")</script>
+<meta name="cc-build" content="2026-09-08 13:56 UTC">
+<script>console.log("Claude Company build 2026-09-08 13:56 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -85217,10 +85217,13 @@ function renderRoom() {
 
   // ── Naming is a one-time cosmetic act, not a daily control: it folds away so
   //    the controls that change behaviour stay unburied. ──
-  const nameFold = foldSection("Naming \u00b7 floor, MD, desk");
-  panel.appendChild(nameFold.wrap);
+  /* NO DROPDOWN BARS (owner, 2026-09-08). Naming a floor already lives in Settings,
+     and the journal is a log — neither earns a bar on the tab a reader opens to see
+     their team. Both still build; they attach only for a reader who asked for detail. */
+  const nameFold = { wrap: dashNode("div"), body: dashNode("div") };
+  if (typeof detailedView === "function" && detailedView()) panel.appendChild(nameFold.wrap);
   const panelReal = panel;
-  panel = nameFold.body;                  // everything below lands in the fold
+  panel = nameFold.body;                  // everything below lands in that container
   panel.appendChild(mk("div", "dp-h", "Nameplate"));
   const idNow = ROOM.identity || {};
   const fIn = mk("input", "dp-in");
@@ -85289,10 +85292,8 @@ function renderRoom() {
 
   // ── the journal: history, not a control. Its own drawer. ──
   panel = panelReal;
-  const jrnFold = foldSection(ROOM.runs.length
-    ? `Your journal \u2014 ${ROOM.runs.length} run${ROOM.runs.length === 1 ? "" : "s"}`
-    : "Your journal \u2014 no research yet");
-  panelReal.appendChild(jrnFold.wrap);
+  const jrnFold = { wrap: dashNode("div"), body: dashNode("div") };
+  if (typeof detailedView === "function" && detailedView()) panelReal.appendChild(jrnFold.wrap);
   panel = jrnFold.body;
   if (!ROOM.runs.length) panel.appendChild(mk("p", "dp-note", "No research yet. Put the team on a token above."));
   for (const r of ROOM.runs) {
@@ -85674,10 +85675,11 @@ async function openSwap({ mint, symbol, sol, side = "buy" }) {
       title: "The desk holds no keys, so it cannot sign or send anything for you." },
   ]));
 
-  const details = detailsFold("Details · the coin, the price, and if it will not open");
+  /* NO DROPDOWN BAR. What protects a person stays on screen; the rest is gone. */
+  const details = { body: dashNode("div"), wrap: dashNode("div") };
   const coin = dashNode("div", "dp-note", "Check the coin before you trade — ");
   coin.appendChild(caChip(mint));
-  details.body.appendChild(coin);
+  d.body.appendChild(coin);
   details.body.appendChild(dashNode("p", "dp-note",
     "The price you get, how far you let it move before the trade is called off, and any fees are all Jupiter's own, and it shows them to you before you sign. This page neither sets them nor sees them, and the price can move between what you are quoted and what you get."));
   details.body.appendChild(dashNode("p", "dp-note", buying
@@ -85688,7 +85690,7 @@ async function openSwap({ mint, symbol, sol, side = "buy" }) {
     "If the swap will not load — an ad blocker, or no connection — this opens the coin on GMGN in a new tab instead. That is a different site, run by other people, and the desk has no part in it either."));
   details.body.appendChild(dashNode("p", "dp-note",
     "While Jupiter's window is open, pressing Escape closes it and this one together, and nothing is sent. Press Escape at any point before you sign and no money moves."));
-  d.body.appendChild(details.wrap);
+  d.body.appendChild(details.body);
 
   const act = leadButton("Open the swap", () => { d.dismiss(); openWidget(); },
     { title: "Jupiter's window opens next. Nothing moves until you sign it there." });
@@ -86643,7 +86645,7 @@ async function withdrawHqInterest() {
 function openWallsteWalkthrough() {
   return window.CCModals.openInstallWalkthrough({
     floorNo: FLOOR_N,
-    installerSha256: "9a4415f90fee6e05a4430b742ed75f277e3ed53eeef351ee2ef50767da94e2fe",
+    installerSha256: "f3acdc1ff0d95b2d0c2208ba20c051d810e6fe85199c93dff2f434adb393fca7",
   });
 }
 function openHqConditions({ alreadyRequested = false, onRecorded = null } = {}) {
@@ -86885,9 +86887,9 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · dry run by default"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "f9d5c463cf864f1aa3afeb786ba3bc0305ba5b6d";
+    const releaseCommit = "ac2dd6b1bb743f03a040c0645fe2ec3702708d90";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
-    const installerDigest = "9a4415f90fee6e05a4430b742ed75f277e3ed53eeef351ee2ef50767da94e2fe";
+    const installerDigest = "f3acdc1ff0d95b2d0c2208ba20c051d810e6fe85199c93dff2f434adb393fca7";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
     /* ONE line, one paste — and now genuinely one line. install.sh has bootstrapped
        itself from $STATIC and read every prompt from /dev/tty for weeks, so piping it
@@ -86934,7 +86936,7 @@ function buildControls(settings) {
     launcherDl.style.marginTop = "4px";
     installBox.appendChild(launcherDl);
     /* Demoted, not deleted: some readers will not pipe a URL into a shell on principle. */
-    const cloneWays = foldSection("Prefer to clone it yourself?");
+    const cloneWays = { wrap: mk("div"), body: mk("div") };   // no bar; attached below only in Detailed view
     cloneWays.body.appendChild(mk("p", "dp-note",
       "Same installer, pinned by git to the exact reviewed commit instead of to this site's current bytes."));
     const cloneCmd = hasPinnedExecutorRelease
@@ -86953,7 +86955,7 @@ function buildControls(settings) {
       setTimeout(() => (copyCloneBtn.textContent = "Copy the git-clone install"), 1500);
     };
     cloneWays.body.appendChild(copyCloneBtn);
-    installBox.appendChild(cloneWays.wrap);
+    if (typeof detailedView === "function" && detailedView()) installBox.appendChild(cloneWays.wrap);
 
     // Step two is a click as well: the installer will ask for this.
     if (settings.executor_secret) {
@@ -88110,12 +88112,16 @@ async function paintCycleSurface(slot, { history = false } = {}) {
   const wrap = dashNode("div", "cyclewrap");
   wrap.style.cssText = "display:flex;flex-direction:column;gap:8px;margin:0 0 10px";
   wrap.appendChild(renderRoundLine(data));
-  const fold = detailsFold(history ? "This round, and recent rounds" : "This round");
-  fold.body.appendChild(renderCycleCard(data));
-  const strain = renderCycleStrain(data.strain);
-  if (strain) fold.body.appendChild(strain);
-  if (history) fold.body.appendChild(renderCycleHistory(data.history));
-  wrap.appendChild(fold.wrap);
+  /* NO DROPDOWN BAR (owner, 2026-09-08). The round is the one chip above. The whole
+     instrument paints only for a reader who asked for detail, and it paints OPEN —
+     there is nothing to press. The strain alarm is not hidden: renderRoundLine carries
+     it as a chip in the default view whenever the desk says it is straining. */
+  if (detailedView()) {
+    wrap.appendChild(renderCycleCard(data));
+    const strain = renderCycleStrain(data.strain);
+    if (strain) wrap.appendChild(strain);
+    if (history) wrap.appendChild(renderCycleHistory(data.history));
+  }
   slot.appendChild(wrap);
 }
 
@@ -88202,10 +88208,15 @@ async function loadOverviewDashboard() {
       { label: "Today", value: String(pulse.today?.workups ?? 0) + " studied \u00b7 " + String(pulse.today?.kills ?? 0) + " turned down" },
     ]));
     el.append(leadButton("See the calls", () => goTo("calls")));
-    const details = detailsFold("Details \u00b7 the round and the numbers");
-    const visitorCycleSlot = dashNode("div");
-    details.body.appendChild(visitorCycleSlot);
-    paintCycleSurface(visitorCycleSlot, { history: false });
+    /* The numbers below are for a reader who asked for them in Settings; the three
+       chips above are what everyone else needs. No bar to open. */
+    const details = { body: dashNode("div"), wrap: dashNode("div") };
+    if (detailedView()) {
+      el.appendChild(details.body);
+      const visitorCycleSlot = dashNode("div");
+      details.body.appendChild(visitorCycleSlot);
+      paintCycleSurface(visitorCycleSlot, { history: false });
+    }
     const metrics = dashNode("div", "dashgrid");
     metrics.append(
       /* Working, or not working. A tenant cannot act on the desk's API keys, its daily
@@ -88259,6 +88270,8 @@ async function loadOverviewDashboard() {
       deskChip,
       { label: "Open calls", value: feedPrivate ? "private" : String(live.length) + (offered.length ? " \u00b7 " + offered.length + " for you" : "") },
     ]));
+    if (feedR?.body?.rent?.overdue) el.append(chipRow([{ label: "Rent", value: "OVERDUE", cls: "bad",
+      title: "This floor's rent is overdue. Settle it from the tower." }]));
     el.append(leadButton(bot.action ? "Open your bot" : offered.length ? "See your calls" : "See the calls",
       () => goTo(bot.action ? "wallste" : "calls")));
   } else {
@@ -88288,8 +88301,11 @@ async function loadOverviewDashboard() {
   const cycleSlot = dashNode("div");
   el.appendChild(cycleSlot);
   paintCycleSurface(cycleSlot, { history: false });
-  const details = detailsFold("Details \u00b7 the numbers");
-  el.appendChild(details.wrap);
+  /* Everything below is Detailed view only \u2014 no bar. One exception stays on screen
+     for every reader, added to the chips above: overdue rent is a money consequence,
+     and a tenant must not have to switch a setting on to find out about it. */
+  const details = { body: dashNode("div"), wrap: dashNode("div") };
+  if (detailedView()) el.appendChild(details.body);
 
   const metrics = dashNode("div", "dashgrid");
   metrics.append(
@@ -88512,12 +88528,12 @@ async function loadDashboardCalls(view, { force = false } = {}) {
       el.appendChild(wrap);
       if (published.length) paintFeedInto(wrap, published, body.settings);
       else wrap.appendChild(dashNode("p", "locked", feed.length ? "No open calls right now \u2014 " + feed.length + " under Closed." : "No calls have been published to this floor yet."));
-      const details = detailsFold("Details \u00b7 rounds and the record");
-      el.appendChild(details.wrap);
-      const callsCycleSlot = dashNode("div");
-      details.body.appendChild(callsCycleSlot);
-      paintCycleSurface(callsCycleSlot, { history: true });
-      details.body.appendChild(buildScoreline(body.record, feed));
+      if (detailedView()) {
+        const callsCycleSlot = dashNode("div");
+        el.appendChild(callsCycleSlot);
+        paintCycleSurface(callsCycleSlot, { history: true });
+        el.appendChild(buildScoreline(body.record, feed));
+      }
     } else {
       const closed = feed.filter((call) => call.status !== "live");
       el.append(plainLead("Calls the desk has closed, and the coins it turned down before they became calls.",
@@ -88533,16 +88549,17 @@ async function loadDashboardCalls(view, { force = false } = {}) {
       el.appendChild(closedWrap);
       if (closed.length) paintFeedInto(closedWrap, closed, body.settings);
       else closedWrap.appendChild(dashNode("p", "locked", "No calls have closed yet."));
-      const killedFold = detailsFold("Turned down before publication");
+      const killedSection = dashNode("section", "dashsection");
+      killedSection.appendChild(dashNode("h4", "", "Turned down"));
       const killed = dashNode("div");
       killed.style.cssText = "display:flex;flex-direction:column;gap:7px";
-      killedFold.body.appendChild(killed);
-      el.appendChild(killedFold.wrap);
+      killedSection.appendChild(killed);
+      el.appendChild(killedSection);
       const ok = await loadKilled(killed);
       killed.querySelector(".dp-h")?.remove();
       const turnedDown = killed.querySelectorAll(".killrow").length;
       const tdChip = chips.children[1]?.querySelector("b"); if (tdChip) tdChip.textContent = ok === false ? "tenants" : String(turnedDown);
-      if (turnedDown && killedFold.label) killedFold.label.textContent = "Turned down before publication \u00b7 " + turnedDown;
+      if (turnedDown) killedSection.querySelector("h4").textContent = "Turned down \u00b7 " + turnedDown;
       if (ok === false) killed.appendChild(dashNode("p", "dp-note", "The turned-down list is for tenants."));
       else if (ok === null) killed.appendChild(dashNode("p", "dp-note", "Could not read the turned-down list \u2014 the desk did not answer."));
       else if (!turnedDown) killed.appendChild(dashNode("p", "locked", "Nothing has been turned down yet."));
@@ -88725,9 +88742,18 @@ async function loadWallsteDashboard({ background = false } = {}) {
         title: wallet.address ? "confirmed on-chain balance of " + wallet.address : "no address reported yet" },
       { label: "Last check-in", value: telemetry.ageMs == null ? "never" : window.PLAIN.plainAge(telemetry.ageMs) + " ago" },
     ]));
-    const healthFold = detailsFold("Details \u00b7 health and wallet");
-    const setupFold = detailsFold("Set-up \u00b7 install, feed key, funding");
-    const openFold = (f) => { if (f.body.style.display === "none") f.head.click(); };
+    /* NO DROPDOWN BARS (owner, 2026-09-08). Both of these were collapsible sections.
+       They are now plain containers, built either way and ATTACHED only when they are
+       worth a reader's screen: the set-up path while the bot is not yet running, the
+       health detail only for a reader who turned Detailed view on. An owner whose bot
+       is running and healthy sees a sentence, three chips, and nothing else. */
+    const pane = () => { const d = dashNode("div"); return { wrap: d, body: d, head: d, label: null }; };
+    const healthFold = pane();
+    const setupFold = pane();
+    const needsSetup = !heartbeat || botNow.chip === "NO TRACK" || botNow.chip === "NOT SET UP";
+    const showSetup = needsSetup || detailedView();
+    const showHealth = detailedView();
+    const openFold = (f) => { if (!f.wrap.isConnected) el.appendChild(f.wrap); };
     const howTo = (title, text) => {
       const d = window.openDialog({ title, label: "how" });
       const p = dashNode("p", "dp-note", text);
@@ -88949,7 +88975,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
         : "No browser button can arm live mode. Review dry-run output and activate only from the local host."));
     split.appendChild(checklistCard);
     healthFold.body.appendChild(split);
-    el.appendChild(healthFold.wrap);
+    if (showHealth) el.appendChild(healthFold.wrap);
 
     const legacyRecovery = legacyBurnerRecoveryCard();
     if (legacyRecovery) setupFold.body.appendChild(legacyRecovery);
@@ -89006,7 +89032,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "f9d5c463cf864f1aa3afeb786ba3bc0305ba5b6d";
+    const executorReleaseCommit = "ac2dd6b1bb743f03a040c0645fe2ec3702708d90";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
@@ -89024,7 +89050,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
      * click to INSTALL must never become one click to trade real money — so the
      * short path buys convenience only in step 2, and steps 4 and 5 stay exactly
      * as deliberate as they were. */
-    const installerSha256 = "9a4415f90fee6e05a4430b742ed75f277e3ed53eeef351ee2ef50767da94e2fe";
+    const installerSha256 = "f3acdc1ff0d95b2d0c2208ba20c051d810e6fe85199c93dff2f434adb393fca7";
     /* The build substitutes the digest of the very install.sh it published. Unsubstituted
        means a local preview, and a digest a reader cannot rely on is worse than none. */
     const installerShaKnown = /^[0-9a-f]{64}$/i.test(installerSha256);
@@ -89139,7 +89165,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     /* KEPT, NOT DEFAULT. The clone form pins the exact reviewed commit, which is a real
        property some readers will insist on; it is simply no longer the first thing an
        ordinary user is asked to execute. */
-    const cloneFold = foldSection("Prefer to clone it yourself?");
+    const cloneFold = { wrap: dashNode("div"), body: dashNode("div") };   // no bar; attached below only in Detailed view
     cloneFold.body.appendChild(dashNode("p", "dp-note",
       "Same installer, fetched by git and pinned to the exact reviewed 40-character commit instead of to this site's current bytes. "
       + "Read it before you run it; that is the point of this path."));
@@ -89150,7 +89176,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     copyClone.title = releaseIsPinned ? "Copy the pinned clone-and-install command" : "Unavailable until this build contains an exact release commit";
     copyClone.onclick = () => copyVisibleCommand(copyClone, cloneInstallCommand);
     cloneFold.body.appendChild(copyClone);
-    installStep.appendChild(cloneFold.wrap);
+    if (detailedView()) installStep.appendChild(cloneFold.wrap);
 
     const paperStep = setupStep(3, "Run and review paper mode",
       activation.currentPaperMode
@@ -89235,7 +89261,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
         + "key, so this page will not answer it for you."));
       setupFold.body.appendChild(unchosen);
     }
-    el.appendChild(setupFold.wrap);
+    if (showSetup) el.appendChild(setupFold.wrap);
 
     /* The last pulses, newest first. One overwritten blob meant a tenant could never
 
@@ -89255,7 +89281,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
 
         (dashWhen(h.seenAt) || "\u2014") + " \u00b7 " + (h.mode || "?") + " \u00b7 " + String(h.open ?? 0) + " open" + (h.state ? " \u00b7 " + h.state : "")));
 
-      const checkins = detailsFold("Recent check-ins"); checkins.body.appendChild(hcard); el.appendChild(checkins.wrap);
+      if (detailedView()) el.appendChild(hcard);
 
     }
 

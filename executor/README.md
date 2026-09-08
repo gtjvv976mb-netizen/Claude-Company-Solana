@@ -659,7 +659,7 @@ not evidence of an edge.
 | `MAX_ENTRY_ROUND_TRIP_LOSS_PCT` | `12` live ceiling | Maximum measured forward/reverse entry preflight loss |
 | `MAX_ENTRY_MARK_AGE_MIN` | `15` | Maximum monitored USD-mark age at entry submission |
 | `MAX_ENTRY_QUOTE_DRIFT_PCT` | `5` live ceiling | Maximum preflight/final executable USD-price drift from the monitored market mark |
-| `MAX_ENTRY_PREFLIGHT_AGE_MS` | `60000` live ceiling | Maximum executable-entry preflight age before signing |
+| `MAX_ENTRY_PREFLIGHT_AGE_MS` | `90000` live ceiling | Maximum executable-entry preflight age before signing. The same budget as the entry window: `executor/test-entry-window.mjs` measured the preflight at 12 serial hops, 68s priced at this executor's own per-request deadlines, so a shorter cap would refuse a preflight the pipeline legitimately took that long to build |
 | `MAX_EXIT_TRIGGER_AGE_MS` | `60000` live ceiling | Maximum price-exit trigger age before two fresh witnesses are required |
 | `TRAIL_PCT` | `0.25` | Trail distance after the shared 1.5x arm |
 | `MAX_AGE_HOURS` | `12` | Time exit used by snipe-v3 |

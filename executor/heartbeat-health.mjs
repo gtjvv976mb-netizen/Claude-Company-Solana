@@ -23,6 +23,10 @@ const TRADING_RUNTIME_FILES = Object.freeze([
      derived from poller.mjs's transitive imports by test-executor-publish.mjs now, so it
      cannot silently fall behind the import graph again. */
   "token2022.mjs",
+  /* The entry contract — one definition of "tradeable" for the desk and the bot. It
+     decides whether a published call is enterable at all, so its bytes are as much a
+     part of what this process IS as the stop policy's are. */
+  "entry-contract.mjs",
 ]);
 
 /** A byte identity for exactly the modules loaded by the trading process. */

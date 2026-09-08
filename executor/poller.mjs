@@ -43,6 +43,7 @@ import {
 } from "./sol-usd-oracle.mjs";
 import { DEFAULTS, POLICY_VERSION, planEntry, openPosition, stepPosition, freshState } from "./strategy.mjs";
 import { policyConfigForPosition, resolveTakeProfitRule, validateEntryReference } from "./trade-policy.mjs";
+import { ENTRY_WINDOW_FLOOR_MS, entryContract, entryWindowMs } from "./entry-contract.mjs";
 
 process.umask(0o077);
 
@@ -192,7 +193,16 @@ const LIVE_LIMITS = Object.freeze({
    * and those are the checks that bound the price paid. This one bounds only how much
    * the two price sources may disagree before we distrust the quote itself. */
   maxEntryQuoteDriftPct: 15,
-  maxEntryPreflightAgeMs: 60_000,
+  /* THE SAME BUDGET AS THE ENTRY WINDOW, SEEN FROM THE OTHER END. The quotes, the mint
+   * audit and the Pyth read are stamped at the top of the preflight and re-checked
+   * against this cap at the submission gate, immediately before signing — so a cap
+   * shorter than the window refuses, at the last fence, a preflight this same pipeline
+   * legitimately took that long to produce. It was a second 60_000 sitting beside
+   * MIN_CALL_EXPIRY_MS's; both are ENTRY_WINDOW_FLOOR_MS now, and executor/
+   * test-entry-window.mjs measured what that has to cover (12 serial hops, 68s at this
+   * executor's own per-request deadlines). MAX_ENTRY_PREFLIGHT_AGE_MS still tightens
+   * it, and under EXECUTE=1 that is the only direction it can move. */
+  maxEntryPreflightAgeMs: ENTRY_WINDOW_FLOOR_MS,
   maxExitTriggerAgeMs: 60_000,
   solUsdCacheMaxAgeMs: 30 * 60_000,
   maxAttempts: 3,
@@ -1183,10 +1193,22 @@ async function onEntry(ev) {
   const unresolvedPosition = openList().find((position) => positionEntryBlock(position));
   if (unresolvedPosition)
     return log(`SKIP ${ev.symbol}: ${unresolvedPosition.symbol} blocks new exposure — ${positionEntryBlock(unresolvedPosition)}`);
-  const age = Date.now() - Number(ev.ts);
-  if (age > callExpiryMs(ev))
-    return log(`SKIP ${ev.symbol}: call is ${Math.round(age / 60_000)}m old ` +
-      `(the ${ev.hold_band || "default"} band holds for at least ${expiryLabel(ev)}, so the entry is past)`);
+  /* ONE DEFINITION OF TRADEABLE, NOT THREE. The call's age, the live mark's binding and
+     the bracket's geometry were three separate tests in two files and one inline block
+     here, and the desk had a fourth idea of the same thing. They are one function now
+     (entry-contract.mjs), called with THIS machine's knobs, so a threshold that moves
+     moves on both sides at once. The refusals it names are decisions, not transport, and
+     are answered at once exactly as before. */
+  const contract = entryContract(entryContractInput(ev, Date.now()));
+  if (!contract.ok) {
+    /* The age refusal keeps its own words: it is the one an operator reads most, and it
+       names the BAND rather than a bare number so the reader can tell a nano call that
+       expired on purpose from a bot that was asleep. */
+    if (contract.gate === "window_expired")
+      return log(`SKIP ${ev.symbol}: call is ${Math.round(contract.detail.ageMs / 60_000)}m old ` +
+        `(the ${ev.hold_band || "default"} band holds for at least ${expiryLabel(ev)}, so the entry is past)`);
+    return log(`SKIP ${ev.symbol}: ${contract.detail.message} [${contract.gate}]`);
+  }
   if (feedRollbackActive())
     return log(`SKIP ${ev.symbol}: authenticated feed latest_id rolled behind durable cursor — entries frozen`);
   if (pauseEntries()) return log(`SKIP ${ev.symbol}: PAUSE ENTRIES file is present`);
@@ -1206,10 +1228,15 @@ async function onEntry(ev) {
   S.state.equitySol = EXECUTE ? walletSol : (S.state.equitySol ?? CFG.dailySolCap);
   S.state.bookHeat = openList().reduce((sum, pos) => sum + (pos.riskF || 0), 0);
 
-  const entryReference = validateEntryReference(ev, {
-    nowMs: Date.now(), maxMarkAgeMs: MAX_ENTRY_MARK_AGE_MS,
-    maxDeviationPct: MAX_ENTRY_DEVIATION_PCT,
-  });
+  /* validateEntryReference's own six fields, taken off the contract that already ran it
+     above rather than binding the mark a second time. The freshness this used to get by
+     reading the clock AFTER the balance round trip is not lost: entryEventSubmissionGate
+     re-binds on a fresh Date.now() below, immediately before anything is signed. */
+  const entryReference = {
+    marketMark: contract.detail.marketMark, marketMarkAt: contract.detail.marketMarkAt,
+    stopRatio: contract.detail.stopRatio, targetRatio: contract.detail.targetRatio,
+    entryLow: contract.detail.entryLow, entryHigh: contract.detail.entryHigh,
+  };
 
   const takeProfitRule = resolveTakeProfitRule(ev.take_profit_x, CFG.takeProfitX);
   /* SIZE IS THIS PROCESS'S, NOT THE FEED'S. `ev.fixed_sol` and `ev.size_sol` ride on
@@ -1770,6 +1797,23 @@ const TRANSIENT_ENTRY_FAILURE = [
   /could not (?:obtain|produce)[^.]*(?:anchor|snapshot)/i,
   /failed to get quotes/i, /HTTP 5\d\d/i, /\b(?:429|502|503|504)\b/,
   /rate limit/i, /blockhash not found/i,
+  /* CONSENSUS IS A TWO-PROVIDER READ, AND ONE PROVIDER BLINKING IS WEATHER.
+   *
+   * The entry path prices the trade through two independent RPC views — the classic
+   * mint audit in jupiter.mjs and the Pyth SOL-USD oracle in sol-usd-oracle.mjs — and
+   * both fail closed when either read is rejected or the two views differ. That is
+   * right, and it is not being loosened: a forged decimals byte moves the absolute USD
+   * entry anchor by powers of ten. But the failure was landing on the acknowledge
+   * branch below, so ONE slow provider consumed a published call permanently — the
+   * dropped-packet-as-decision defect this allowlist exists to cure. Retried instead,
+   * bounded by MAX_ENTRY_RETRIES (6) with the cursor pinned, so a genuine forgery keeps
+   * disagreeing across six polls and is acknowledged about ninety seconds later.
+   *
+   * Deliberately narrow. The sibling failure "requires two distinct RPC connections" is
+   * a misconfiguration rather than weather, matches neither pattern, and is still
+   * answered at once. */
+  /requires successful reads from both RPC providers/i,
+  /RPC views disagree/i,
 ];
 /* EXIT_MARK_OUTAGE_LATCH_MS is retired (desk-led-v4): the sustained-outage sell it bounded
  * was a bot-originated exit. The name stays on the launchd allowlist so an existing env
@@ -1805,16 +1849,38 @@ const bumpEntryRetry = (key) => {
  * the owner's — if more time has passed than you would have held the position for, the
  * entry idea is gone. A call carrying no band falls back to the flat setting.
  *
- * The floor exists because the poll is 15 seconds: an expiry under a minute could
- * retire a call before the bot ever saw it. */
-const MIN_CALL_EXPIRY_MS = 60_000;
-const callExpiryMs = (ev) => {
-  const holdMin = Number(ev?.hold_min_ms);
-  if (!Number.isFinite(holdMin) || holdMin <= 0) return MAX_CALL_AGE_MS;
-  return Math.max(MIN_CALL_EXPIRY_MS, Math.min(holdMin, MAX_CALL_AGE_MS * 8));
-};
+ * The floor exists because a call must survive several polls AND the preflight that
+ * follows: an expiry under that could retire a call before the bot ever saw it, or
+ * while it was still inside the fences that protect the trade. */
+/* ONE FLOOR, ONE DEFINITION — and it is no longer a guess. This used to be a literal
+   60_000 spelled out here beside the contract's own, with a test to keep the two equal;
+   an identity needs no such test. The number itself was a poll-rate argument until
+   executor/test-entry-window.mjs timed the pipeline it has to cover: 28 requests, 12 of
+   them SERIAL, and 68_000ms when those 12 are priced at this executor's own
+   per-request deadlines (Jupiter /order 12s x3, RPC 4s, slot anchor 2s, epoch 2s) —
+   longer than the minute a nano call used to get, before POLL_MS is even spent reaching
+   the alert row. See the note on ENTRY_WINDOW_FLOOR_MS for the measurement. */
+const MIN_CALL_EXPIRY_MS = ENTRY_WINDOW_FLOOR_MS;
+const callExpiryMs = (ev) => entryWindowMs({
+  holdMinMs: ev?.hold_min_ms, floorMs: MIN_CALL_EXPIRY_MS, fallbackMs: MAX_CALL_AGE_MS,
+});
+/* Everything the contract judges, read off one feed event with this machine's own
+   thresholds. MAX_ENTRY_MARK_AGE_MIN, MAX_ENTRY_DEVIATION_PCT and MAX_CALL_AGE_MIN keep
+   their meaning exactly: an operator who tightens one still tightens it here. */
+const entryContractInput = (ev, nowMs) => ({
+  entryRef: ev?.entry_ref, entryLo: ev?.entry_lo, entryHi: ev?.entry_hi,
+  stop: ev?.stop, target: ev?.target,
+  mark: ev?.current_mark, markAt: ev?.current_mark_at,
+  now: nowMs, holdBand: ev?.hold_band, holdMinMs: ev?.hold_min_ms, alertTs: ev?.ts,
+  costPct: CFG.costPct,
+  maxMarkAgeMs: MAX_ENTRY_MARK_AGE_MS, maxDeviationPct: MAX_ENTRY_DEVIATION_PCT,
+  windowFloorMs: MIN_CALL_EXPIRY_MS, windowFallbackMs: MAX_CALL_AGE_MS,
+});
 const expiryLabel = (ev) => {
   const ms = callExpiryMs(ev);
+  // Seconds under two minutes: the floor is 90_000 now, and "2m" is a rounding of it
+  // that matches neither the window nor the band's own one-minute hold.
+  if (ms < 120_000) return `${Math.round(ms / 1_000)}s`;
   return ms >= 3_600_000 ? `${(ms / 3_600_000).toFixed(0)}h` : `${Math.round(ms / 60_000)}m`;
 };
 
