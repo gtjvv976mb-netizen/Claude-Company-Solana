@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-08 14:03 UTC">
-<script>console.log("Claude Company build 2026-09-08 14:03 UTC")</script>
+<meta name="cc-build" content="2026-09-08 14:10 UTC">
+<script>console.log("Claude Company build 2026-09-08 14:10 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -85966,9 +85966,9 @@ function renderCalls({ feed = [], settings, record }, { liveOnly = false } = {})
   step(3, "Auto-trade it", "Optional. WALL-ST-E \u2014 the self-hosted bot on your own machine \u2014 places the calls for you. Its live status shows above the moment it heartbeats.");
   if (settings) callsPanel.appendChild(buildBotCard(settings));
 
-  // everything read only occasionally
-  const more = window.foldSection?.("Budget \u00b7 spend \u00b7 self-hosted executor");
-  if (more) { more.body.appendChild(buildBudget()); callsPanel.appendChild(more.wrap); }
+  /* NO DROPDOWN BAR (owner, 2026-09-08). Budget and spend are read occasionally, so
+     they paint for a reader who asked for detail and not at all for anyone else. */
+  if (typeof detailedView === "function" && detailedView()) callsPanel.appendChild(buildBudget());
   return;
 }
 
@@ -85984,14 +85984,18 @@ function renderLive({ feed = [], settings, record }) {
   feedWrap.style.cssText = "display:flex;flex-direction:column;gap:7px";
   liveRegion.appendChild(feedWrap);
 
-  const kill = window.foldSection?.("Killed \u2014 the trades that did not happen");
-  if (kill) {
-    el.appendChild(kill.wrap);
-    window.__renderKilledInto?.(kill.body).then((ok) => {
-      const n = kill.body.querySelectorAll(".killrow").length;
-      kill.label.textContent = n ? `Killed \u2014 ${n} shown`
-        : ok === false ? "Killed \u2014 tenants only" : (ok === null ? "Killed \u2014 could not reach the desk" : "Killed \u2014 nothing yet");
-      kill.body.querySelector(".dp-h")?.remove();
+  /* NO DROPDOWN BAR. A plain headed section, and only for a reader who asked for
+     detail: this pane is the book, and the book is the calls. */
+  if (typeof detailedView === "function" && detailedView()) {
+    const killHead = document.createElement("div");
+    killHead.className = "dp-h"; killHead.textContent = "Turned down";
+    const killBody = document.createElement("div");
+    el.append(killHead, killBody);
+    window.__renderKilledInto?.(killBody).then((ok) => {
+      const n = killBody.querySelectorAll(".killrow").length;
+      killHead.textContent = n ? `Turned down \u00b7 ${n}`
+        : ok === false ? "Turned down \u00b7 tenants only" : (ok === null ? "Turned down \u00b7 could not reach the desk" : "Turned down \u00b7 nothing yet");
+      killBody.querySelector(".dp-h")?.remove();
     });
   }
   paintFeedInto(feedWrap, feed, settings);
@@ -86892,7 +86896,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · dry run by default"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "a38b63ccafcb2e641c959d1262a6bfa656247eac";
+    const releaseCommit = "fd7380933940099b5350c25e868b2aaaf993a5ce";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "f3acdc1ff0d95b2d0c2208ba20c051d810e6fe85199c93dff2f434adb393fca7";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -89041,7 +89045,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "a38b63ccafcb2e641c959d1262a6bfa656247eac";
+    const executorReleaseCommit = "fd7380933940099b5350c25e868b2aaaf993a5ce";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
