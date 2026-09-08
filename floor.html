@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-08 14:33 UTC">
-<script>console.log("Claude Company build 2026-09-08 14:33 UTC")</script>
+<meta name="cc-build" content="2026-09-08 14:49 UTC">
+<script>console.log("Claude Company build 2026-09-08 14:49 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -959,12 +959,14 @@ window.CCModals = (function () {
     box.setAttribute("aria-modal", "true");
     box.tabIndex = -1;
     const head = el("div", "ccm-head");
+    /* NO TITLE ROW, NO SUBTITLE (owner, 2026-09-08: "REMOVE THE TITLE ON THE POP-UPS
+       IT IS UNNECESSARY, I SAID MAKE EVERY POP-UP COMPACT and DECLUTTER IT"). A person
+       pressed the thing that opened this; being told its name again is a line of chrome.
+       The heading object is still built so setTitle keeps working, and the dialog is
+       still named for a screen reader — through aria-label, which needs no visible node. */
     const titles = el("div", "ccm-titles");
     const heading = el("h3", "", title);
-    heading.id = "ccm-title-" + (label || "dialog");
-    box.setAttribute("aria-labelledby", heading.id);
-    titles.appendChild(heading);
-    if (subtitle) para(titles, "", subtitle);
+    if (title) box.setAttribute("aria-label", title);
     head.appendChild(titles);
     const close = el("button", "ccm-x", "✕");
     close.type = "button";
@@ -1013,7 +1015,7 @@ window.CCModals = (function () {
     document.addEventListener("keydown", onKey, true);
     (document.body || document.documentElement).appendChild(scrim);
     try { box.focus(); } catch {}
-    return { scrim, box, head, body, foot, close, dismiss, setTitle: (t) => { heading.textContent = t; } };
+    return { scrim, box, head, body, foot, close, dismiss, setTitle: (t) => { heading.textContent = t; box.setAttribute("aria-label", t); } };
   }
   window.openDialog = openDialog;
 
@@ -85439,17 +85441,9 @@ async function renderTeamInto(el, { includeBot = true } = {}) {
    * floor's past work was visible nowhere. */
   {
     const runs = Array.isArray(R.runs) ? R.runs : [];
-    const box = mk("div", "dp-h", "Research runs \u00b7 last " + Math.min(25, runs.length || 25));
-    box.style.marginTop = "10px"; el.appendChild(box);
-    if (!runs.length) el.appendChild(mk("p", "dp-note", "No runs yet \u2014 grind mode researches on its own clock."));
-    for (const r of runs.slice(0, 25)) {
-      const row = mk("div", "dp-note");
-      const when = window.dashWhen?.(r.started_at) || "";
-      row.textContent = (r.symbol || String(r.mint || "").slice(0, 6)) + " \u00b7 " +
-        (r.outcome || (r.finished_at ? "done" : "running")) + (when ? " \u00b7 " + when : "") +
-        (r.finished_at && window.dashWhen?.(r.finished_at) ? " \u2192 " + window.dashWhen(r.finished_at) : "");
-      el.appendChild(row);
-    }
+  /* THE RESEARCH-RUNS LOG IS GONE (owner, 2026-09-08). Seven rows of "ZCAT ·
+     screened_out · Aug 31, 3:22 PM" is a machine's log printed on the tab a person
+     opens to see their team. What it recorded lives in Activity for anyone who wants it. */
   }
 
   /* Hunt targets (run-a-token-now + pinned mints) removed from the panel at the
@@ -85665,7 +85659,7 @@ async function openSwap({ mint, symbol, sol, side = "buy" }) {
       ? "You are about to spend your own money. The desk published a call and does nothing more — it does not buy this, and it cannot buy it for you."
       : "You are about to sell out of your own wallet. The desk may decide a call is over, but it cannot sell for you.",
     {
-      sub: "You choose how much, and you sign it yourself in your own wallet. Nothing here is advice, and a swap you have signed cannot be undone.",
+      sub: "You choose how much. A swap you have signed cannot be undone.",
       infoTitle: "Who does what in this swap",
       info: "You need a Solana wallet. Pressing the button opens Jupiter's own window on top of this one: it connects "
         + "your wallet, shows the price, and asks you to sign. This desk holds no key of yours and cannot sign for you. "
@@ -86896,7 +86890,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · dry run by default"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "69eafa6b1d4ebd45d12223a07c7c9ea71e4b62b5";
+    const releaseCommit = "5e33ceebdcd22e6445222af5fb737817038224af";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "f3acdc1ff0d95b2d0c2208ba20c051d810e6fe85199c93dff2f434adb393fca7";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -88213,7 +88207,7 @@ async function loadOverviewDashboard() {
     const openCalls = Array.isArray(pulse.pnl?.openCalls) ? pulse.pnl.openCalls.length : null;
     const desk = window.PLAIN.deskState(pulse);
     el.append(plainLead("The house desk studies new pump.fun coins all day and publishes the few it would trade. Here is today.",
-      { sub: "Open a floor from the tower to see that floor's own page.", info: HOW_THE_DESK_WORKS, infoTitle: "How the desk works" }));
+      { info: HOW_THE_DESK_WORKS, infoTitle: "How the desk works" }));
     el.append(chipRow([
       { label: "Desk", value: desk.chip + (pulse.lastEventTs ? " \u00b7 last move " + window.PLAIN.plainAge(Date.now() - pulse.lastEventTs) + " ago" : ""), cls: desk.cls, title: desk.sentence },
       { label: "Open calls", value: openCalls == null ? "\u2014" : String(openCalls) },
@@ -88292,12 +88286,11 @@ async function loadOverviewDashboard() {
        everyone may watch. Say that; say "vacant" only of a floor that really is. */
     const isHouse = FLOOR_N === 50 || room.hq === true;
     el.append(plainLead(isHouse
-      ? "The house desk. It studies new pump.fun coins all day and publishes the few it would trade \u2014 anyone may watch."
+      ? "The house desk. It studies new pump.fun coins and publishes the few it would trade."
       : room.lease
         ? floorName + " is leased. Its calls and controls are private to its tenant; the house desk is public on floor 50."
         : "Nobody leases " + floorName + " yet. The house desk is public on floor 50.",
-      { sub: isHouse || room.lease ? null : "Lease it from the tower to run your own desk here.",
-        info: HOW_THE_DESK_WORKS, infoTitle: "How the desk works" }));
+      { info: HOW_THE_DESK_WORKS, infoTitle: "How the desk works" }));
     el.append(chipRow([
       { label: isHouse ? "House desk" : room.lease ? "Visitor" : "Vacant", value: "", cls: isHouse ? "good" : "warn" },
       deskChip,
@@ -88414,8 +88407,8 @@ async function loadCandidateBoard() {
     const captured = body.capturedAt ? new Date(body.capturedAt).toLocaleString() : "no completed sweep yet";
     /* THE SHORTLIST: coins that passed the free screen and nothing more. The boundary
        line is kept word for word — it is the sentence a reader must not miss. */
-    el.append(plainLead("Coins that passed the free screen and are waiting for the analysts. Nothing here is a call.",
-      { sub: "Five per size band, ranked by the screen. The desk may study any of them next, or none.",
+    el.append(plainLead("Coins waiting to be studied. None of these is a call.",
+      {
         info: "Every new coin is screened for free: size, age, whether it can be sold, whether the trading looks real. "
           + "The ones that pass wait here. It means the desk might study one next \u2014 nothing more.", infoTitle: "How the shortlist works" }));
     el.append(chipRow([
@@ -88532,9 +88525,8 @@ async function loadDashboardCalls(view, { force = false } = {}) {
          from anyone's wallet, three chips, then the cards. The round history and the
          floor's record sit under Details — that is where a reader who wants to know what
          the last few rounds actually did goes looking. */
-      el.append(plainLead("Coins the desk would trade right now, each with an entry, a stop and a target.",
-        { sub: "Open means the desk is tracking it, not that anyone holds it. Your bot decides for itself whether to buy.",
-          info: HOW_A_CALL_WORKS, infoTitle: "How a call works" }));
+      el.append(plainLead("Coins the desk would trade right now.",
+        { info: HOW_A_CALL_WORKS, infoTitle: "How a call works" }));
       el.append(chipRow([
         { label: "Open", value: String(published.length), cls: published.length ? "good" : "" },
         FLOOR_N != null && forYou ? { label: "For you", value: String(forYou) } : null,
@@ -88553,8 +88545,8 @@ async function loadDashboardCalls(view, { force = false } = {}) {
       }
     } else {
       const closed = feed.filter((call) => call.status !== "live");
-      el.append(plainLead("Calls the desk has closed, and the coins it turned down before they became calls.",
-        { sub: "A closed call was a published decision. A turned-down coin never was one.", info: HOW_A_CALL_WORKS, infoTitle: "How a call works" }));
+      el.append(plainLead("Closed calls, and coins turned down.",
+        { info: HOW_A_CALL_WORKS, infoTitle: "How a call works" }));
       const chips = chipRow([
         { label: "Closed", value: String(closed.length) },
         { label: "Turned down", value: "\u2026" },
@@ -89049,7 +89041,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "69eafa6b1d4ebd45d12223a07c7c9ea71e4b62b5";
+    const executorReleaseCommit = "5e33ceebdcd22e6445222af5fb737817038224af";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
@@ -89602,7 +89594,7 @@ async function loadSettingsDashboard() {
     const identity = room.identity || {};
     const copySettings = feedR.status === 200 ? (feedR.body?.settings || {}) : {};
     el.append(plainLead((identity.floorName || room.floorLabel || "This floor") + " \u2014 its name, how it looks, and where alerts go.",
-      { sub: "Your bot's own settings live under WALL-ST-E; the team's under Team." }));
+      {}));
 
     const identityCard = dashNode("section", "dashsection");
     identityCard.appendChild(dashNode("h4", "", "Floor identity"));
