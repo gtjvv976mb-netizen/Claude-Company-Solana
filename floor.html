@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-08 13:56 UTC">
-<script>console.log("Claude Company build 2026-09-08 13:56 UTC")</script>
+<meta name="cc-build" content="2026-09-08 14:03 UTC">
+<script>console.log("Claude Company build 2026-09-08 14:03 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -85190,14 +85190,19 @@ function renderRoom() {
     window.__renderWatchInto(watchBox).then(() => watchBox.querySelector(".dp-h")?.remove());
   } else watchBox.appendChild(mk("p", "dp-note", "Open the Team tab once, then revisit — the board loads with it."));
 
-  // ── the killed lane: what the desk stalked and shot, beside the board ──
-  if (window.foldSection && window.__renderKilledInto) {
-    const kf = window.foldSection("Killed \u2014 the trades that did not happen");
+  /* ── the turned-down lane, beside the board. NO DROPDOWN BAR (owner, 2026-09-08):
+     it was the third fold on this panel. It is a plain headed section now, and it
+     paints only for a reader who asked for detail — a room panel is not where a
+     newcomer should meet a list of everything the desk refused. ── */
+  if (window.__renderKilledInto && typeof detailedView === "function" && detailedView()) {
+    const kfHead = mk("div", "dp-h", "Turned down");
+    const kf = { wrap: mk("div"), body: mk("div"), label: kfHead };
+    kf.wrap.appendChild(kfHead); kf.wrap.appendChild(kf.body);
     panel.appendChild(kf.wrap);
     window.__renderKilledInto(kf.body).then((ok) => {
       const n = kf.body.querySelectorAll(".killrow").length;
-      kf.label.textContent = n ? `Killed \u2014 ${n} shown`
-        : ok === false ? "Killed \u2014 tenants only" : (ok === null ? "Killed \u2014 could not reach the desk" : "Killed \u2014 nothing yet");
+      kf.label.textContent = n ? `Turned down \u00b7 ${n}`
+        : ok === false ? "Turned down \u00b7 tenants only" : (ok === null ? "Turned down \u00b7 could not reach the desk" : "Turned down \u00b7 nothing yet");
       kf.body.querySelector(".dp-h")?.remove();
     });
   }
@@ -86887,7 +86892,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · dry run by default"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "ac2dd6b1bb743f03a040c0645fe2ec3702708d90";
+    const releaseCommit = "a38b63ccafcb2e641c959d1262a6bfa656247eac";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "f3acdc1ff0d95b2d0c2208ba20c051d810e6fe85199c93dff2f434adb393fca7";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -87825,6 +87830,10 @@ const leadButton = (label, onClick, { ghost = false, title = null } = {}) => {
   const row = dashNode("div", "lead-actions"); row.appendChild(b); return row;
 };
 /** A closed fold with a count; open by default in Detailed view. */
+/* RETIRED, 2026-09-08 — the owner asked for no dropdown bars anywhere. Nothing calls
+   this any more and nothing should: to demote content, paint it inside
+   `if (detailedView())`, or attach it only in the state where a reader needs it. The
+   definition stays because the primitives test asserts the anatomy set is complete. */
 const detailsFold = (label, count = null) => window.foldSection(label + (count != null ? " · " + count : ""), { open: detailedView() });
 
 /* ═══ COHORT CYCLE SURFACE — BEGIN ══════════════════════════════════════════════
@@ -89032,7 +89041,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "ac2dd6b1bb743f03a040c0645fe2ec3702708d90";
+    const executorReleaseCommit = "a38b63ccafcb2e641c959d1262a6bfa656247eac";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
@@ -89491,7 +89500,11 @@ async function loadCalloutsDashboard() {
       el.appendChild(dashNode("p", "locked", honestEmpty));
       return;
     }
-    for (const row of matched) {
+    /* MEASURED 3,536 WORDS on the live floor (2026-09-08). The board is ranked by how
+       much SOL the caller holds, so the top of it is the point and the tail is scroll.
+       Show the loudest eight and say how many are not shown; Detailed view gets all. */
+    const SHOWN = detailedView() ? matched.length : 8;
+    for (const row of matched.slice(0, SHOWN)) {
       const coin = row.coin;
       const callout = row.callout;
       const card = dashNode("article", "callout-card");
@@ -89536,6 +89549,8 @@ async function loadCalloutsDashboard() {
       card.appendChild(links);
       el.appendChild(card);
     }
+    if (matched.length > SHOWN) el.appendChild(dashNode("p", "dp-note",
+      "Showing the " + SHOWN + " biggest wallets of " + matched.length + ". Turn on Detailed view in Settings to see them all."));
     const history = Array.isArray(body.history) ? body.history.filter((h) => !matched.some((m) => m.coin.mint === h.mint && (m.callout.id ?? m.callout.user) === (h.key || "").split(":").slice(1).join(":"))) : [];
     if (history.length) {
       el.appendChild(dashNode("h4", "", "Earlier posts"));
