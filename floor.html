@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-08 15:08 UTC">
-<script>console.log("Claude Company build 2026-09-08 15:08 UTC")</script>
+<meta name="cc-build" content="2026-09-08 15:14 UTC">
+<script>console.log("Claude Company build 2026-09-08 15:14 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -83549,14 +83549,19 @@ window.__showChatter = (() => { try { return localStorage.getItem("cc_detailed")
   /* type -> [who, sentence, tone, "chatter"?]. null hides the event. "chatter" rows are
      analyst-level and only show when the reader asks for them. */
   const EVENT = {
-    "cycle:start": () => ["desk", "Round started", "hi"],
-    "cycle:opened": () => ["desk", "New round", "hi"],
-    "cycle:end": (e) => ["desk", "Round over — " + plural(e.count ?? 0, "call") + " found" + (e.stopped ? " (" + plainStop(e.stopped) + ")" : ""), "hi"],
-    "cycle:closed": (e) => ["desk", "Round closed — " + plural(e.published ?? 0, "call"), "hi"],
-    "cycle:short": (e) => ["desk", (e.published ?? 0) + " of " + (e.quota ?? 3) + " calls found this round", ""],
-    "cycle:halted": (e) => ["desk", "Round paused — " + plainStop(e.reason), "warn"],
-    "cycle:budget": (e) => ["desk", "Research budget: " + money(e.usedUsd) + " of " + money(e.capUsd) + " today", "warn"],
-    "cycle:holding": (e) => ["desk", "Holding " + sym(e) + (e.heldHours != null ? " — " + e.heldHours + "h in" : "") + ". The next round starts when it closes.", "hi"],
+    /* THE ROUND IS BOOKKEEPING (owner, 2026-09-08: "THE CYCLE SHIT IS STILL THERE").
+       Quotas, rounds and research budgets are how the desk organises itself, not news
+       about a coin, so every one of these is chatter: a reader who wants them turns on
+       Show analyst chatter. What a person actually needs from the desk — working,
+       paused, holding — is a chip on the Overview and a line in the bottom strip. */
+    "cycle:start": () => ["desk", "Round started", "hi", "chatter"],
+    "cycle:opened": () => ["desk", "New round", "hi", "chatter"],
+    "cycle:end": (e) => ["desk", "Round over — " + plural(e.count ?? 0, "call") + " found" + (e.stopped ? " (" + plainStop(e.stopped) + ")" : ""), "hi", "chatter"],
+    "cycle:closed": (e) => ["desk", "Round closed — " + plural(e.published ?? 0, "call"), "hi", "chatter"],
+    "cycle:short": (e) => ["desk", (e.published ?? 0) + " of " + (e.quota ?? 3) + " calls found this round", "", "chatter"],
+    "cycle:halted": (e) => ["desk", "Round paused — " + plainStop(e.reason), "warn", "chatter"],
+    "cycle:budget": (e) => ["desk", "Research budget: " + money(e.usedUsd) + " of " + money(e.capUsd) + " today", "warn", "chatter"],
+    "cycle:holding": (e) => ["desk", "Holding " + sym(e) + (e.heldHours != null ? " — " + e.heldHours + "h in" : "") + ". The next round starts when it closes.", "hi", "chatter"],
     "cycle:hunting": (e) => ["desk", "Still looking — studying " + sym(e), "", "chatter"],
     "cycle:hunt_dry": () => ["desk", "Nothing else worth studying this round", ""],
     "cycle:escalated": () => ["desk", "Looking harder this round", "", "chatter"],
@@ -86890,7 +86895,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · dry run by default"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "5d5def369396755609eb7a990efd01b633ef8b78";
+    const releaseCommit = "98a2d3703481b2a76d500d31f8cb0b70f5c2788a";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "f3acdc1ff0d95b2d0c2208ba20c051d810e6fe85199c93dff2f434adb393fca7";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -89051,7 +89056,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "5d5def369396755609eb7a990efd01b633ef8b78";
+    const executorReleaseCommit = "98a2d3703481b2a76d500d31f8cb0b70f5c2788a";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
