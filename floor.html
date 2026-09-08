@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-08 15:17 UTC">
-<script>console.log("Claude Company build 2026-09-08 15:17 UTC")</script>
+<meta name="cc-build" content="2026-09-08 15:33 UTC">
+<script>console.log("Claude Company build 2026-09-08 15:33 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -85404,7 +85404,9 @@ async function renderTeamInto(el, { includeBot = true } = {}) {
     cBot.appendChild(bv);
     cBot.appendChild(mk("span", "dp-note", st.sentence + (hbAge != null && st.cls === "good" ? ` Checked in ${window.PLAIN.plainAge(hbAge)} ago.` : "")));
   }
-  if (includeBot) strip.appendChild(cBot);
+  /* NO BOT STATUS ON THE TEAM TAB (owner, 2026-09-08). This tab is the people and what
+     they do; the bot has a tab of its own and a chip on the Overview. */
+  void cBot;
 
   // 2. the shift — with the toggle and cadence inline
   const cShift = mk("div", "tchip");
@@ -85425,7 +85427,11 @@ async function renderTeamInto(el, { includeBot = true } = {}) {
   }
   cShift.appendChild(sv);
 
-  strip.appendChild(cShift);
+  /* THE SHIFT CONTROLS ARE HQ-ONLY (owner, 2026-09-08: "NO OPTION TO LET THE TEAM GO ON
+     BREAK (ONLY ON HQ)"). A tenant reading their roster should not be able to stop the
+     house desk working, and does not need the switch on this tab at all. */
+  const isHqFloor = FLOOR === 50 || ROOM?.hq === true;
+  if (isHqFloor) strip.appendChild(cShift);
 
   // 3. the brain
   const brain = S.md_brain === "grok" ? "grok" : "claude";
@@ -85439,7 +85445,7 @@ async function renderTeamInto(el, { includeBot = true } = {}) {
   }
   cBrain.appendChild(bvv);
 
-  strip.appendChild(cBrain);
+  if (isHqFloor) strip.appendChild(cBrain);
   el.appendChild(strip);
   /* The payload has carried the floor's research journal (last 25 runs) since grind
    * mode shipped; the only renderer wrote into a hidden legacy pane. A grinding
@@ -86895,7 +86901,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · dry run by default"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "362716fb34824a4639a1f1606e50f87c9782ce40";
+    const releaseCommit = "8d74458f992f2b4a6b39e1e5ec2b638eac98a6de";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "f3acdc1ff0d95b2d0c2208ba20c051d810e6fe85199c93dff2f434adb393fca7";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -88255,12 +88261,15 @@ async function loadOverviewDashboard() {
     return;
   }
   dashLoading(el, "Opening the floor dashboard…");
-  const [floorR, feedR, pulseR, statsR, budgetR] = await Promise.all([
+  const [floorR, feedR, pulseR, statsR, budgetR, execR] = await Promise.all([
     call_api("/api/floor/" + FLOOR_N),
     call_api("/api/floor/" + FLOOR_N + "/feed?limit=120"),
     call_api("/api/heartbeat"),
     call_api("/api/stats/overview"),
     call_api("/api/budget"),
+    /* The burner's confirmed balance and any open position. Owner-only at the route,
+       so a visitor simply gets nothing back and the chips fall away. */
+    call_api("/api/floor/" + FLOOR_N + "/executor/status").catch(() => null),
   ]).catch(() => []);
   el.innerHTML = "";
   dashReady(el);
@@ -88284,17 +88293,57 @@ async function loadOverviewDashboard() {
     runnerChoice: room.settings?.runner_choice ?? room.settings?.runnerChoice ?? room.runnerChoice ?? "unknown" });
   const deskChip = { label: "Desk", value: desk.chip + (pulse.lastEventTs ? " \u00b7 last move " + window.PLAIN.plainAge(Date.now() - pulse.lastEventTs) + " ago" : ""), cls: desk.cls, title: desk.sentence };
   if (room.isMine) {
-    el.append(plainLead("Your floor. The desk has " + (feedPrivate ? "its calls" : live.length + " open call" + (live.length === 1 ? "" : "s"))
-      + "; your bot is " + bot.chip.toLowerCase() + ".", { sub: bot.sentence, info: HOW_THE_DESK_WORKS, infoTitle: "How the desk works" }));
+    /* WHAT A TENANT ASKED TO SEE, AND ONLY THIS (owner, 2026-09-08): "THEY JUST NEED TO
+       KNOW IF THEIR BOT IS ON (WHICH THEY CAN EASILY TURNOFF), IF THERE IS A LIVE
+       POSITION, HOW MUCH IS THEIR SOL BALANCE, HOW MUCH IS THE PROFIT AND LOSS, HOW
+       MUCH $CLAUDECO THEY HAVE". Five facts, five chips, one button. */
+    const exec = execR?.status === 200 ? (execR.body || {}) : {};
+    const execWallet = exec.wallet || {};
+    const held = Number(heartbeat?.open ?? (Array.isArray(heartbeat?.held) ? heartbeat.held.length : 0)) || 0;
+    const botOn = bot.cls === "good";
+    const pnl = feedPrivate ? null : Number(feedR?.body?.record?.netPnlUsd ?? 0);
+    let claudeco = null;
+    if (budgetR?.status === 200) {
+      try {
+        claudeco = (Number(BigInt(budgetR.body.balanceBaseUnits || "0") /
+          10n ** BigInt(Math.max(0, Number(budgetR.body.decimals || 0) - 3))) / 1000)
+          .toLocaleString(undefined, { maximumFractionDigits: 0 });
+      } catch { claudeco = null; }
+    }
+    el.append(plainLead("Your floor.", { sub: bot.sentence }));
     el.append(chipRow([
-      { label: "Your bot", value: bot.chip, cls: bot.cls, title: bot.sentence },
-      deskChip,
-      { label: "Open calls", value: feedPrivate ? "private" : String(live.length) + (offered.length ? " \u00b7 " + offered.length + " for you" : "") },
+      { label: "Your bot", value: botOn ? "ON \u00b7 " + bot.chip : bot.chip, cls: bot.cls, title: bot.sentence },
+      { label: "Open position", value: held ? String(held) + (held === 1 ? " coin" : " coins") : "none",
+        cls: held ? "good" : "", title: held ? "Your bot reported holding this." : "Your bot is not in a trade." },
+      { label: "SOL", value: execWallet.balanceSol == null ? "\u2014" : dashSol(execWallet.balanceSol),
+        title: execWallet.address ? "Confirmed on chain for " + execWallet.address : "no wallet reported yet" },
     ]));
-    if (feedR?.body?.rent?.overdue) el.append(chipRow([{ label: "Rent", value: "OVERDUE", cls: "bad",
-      title: "This floor's rent is overdue. Settle it from the tower." }]));
-    el.append(leadButton(bot.action ? "Open your bot" : offered.length ? "See your calls" : "See the calls",
-      () => goTo(bot.action ? "wallste" : "calls")));
+    el.append(chipRow([
+      { label: "Profit and loss", value: pnl == null ? "private" : money(pnl),
+        cls: pnl == null ? "" : pnl > 0 ? "good" : pnl < 0 ? "bad" : "",
+        title: "Across every trade your bot has closed." },
+      { label: "$CLAUDECO", value: claudeco == null ? "\u2014" : claudeco },
+      feedR?.body?.rent?.overdue ? { label: "Rent", value: "OVERDUE", cls: "bad",
+        title: "This floor's rent is overdue. Settle it from the tower." } : null,
+    ]));
+    /* "WHICH THEY CAN EASILY TURNOFF" — this page cannot stop the bot and must never
+       pretend to: no control channel exists, by design. So the button is the real
+       thing, the one command that stops it, on the machine that runs it. */
+    if (botOn) {
+      el.append(leadButton("How to turn it off", () => {
+        const d = window.openDialog({ label: "off" });
+        const p = dashNode("p", "dp-note",
+          "Your bot runs on your own machine, and nothing on this page can reach it \u2014 that is why no key of yours is here.\n\n"
+          + "To stop it, open a terminal in the bot's folder on that machine and run\n    bash macos-launchagent.sh unload\n"
+          + "It stops immediately and will not start again until you run \u201cload\u201d.\n\n"
+          + "Stopping it does NOT sell what it already holds. If it is in a trade you want out of, sell that yourself from your wallet.");
+        p.style.cssText = "font-size:12.5px;line-height:1.55;color:var(--ink);white-space:pre-line";
+        d.body.appendChild(p);
+        const ok = dashNode("button", "dp-btn", "Got it"); ok.type = "button"; ok.onclick = d.dismiss; d.foot.appendChild(ok);
+      }));
+    } else {
+      el.append(leadButton(bot.action ? "Open your bot" : "See the calls", () => goTo(bot.action ? "wallste" : "calls")));
+    }
   } else {
     /* The HQ floor has no lease row by design (rooms.js roomState), so `lease` is null
        for every visitor of the house floor — which is not vacant, it is the one floor
@@ -88815,7 +88864,9 @@ async function loadWallsteDashboard({ background = false } = {}) {
     /* FIRST, AHEAD OF EVERY INSTALL INSTRUCTION. The question of who holds the key is
        not a detail discovered halfway down a setup card. */
     const repaintTrack = () => { dashboardFeedCache = null; setTimeout(loadWallsteDashboard, 400); };
-    el.appendChild(renderRunnerFork(runnerChoice, async (value) => {
+    /* Choosing who runs the bot is a set-up decision, not a daily one: it shows while
+       the bot is not set up, and to a reader who asked for detail. */
+    const forkNode = renderRunnerFork(runnerChoice, async (value) => {
       const saved = await saveRunnerChoice(value);
       if (saved.ok) {
         if (value === RUNNER_SELF) runnerChoiceLocalSelf = true;
@@ -88846,12 +88897,15 @@ async function loadWallsteDashboard({ background = false } = {}) {
       openWalkthrough: openWallsteWalkthrough,
       openConditions: () => openHqConditions({ alreadyRequested: runnerChoice === RUNNER_HQ,
         onRecorded: repaintTrack }),
-    }));
+    });
+    if (showSetup) el.appendChild(forkNode);
     const boundary = dashNode("div", "boundary-note");
     boundary.innerHTML = "<strong>OBSERVATION ONLY · TENANT MACHINE ONLY.</strong> " +
       "Telemetry is self-reported by your machine. Burner balance is a read-only confirmed-chain lookup. " +
       "Remote control and browser signing are disabled.";
-    el.appendChild(boundary);
+    /* The custody fact is already the second half of the lead sentence above; this
+       paragraph repeated it. Detailed view only. */
+    if (detailedView()) el.appendChild(boundary);
 
     /* YOUR KEY, AND WHERE IT ACTUALLY IS (owner, 2026-09-07: "all floors should be able
        to see and use their burner private key"). Every floor's key is generated on that
@@ -89056,7 +89110,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "362716fb34824a4639a1f1606e50f87c9782ce40";
+    const executorReleaseCommit = "8d74458f992f2b4a6b39e1e5ec2b638eac98a6de";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
@@ -89395,7 +89449,9 @@ async function loadWallsteDashboard({ background = false } = {}) {
       "Locally acknowledged v2 maxima · " + String(maxima.maxSolPerTrade ?? "—") + " / " +
       String(maxima.rolling24hDeploySol ?? "—") + " / " +
       String(maxima.rolling24hRealizedLossBrakeSol ?? "—") + " SOL. Raised caps are never accepted from this browser or the call feed."));
-    el.appendChild(capsCard);
+    /* Caps are set on the reader's own machine and only REPORTED here, so they are
+       status rather than something to change. Detailed view only. */
+    if (detailedView()) el.appendChild(capsCard);
     // Funding is deliberately the final activation surface. It stays read-only and
     // is never placed before the local release, paper-review, and readiness steps.
     el.appendChild(funding);
@@ -89535,10 +89591,13 @@ async function loadCalloutsDashboard() {
       const proof = dashNode("div", "callout-proof");
       const posted = dashWhen(callout.ts);
       const found = dashWhen(callout.lastSeenAt ?? callout.firstSeenAt);
+      /* ONLY THE CALLER AND THE CALL (owner, 2026-09-08). The wallet figure stays,
+         because it is the whole reason this caller is on the board, and so does the one
+         line saying what it does and does not prove. The rest was provenance for a
+         reader who never asked. */
       proof.append(
         dashNode("span", "", dashMoney(row.walletUsd) + " of SOL in this wallet"),
         ...(posted ? [dashNode("span", "", "called " + posted)] : []),
-        ...(found ? [dashNode("span", "", "seen " + found)] : []),
         ...(Number.isFinite(Number(callout.multiple))
           ? [dashNode("span", "", Number(callout.multiple).toFixed(1) + "x since the call, per Pump.fun")] : []),
         dashNode("span", "", "balance is confirmed on chain; the purchase is not")
