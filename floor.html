@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-08 03:38 UTC">
-<script>console.log("Claude Company build 2026-09-08 03:38 UTC")</script>
+<meta name="cc-build" content="2026-09-08 08:45 UTC">
+<script>console.log("Claude Company build 2026-09-08 08:45 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -1321,8 +1321,8 @@ window.CCModals = (function () {
     const ctx = context || {};
     const dialog = openDialog({
       title: "If HQ ran your bot",
-      subtitle: "Floor " + ctx.floorNo + ". Read these, tick each one, and your interest is recorded. It takes "
-        + "no deposit and creates no wallet.",
+      subtitle: "Floor " + ctx.floorNo + " · this does not exist yet. Nothing here takes a deposit, "
+        + "and nothing here creates a wallet.",
       label: "consent",
     });
     dialog.body.appendChild(el("p", "", "Loading the conditions…"));
@@ -1330,7 +1330,7 @@ window.CCModals = (function () {
     const withdrawButton = el("button", "dp-btn ghost", "Withdraw my interest");
     withdrawButton.type = "button";
     withdrawButton.setAttribute("data-consent", "withdraw");
-    const continueButton = el("button", "dp-btn", "Continue — record my interest");
+    const continueButton = el("button", "dp-btn", "Record my interest");
     continueButton.type = "button";
     continueButton.setAttribute("data-consent", "continue");
     const cancel = el("button", "dp-btn ghost", "Close");
@@ -1343,22 +1343,26 @@ window.CCModals = (function () {
 
     let view = null;
 
-    const renderConfirmation = (extra) => {
+    const renderConfirmation = (extra, headline) => {
       dialog.body.textContent = "";
       const done = el("div", "ccm-done");
       done.setAttribute("data-consent", "confirmation");
-      done.appendChild(el("h5", "", HQ_DONE_HEADLINE));
+      /* THE HEADLINE REPORTS THE WRITE THAT LANDED. Printing "recorded" over a refused
+         write is the one thing this screen must never say, so the caller hands it a
+         different sentence when the interest itself did not go in. */
+      done.appendChild(el("h5", "", headline || HQ_DONE_HEADLINE));
       for (const line of HQ_DONE_LINES) para(done, "", line);
       if (extra) para(done, "ccm-ok", extra);
       dialog.body.appendChild(done);
       const record = view && view.consent;
       if (record && record.at) {
-        const stamp = el("p", "ccm-hash", "Recorded " + new Date(record.at).toISOString()
-          + " · disclosure " + record.version + " · sha256 " + record.sha256);
+        const stamp = el("p", "ccm-hash", "Your receipt · recorded " + new Date(record.at).toISOString()
+          + " · version " + record.version + " · fingerprint " + record.sha256);
         dialog.body.appendChild(stamp);
       }
-      para(dialog.body, "", "Changed your mind? Withdrawing takes one click and clears the record; the button "
-        + "is right there, and it is the same one click that made it.");
+      para(dialog.body, "", "Changed your mind? Press Withdraw my interest, below — one click, the same as "
+        + "the one that recorded it. It clears the record, and there is nothing to give back, because nothing "
+        + "was ever created or funded for you.");
       dialog.body.appendChild(message);
       continueButton.hidden = true;
       continueButton.disabled = true;
@@ -1370,6 +1374,33 @@ window.CCModals = (function () {
       dialog.body.textContent = "";
       const disclosure = view.disclosure;
       const consent = view.consent || {};
+      /* PLAIN FIRST, THEN THE WORDS THE HASH WAS TAKEN OVER. Eight numbered cards is
+         the whole decision spread over a scroll, and a reader who stops early stops
+         on the wrong thing. This says the four that decide it — whose key it is,
+         who could stop it, what happens to the money when it goes wrong, and what is
+         not being promised — before the sheet, never instead of it. Nothing here
+         is softer than the condition it summarises, and it carries no FIGURES of its
+         own: every number stays inside the hashed text, so this cannot drift out of
+         date against the words it sits above. It is outside the bordered sheet on
+         purpose — the sheet is what the fingerprint covers. */
+      const primer = el("div", "ccm-step");
+      primer.setAttribute("data-consent", "primer");
+      primer.appendChild(el("h5", "", "Before you tick anything"));
+      bullets(primer, [
+        "None of this exists yet. There is nothing to fund and nowhere to send money, and if it is ever "
+          + "offered, a real agreement written by a lawyer comes first. Nothing below promises any return.",
+        "Whose key it would be: the house's, not yours. The operator would create the wallet, hold its "
+          + "private key on their own machine, and be able to move your funds.",
+        "Who would decide the trades: not you. It would run on the operator's own computer and you would "
+          + "not approve them one by one; while that machine is asleep or offline, nothing would be watching "
+          + "your positions. Backing out of the arrangement stays one click, at any time.",
+        "If it went wrong: you could lose everything you put in, and quickly — to the market, to theft, "
+          + "to a lost key, to a bug, or to the operator becoming unavailable. There would be no way to take "
+          + "money back out: that part does not exist.",
+      ]);
+      para(primer, "", "That is the summary. What you would be accepting is the "
+        + (disclosure.conditions || []).length + " conditions below — read them, and tick each one.");
+      dialog.body.appendChild(primer);
       const sheet = el("div", "ccm-disclosure");
       sheet.setAttribute("data-consent", "disclosure");
       sheet.appendChild(el("h5", "", disclosure.title));
@@ -1403,15 +1434,17 @@ window.CCModals = (function () {
       for (const line of disclosure.closing || []) para(sheet, "", line);
       dialog.body.appendChild(sheet);
 
-      const hash = el("p", "ccm-hash", "Disclosure " + disclosure.version + " · sha256 "
+      para(dialog.body, "", "The line below names the exact words you are ticking, so nobody can swap them "
+        + "for different ones later and call it the same thing.");
+      const hash = el("p", "ccm-hash", "Version " + disclosure.version + " · fingerprint "
         + disclosure.sha256);
       dialog.body.appendChild(hash);
       if (consent.acknowledged) {
-        para(dialog.body, "ccm-ok", "You have already acknowledged this version. Ticking again simply records "
-          + "it again; withdrawing clears it.");
+        para(dialog.body, "ccm-ok", "You accepted this version already. Ticking again simply files it again, "
+          + "and Withdraw my interest clears it. Either way, nothing is running and nothing is funded.");
       } else if (consent.stale) {
-        para(dialog.body, "ccm-err", "The wording changed since you last acknowledged it. Your earlier "
-          + "acknowledgement does not count as current any more, so please read this version and tick again.");
+        para(dialog.body, "ccm-err", "The wording changed since you last accepted it, so what you accepted "
+          + "then does not count any more. Read this version and tick again.");
       }
       dialog.body.appendChild(message);
 
@@ -1419,8 +1452,8 @@ window.CCModals = (function () {
         const outstanding = ticks.filter((t) => !t.box.checked).length;
         continueButton.disabled = outstanding > 0;
         continueButton.textContent = outstanding > 0
-          ? outstanding + (outstanding === 1 ? " box left" : " boxes left")
-          : "Continue — record my interest";
+          ? outstanding + " of " + ticks.length + " still to tick"
+          : "Record my interest";
       };
       continueButton.hidden = false;
       withdrawButton.hidden = !(consent.acknowledged || consent.stale);
@@ -1453,19 +1486,23 @@ window.CCModals = (function () {
         if (!result || !result.ok) {
           continueButton.disabled = false;
           message.className = "ccm-err";
-          message.textContent = "Nothing was recorded" + (result && result.error ? " (" + result.error + ")" : "")
-            + ". Nothing was provisioned either way.";
+          message.textContent = "Nothing was recorded" + (result && result.error ? " — " + result.error : "")
+            + ". Nothing was provisioned either way, so pressing it again costs you nothing.";
           return;
         }
         if (result.view) view = result.view;
         /* The acknowledgement is filed. Registering the interest itself is a second,
            separate write, and the confirmation says which of the two happened. */
         const interest = ctx.registerInterest ? await ctx.registerInterest() : { ok: true };
-        renderConfirmation(interest && interest.ok
-          ? null
-          : "Your acknowledgement was filed, but the interest itself was not recorded ("
-            + ((interest && interest.error) || "the desk refused it") + "). Nothing was provisioned either "
-            + "way; try Continue again from this panel.");
+        renderConfirmation(
+          interest && interest.ok
+            ? null
+            : "Your acceptance of the conditions was filed, but the interest itself was not recorded ("
+              + ((interest && interest.error) || "the desk refused it") + "). Nothing was provisioned either "
+              + "way — press Record my interest again to finish it.",
+          interest && interest.ok
+            ? null
+            : "Your acceptance is filed. Your interest is not recorded. Nothing has been provisioned.");
         if (!(interest && interest.ok)) {
           continueButton.hidden = false;
           continueButton.disabled = false;
@@ -1493,10 +1530,10 @@ window.CCModals = (function () {
       cleared.appendChild(el("h5", "", "Your interest is withdrawn."));
       para(cleared, "", result.withdrawn === false
         ? "There was nothing on file to withdraw, so nothing changed."
-        : "The record is cleared and this floor is back to having chosen no track. Nothing was ever "
-          + "provisioned, so there is nothing to return.");
-      para(cleared, "", "Your own machine still runs the bot today, and the walkthrough for that is one "
-        + "click away in the panel behind this window.");
+        : "The record is cleared, and your floor is back to not having said who should run its bot. "
+          + "Nothing was ever provisioned, so there is nothing to give back.");
+      para(cleared, "", "The track that does run today is the one on your own machine, where the key is "
+        + "yours. The walkthrough for it is one click away, in the panel behind this window.");
       dialog.body.appendChild(cleared);
       dialog.body.appendChild(message);
       withdrawButton.hidden = true;
@@ -85529,29 +85566,89 @@ function trimJupiterSwapButton() {
   apply();
 }
 
+/* ── THE ONE POP-UP WHERE SOMEONE SPENDS THEIR OWN MONEY ───────────────────
+   Buy and Sell used to drop the reader straight into a third-party swap with no
+   sentence of the page's own in front of it: nothing said whose wallet this was,
+   who chooses the amount, who signs, or that the desk takes no part once a call
+   is published. The page's own brief goes first — one lead sentence, three
+   chips, one button, the rest behind a fold — and then it hands off with
+   Jupiter's configuration untouched. Nothing added here signs, holds a key or
+   builds a transaction; handing off is the whole point. */
 async function openSwap({ mint, symbol, sol, side = "buy" }) {
-  const ok = await loadJupiter();
-  if (!ok) {
-    window.open(`https://gmgn.ai/sol/token/${mint}?tab=${side}`, "_blank", "noopener");
-    return;
-  }
   const buying = side === "buy";
-  window.Jupiter.init({
-    displayMode: "modal",
-    formProps: {
-      initialInputMint: buying ? SOL_MINT : mint,
-      initialOutputMint: buying ? mint : SOL_MINT,
-      // Raw units: SOL is 9 decimals. Sells start empty — only the wallet knows
-      // the balance, and guessing a number here would just be wrong.
-      ...(buying && sol ? { initialAmount: String(Math.round(sol * 1e9)) } : {}),
-    },
-    onSuccess: ({ txid }) => {
-      // tape() lives in another module script; reach it via window and shrug if the
-      // tape is not there — the wallet already showed the user their fill.
-      if (txid) window.tape?.("Filled", `${symbol || mint.slice(0, 6)} — ${txid.slice(0, 8)}… (your wallet, your signature)`, "hi");
-    },
-  });
-  trimJupiterSwapButton();
+  const sym = symbol || mint.slice(0, 6) + "…";
+
+  /* The hand-off, unchanged: the page names the coin, and an amount only when a
+     call carried one. Everything inside this closure belongs to Jupiter. */
+  const openWidget = async () => {
+    const ok = await loadJupiter();
+    if (!ok) {
+      window.open(`https://gmgn.ai/sol/token/${mint}?tab=${side}`, "_blank", "noopener");
+      return;
+    }
+    window.Jupiter.init({
+      displayMode: "modal",
+      formProps: {
+        initialInputMint: buying ? SOL_MINT : mint,
+        initialOutputMint: buying ? mint : SOL_MINT,
+        // Raw units: SOL is 9 decimals. Sells start empty — only the wallet knows
+        // the balance, and guessing a number here would just be wrong.
+        ...(buying && sol ? { initialAmount: String(Math.round(sol * 1e9)) } : {}),
+      },
+      onSuccess: ({ txid }) => {
+        // tape() lives in another module script; reach it via window and shrug if the
+        // tape is not there — the wallet already showed the user their fill.
+        if (txid) window.tape?.("Filled", `${symbol || mint.slice(0, 6)} — ${txid.slice(0, 8)}… (your wallet, your signature)`, "hi");
+      },
+    });
+    trimJupiterSwapButton();
+  };
+
+  /* A brief that cannot be built must never stand between someone and their own
+     exit: if the page's modal is missing, go straight to the swap. */
+  if (typeof window.openDialog !== "function") { await openWidget(); return; }
+
+  const d = window.openDialog({ title: (buying ? "Buy " : "Sell ") + sym, label: "swap" });
+  d.body.appendChild(plainLead(
+    buying
+      ? "You are about to spend your own money. The desk published a call and does nothing more — it does not buy this, and it cannot buy it for you."
+      : "You are about to sell out of your own wallet. The desk may decide a call is over, but it cannot sell for you.",
+    {
+      sub: "You choose how much, and you sign it yourself in your own wallet. Nothing here is advice, and a swap you have signed cannot be undone.",
+      infoTitle: "Who does what in this swap",
+      info: "You need a Solana wallet — Phantom, Solflare or Backpack. When you press the button, a window from Jupiter opens on top of this one: it asks you to connect that wallet, shows you the price, and asks you to sign. Jupiter is a different company and that window is its own. "
+        + "This page hands it two things: which coin you are trading, and, when a call carried an amount, a figure to start from. It holds no key of yours, it cannot sign for you, and it is never told what your wallet holds. "
+        + "The one thing it learns back is the receipt number, if a swap goes through, so it can write a line on the floor's tape. A published call is the desk's opinion about a coin. It is not an instruction, and it is not advice.",
+    }));
+  d.body.appendChild(chipRow([
+    { label: buying ? "Buying" : "Selling", value: sym },
+    { label: "How much", value: buying && sol ? dashSol(sol) + " to start" : "you choose",
+      title: buying && sol ? "A starting figure from the call, not a recommendation — type over it."
+        : "Nothing is filled in for you." },
+    { label: "You sign it", value: "in your wallet",
+      title: "The desk holds no keys, so it cannot sign or send anything for you." },
+  ]));
+
+  const details = detailsFold("Details · the coin, the price, and if it will not open");
+  const coin = dashNode("div", "dp-note", "Check the coin before you trade — ");
+  coin.appendChild(caChip(mint));
+  details.body.appendChild(coin);
+  details.body.appendChild(dashNode("p", "dp-note",
+    "The price you get, how far you let it move before the trade is called off, and any fees are all Jupiter's own, and it shows them to you before you sign. This page neither sets them nor sees them, and the price can move between what you are quoted and what you get."));
+  details.body.appendChild(dashNode("p", "dp-note", buying
+    ? (sol ? "The amount starts at the figure the call carried. It is a starting figure, not a recommendation — type over it with what you are willing to lose."
+      : "No amount is filled in. The desk publishes a call, not an amount, so what you put at risk is yours to type.")
+    : "A sell starts empty on purpose: only your wallet knows how much of this you hold, and a number guessed here would be wrong."));
+  details.body.appendChild(dashNode("p", "dp-note",
+    "If the swap will not load — an ad blocker, or no connection — this opens the coin on GMGN in a new tab instead. That is a different site, run by other people, and the desk has no part in it either."));
+  details.body.appendChild(dashNode("p", "dp-note",
+    "While Jupiter's window is open, pressing Escape closes it and this one together, and nothing is sent. Press Escape at any point before you sign and no money moves."));
+  d.body.appendChild(details.wrap);
+
+  const act = leadButton("Open the swap", () => { d.dismiss(); openWidget(); },
+    { title: "Jupiter's window opens next. Nothing moves until you sign it there." });
+  d.foot.appendChild(act);
+  try { act.firstChild.focus(); } catch {}
 }
 
 window.__renderWatchInto = (el) => loadWatchboard(el);
@@ -86743,7 +86840,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · dry run by default"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "afd7347e77947c5348d597e8bb8b4d2b4e860eba";
+    const releaseCommit = "3a419b6310a8fadbb53cc8814385bd85e249fc7f";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "9a4415f90fee6e05a4430b742ed75f277e3ed53eeef351ee2ef50767da94e2fe";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -88864,7 +88961,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "afd7347e77947c5348d597e8bb8b4d2b4e860eba";
+    const executorReleaseCommit = "3a419b6310a8fadbb53cc8814385bd85e249fc7f";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
