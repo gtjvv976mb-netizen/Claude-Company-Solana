@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-08 08:45 UTC">
-<script>console.log("Claude Company build 2026-09-08 08:45 UTC")</script>
+<meta name="cc-build" content="2026-09-08 09:29 UTC">
+<script>console.log("Claude Company build 2026-09-08 09:29 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -1036,14 +1036,19 @@ window.CCModals = (function () {
     const shaKnown = /^[0-9a-f]{64}$/i.test(String(context.installerSha256 || ""));
     return [
       { n: 1, title: "What you need first",
-        lede: "Three things, and none of them cost money.",
+        lede: "Three things. Setting it up costs nothing; the only money in these nine steps is money you "
+          + "choose to send at step 7.",
         points: [
           "A computer that stays awake. If it sleeps, the bot stops watching your positions.",
           "macOS or Linux. On Windows, install Ubuntu under WSL2 and run everything inside it.",
           "About ten minutes.",
         ],
-        notes: ["Nothing in this walkthrough costs money. Trading is a separate decision you make "
-          + "later, on that machine, and it takes deliberate steps of its own."] },
+        notes: ["Steps 1 to 6 install a bot that signs nothing and sends nothing. That is not the same as "
+          + "risking nothing: step 3 runs a script written by somebody else on your own machine, and that is "
+          + "a real decision. Step 3 gives you the fingerprint of the exact file this site is serving, to "
+          + "compare before you run it, and a way to print what the installer would do without installing.",
+          "The one thing here that cannot be undone is losing the wallet key the installer creates. Step 5 "
+            + "backs it up; it is the step not to skip."] },
 
       { n: 2, title: "Get your floor's feed secret",
         /* NAME BOTH BUTTONS. The credential can be minted from either surface and they
@@ -1052,52 +1057,72 @@ window.CCModals = (function () {
         lede: "Create it from the panel behind this window. In the WALL-ST-E view the button reads "
           + "“Create credential”; in Settings the same control reads “Create my executor feed secret”.",
         points: [
-          "It is READ-ONLY. It lets your bot read the calls published to floor " + floor
-            + " and post a heartbeat back.",
-          "It cannot sign a transaction and it cannot move funds. It is not a wallet key.",
+          "What it does: lets your bot read the calls published to floor " + floor
+            + ", and post back its check-in and what it actually traded. A call is a coin the desk would "
+            + "trade itself, with a price to enter at, a price to give up at, and a target.",
+          "What it cannot do: sign a transaction or move funds. It is not a wallet key, and it gives this "
+            + "site no way to start, stop or steer your bot.",
           "Treat it like a password: anyone holding it can read your floor's calls.",
         ],
         notes: ["You will be asked for it during the install, at the terminal, with the typing hidden."] },
 
-      { n: 3, title: "Run one command",
-        lede: "On the machine that will run the bot. Your floor number is already in it.",
+      { n: 3, title: "Install it — two ways, one installer",
+        lede: "Two ways, and they end in the same place: paste the line below into a terminal on the machine "
+          + "that will run the bot, or use the double-click installer for a Mac, further down this step. Your floor "
+          + "number is already in the line.",
         commands: [{ label: "Copy the install command", text: oneCommand }],
         points: [
-          "This installs a dry run. WALL-ST-E watches the feed, writes down what it would have done, "
-            + "and trades nothing until you arm it yourself on that machine.",
+          "This installs a dry run. What it installs IS the software that trades — it starts in the mode "
+            + "where it reads your floor's calls, writes down what it would have done, and signs nothing. It "
+            + "trades only once you arm it yourself on that machine, at step 7.",
+          "Before you run it: this is a script written by somebody else, running on your machine. The two "
+            + "commands further down let you look first — one prints the fingerprint of the exact file this "
+            + "site is serving, the other prints what the installer would do and stops.",
         ],
         extras: [
+          { kind: "download", label: "Download the double-click installer (macOS)",
+            href: "/executor/Install%20WALL-ST-E.command",
+            note: "For anyone who would rather not open a terminal. It downloads the same installer, asks you "
+              + "for your floor number, prints that file's SHA-256 for you to compare against this site, and "
+              + "waits for you to press Return before it runs anything. It carries no credential and no live "
+              + "flag, so it can only ever start a dry run. macOS quarantines a downloaded .command file: "
+              + "right-click it and choose Open the first time." },
           shaKnown ? { kind: "sha", text: String(context.installerSha256) } : null,
           { kind: "command", label: "Copy the checksum command",
             text: "curl -fsSL https://solana.claudedotcompany.com/install.sh | shasum -a 256",
             note: shaKnown
               ? "Compare that output with the digest above before you run anything. It is the digest of the "
-                + "very installer this site is serving."
+                + "very installer this site is serving, and comparing the two is how you know the file that "
+                + "runs is the file described here. If the two do not match, do not run it: nothing is installed until you do."
               : "This build has not stamped its installer digest, so compare the output against the digest on "
                 + "the published site rather than against this preview." },
           { kind: "command", label: "Copy the --help command",
             text: "curl -fsSL https://solana.claudedotcompany.com/install.sh | bash -s -- --help",
             note: "Prints what it would do and exits without installing anything." },
-          { kind: "download", label: "Download the double-click installer (macOS)",
-            href: "/executor/Install%20WALL-ST-E.command",
-            note: "For anyone who would rather not open a terminal. macOS quarantines a downloaded "
-              + ".command file: right-click it and choose Open the first time. It runs the same line." },
         ].filter(Boolean) },
 
       { n: 4, title: "What the installer is doing",
-        lede: "Five things, in this order, so none of it is a surprise.",
+        lede: "Five things, in this order, so none of it is a surprise. It stops and asks you for the feed "
+          + "secret — and, only when this machine's Node is missing or the wrong version, whether it may "
+          + "install a private copy of Node first. For a dry run that is everything it asks; going live at "
+          + "step 7 asks for more.",
         points: [
-          "Checks Node (it needs >=22.13 and <25). If it is missing or the wrong version, it OFFERS to "
-            + "download the official build, verify it against nodejs.org's own SHASUMS256.txt, and unpack a "
-            + "private copy used only by this executor. No sudo. Your system Node and your shell profile are "
-            + "left alone.",
-          "Generates a dedicated burner keypair ON THIS MACHINE at " + INSTALL_HOME + "/burner.json, mode "
-            + "0600. It is never transmitted anywhere.",
+          "Checks Node (it needs >=22.13 and <25). If it is missing or the wrong version it asks before "
+            + "doing anything: say yes and it downloads the official build, verifies it against nodejs.org's "
+            + "own SHASUMS256.txt, and unpacks a private copy used only by this bot. Say no and it "
+            + "stops, having installed nothing. No sudo on that path, and your system Node and your shell "
+            + "profile are left alone.",
+          "Generates a dedicated, empty wallet ON THIS MACHINE at " + INSTALL_HOME + "/burner.json, mode "
+            + "0600. The key is never transmitted anywhere, and nothing here funds it.",
           "Asks for the feed secret with the typing hidden. It is never a command-line flag, because argv "
             + "lands in your shell history and in the process list.",
-          "Installs a supervised service: a per-user LaunchAgent on macOS (no sudo), a hardened systemd "
-            + "unit on Linux.",
-          "Starts in DRY RUN.",
+          "Installs a supervised service, so it starts again by itself. This is the one part that writes "
+            + "outside the install folder. On a Mac: a per-user LaunchAgent in your own home folder, and no "
+            + "administrator password is asked for. On Linux: it uses sudo to write a hardened service file at "
+            + "/etc/systemd/system/cc-executor.service, reload systemd and enable it.",
+          "Starts in dry run, and brings itself back after a crash. On a Mac it starts again at login, not "
+            + "at boot — after a reboot it stays down until somebody logs in. On Linux it is enabled as a "
+            + "system service, so it comes up at boot.",
         ] },
 
       { n: 5, title: "Back up the key",
@@ -1127,43 +1152,61 @@ window.CCModals = (function () {
           { label: "Copy the Linux log command", text: "sudo journalctl -u cc-executor -f" },
         ],
         points: [
-          "Within about a minute this panel shows a heartbeat and the burner's public address.",
+          "Within about a minute the panel behind this window shows a check-in and the burner wallet's "
+            + "public address, and your bot's chip there reads DRY RUN.",
           "Watch a few calls go by before you consider going live. That is the entire point of the dry run.",
         ] },
 
       { n: 7, title: "Going live — this is where real money starts",
-        lede: "The software enforces every one of these. None of them is a suggestion.",
+        lede: "Six conditions, and the software enforces every one. None of them is a suggestion, and none "
+          + "of them can be waived from this site.",
         points: [
-          "Two RPC endpoints from DIFFERENT providers. The secondary must not be another hostname at the "
-            + "same registrable domain; the executor cross-checks the two and refuses to act on one "
-            + "provider's word. The rate-limited public Solana RPC is rejected for either endpoint, and both "
-            + "must be HTTPS.",
-          "A Jupiter API key. Live mode refuses to start without it.",
-          "A pinned local checkout plus the exact 40-character published commit. --live never runs "
+          "Two Solana RPC endpoints, from two DIFFERENT companies. An RPC endpoint is how this machine reads "
+            + "the chain and sends a transaction; a free private tier is enough to start. Before it acts your "
+            + "bot asks both and compares their answers, and refuses to trade when they disagree — which is "
+            + "why a second endpoint at the same company buys you nothing, and why a secondary that is only "
+            + "another hostname at the same registrable domain is refused. The rate-limited public Solana "
+            + "endpoint is refused for either one, and both must be HTTPS.",
+          "A Jupiter API key. Jupiter is the router that prices a swap and builds the transaction your "
+            + "wallet signs; live mode refuses to start without a key. The installer checks the one you give "
+            + "it with a price quote that names no wallet and cannot be signed.",
+          "A pinned local checkout plus the exact 40-character published commit. Live mode never runs "
             + "downloaded code, so this step needs a git clone even though the dry run did not.",
-          "You fund the burner address yourself. The installer never funds a wallet.",
-          "You RETYPE THE BURNER'S OWN PUBLIC KEY when prompted. LIVE_TRADING_ACK must equal it exactly or "
-            + "the service refuses to arm.",
+          "You fund the burner address yourself, from your own wallet. The installer never funds anything, "
+            + "and nobody here ever holds that key.",
+          "You RETYPE THE BURNER'S OWN PUBLIC KEY when prompted. What you type has to match that wallet "
+            + "exactly, or the service refuses to arm.",
           "Caps start as a canary: 0.005 SOL per trade, 0.01 SOL rolling 24h deployed, and a 0.01 SOL "
-            + "rolling 24h realised-loss brake. Raising any one of them requires all three together plus a "
-            + "second typed acknowledgement.",
+            + "rolling 24h realised-loss brake. Raising any one of them requires all three raised together, "
+            + "plus a second acknowledgement typed out as a whole sentence.",
         ],
-        notes: ["The exact live command, with the pinned commit and the cap flags, is on the install card in "
-          + "the panel behind this window. This step is the decision; that card is the paste."] },
+        notes: ["From here on the losses are real, and nothing on this site can stop the bot. The only "
+          + "controls are the ones on that machine — learn them at step 9 before you fund anything.",
+          "The exact live command, with the pinned commit and the cap flags, is on the install card in "
+            + "the panel behind this window. This step is the decision; that card is the paste."] },
 
       { n: 8, title: "Confirm it is armed",
-        lede: "Two readings agree, or it is not armed.",
+        lede: "Two readings, answering two different questions: whether your bot is armed, and whether it "
+          + "could actually get a trade done.",
         points: [
-          "This panel shows LIVE rather than PAPER.",
-          "The log prints “READINESS proved” — an unsigned rehearsal against both providers, "
-            + "proving it could execute, having signed nothing.",
-          "If readiness will not prove, it is usually a flaky RPC. It retries.",
+          "Armed: your bot's chip in the panel behind this window reads LIVE instead of DRY RUN. That is the "
+            + "mode your bot reports about itself.",
+          "Able to trade: the log prints “READINESS proved” — a rehearsal that builds a real "
+            + "swap against both providers and signs nothing. The same panel reports it as Trade rehearsal "
+            + "2 / 2.",
+          "If it will not prove, the log says why on that same line and the panel repeats the reason. The "
+            + "commonest cause by far is an unfunded wallet: the rehearsal needs the trade size plus the "
+            + "network-fee ceiling, two token accounts of rent and an untouched reserve, and the log prints "
+            + "that figure in SOL. Send SOL to the burner address and the next attempt clears.",
+          "It retries on its own, roughly every two minutes. Do not read it as a safety catch: it is a "
+            + "diagnostic, not a gate. An armed bot goes on attempting entries whether or not the last "
+            + "rehearsal proved.",
         ] },
 
       { n: 9, title: "Knowing how to stop it",
         lede: "Two sentinel files and one service command. Learn these before you need them.",
         points: [
-          "PAUSE: while " + INSTALL_HOME + "/PAUSE_ENTRIES exists, WALL-ST-E refuses new buys but keeps "
+          "PAUSE: while " + INSTALL_HOME + "/PAUSE_ENTRIES exists, your bot refuses new buys but keeps "
             + "monitoring, keeps closing recorded positions, and keeps reconciling pending attempts.",
           "HARD STOP: while " + INSTALL_HOME + "/HARD_STOP exists, it creates no new submissions at all, "
             + "including automated exits. It still reconciles transactions already signed or submitted, and "
@@ -1178,7 +1221,7 @@ window.CCModals = (function () {
         ],
         notes: [
           "Create both with install -m 600, not with touch. A safety control other users can write is not a "
-            + "safety control, so the executor requires these files to be owner-only; touch makes them mode "
+            + "safety control, so your bot requires these files to be owner-only; touch makes them mode "
             + "644 and it reports the sentinel as not owner-only.",
           "Stopping the process does not close an on-chain position. Neither sentinel is removed by any "
             + "install, upgrade or uninstall command — removing one is always your own deliberate act.",
@@ -1214,8 +1257,9 @@ window.CCModals = (function () {
     const total = steps.length;
     const dialog = openDialog({
       title: "Run it yourself — the nine steps",
-      subtitle: "Floor " + floorNo + ". One command, then a series of decisions that are yours. You can close "
-        + "this and come back; it remembers where you were.",
+      subtitle: "Floor " + floorNo + ". Steps 1 to 6 set up a bot that trades nothing. Step 7 is where real "
+        + "money starts, and it is a decision of its own. You can close this and come back; it remembers "
+        + "where you were.",
       label: "walkthrough",
     });
 
@@ -80692,11 +80736,12 @@ const DOSSIER = {
     note: "Volume is a claim, not a measurement. Reports on demand only; soundness is not its call.",
   },
   Technical: {  // JASON BURN
-    brief: "Assesses whether the current price location is worth entering at all.",
-    detail: "Asks whether this is a location worth entering, and answers it without reference to what Forensics, Liquidity, Flow or Narrative found. The blind separation is deliberate: the five analysts are expected to disagree violently, and a technical read that flatters the others counts for no more than one that fights them.",
-    method: "Model call. Costs money per workup.",
+    retired: true,
+    brief: "Retired. The desk closed the chart seat on 8 September 2026, and he is not consulted on a call any more.",
+    detail: "He used to ask whether a coin's price location was worth entering. On a coin younger than a trading session there is no tape to read, and the one question worth keeping — has this already gone vertical, is this a knife still falling — is four numbers on the evidence that every remaining analyst reads anyway. His brief carried no power to end a study, and his weight was the smallest on the desk, too small to move a score on its own. His desk is still on the floor. His opinion is in none of the calls the desk publishes.",
+    method: "Nothing. No model is called for this seat, and its weight was shared out among the four analysts that remain.",
     known: "No memory of how it got here.",
-    note: "Reaches no candidate the Screener has already killed on liquidity, age or wash ratio.",
+    note: "Anything on this floor that still counts five analysts is counting him. The desk runs four: the contract check, the exit check, the demand check and the story check.",
   },
   Narrative: {  // BLACK WIDOWER
     brief: "Establishes whether a story exists, whether it is true, and whether the desk is early.",
@@ -86840,7 +86885,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · dry run by default"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "3a419b6310a8fadbb53cc8814385bd85e249fc7f";
+    const releaseCommit = "f9d5c463cf864f1aa3afeb786ba3bc0305ba5b6d";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "9a4415f90fee6e05a4430b742ed75f277e3ed53eeef351ee2ef50767da94e2fe";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -88961,7 +89006,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "3a419b6310a8fadbb53cc8814385bd85e249fc7f";
+    const executorReleaseCommit = "f9d5c463cf864f1aa3afeb786ba3bc0305ba5b6d";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
