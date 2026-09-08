@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-08 14:10 UTC">
-<script>console.log("Claude Company build 2026-09-08 14:10 UTC")</script>
+<meta name="cc-build" content="2026-09-08 14:33 UTC">
+<script>console.log("Claude Company build 2026-09-08 14:33 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -85667,9 +85667,9 @@ async function openSwap({ mint, symbol, sol, side = "buy" }) {
     {
       sub: "You choose how much, and you sign it yourself in your own wallet. Nothing here is advice, and a swap you have signed cannot be undone.",
       infoTitle: "Who does what in this swap",
-      info: "You need a Solana wallet — Phantom, Solflare or Backpack. When you press the button, a window from Jupiter opens on top of this one: it asks you to connect that wallet, shows you the price, and asks you to sign. Jupiter is a different company and that window is its own. "
-        + "This page hands it two things: which coin you are trading, and, when a call carried an amount, a figure to start from. It holds no key of yours, it cannot sign for you, and it is never told what your wallet holds. "
-        + "The one thing it learns back is the receipt number, if a swap goes through, so it can write a line on the floor's tape. A published call is the desk's opinion about a coin. It is not an instruction, and it is not advice.",
+      info: "You need a Solana wallet. Pressing the button opens Jupiter's own window on top of this one: it connects "
+        + "your wallet, shows the price, and asks you to sign. This desk holds no key of yours and cannot sign for you. "
+        + "A call is its opinion about a coin, not advice.",
     }));
   d.body.appendChild(chipRow([
     { label: buying ? "Buying" : "Selling", value: sym },
@@ -86896,7 +86896,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · dry run by default"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "fd7380933940099b5350c25e868b2aaaf993a5ce";
+    const releaseCommit = "69eafa6b1d4ebd45d12223a07c7c9ea71e4b62b5";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "f3acdc1ff0d95b2d0c2208ba20c051d810e6fe85199c93dff2f434adb393fca7";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -88199,11 +88199,10 @@ async function loadOverviewDashboard() {
     [...document.querySelectorAll(".dtab")].find((t) => t.dataset.destination === dest)?.click();
     if (dest === "calls") activateDashboardSubview("calls", "published");   // the calls, not the shortlist
   };
-  const HOW_THE_DESK_WORKS = "Every few minutes the desk pulls the newest pump.fun coins and screens them for free: "
-    + "size, age, whether they can be sold, whether the trading looks real. The few that pass are studied by a team of "
-    + "analysts \u2014 contract, exit, demand, chart, story \u2014 argued against by a devil's advocate, and judged by the CEO. "
-    + "A call is one the desk would trade itself, with an entry, a stop and a target. Open means the desk is tracking it, "
-    + "not that anyone holds it: your bot decides for itself whether to buy.";
+  /* 35 words. A reader who wants the long version can read the calls themselves. */
+  const HOW_THE_DESK_WORKS = "The desk screens every new pump.fun coin for free, then pays a team of analysts to "
+    + "study the few that pass. What survives is published as a call: a coin it would trade, with a price to buy at, "
+    + "a price to give up at, and a target.";
   if (FLOOR_N == null) {
     el.innerHTML = "";
     /* THE VISITOR'S OVERVIEW: one sentence, three numbers, one button. What the desk is
@@ -88297,7 +88296,7 @@ async function loadOverviewDashboard() {
       : room.lease
         ? floorName + " is leased. Its calls and controls are private to its tenant; the house desk is public on floor 50."
         : "Nobody leases " + floorName + " yet. The house desk is public on floor 50.",
-      { sub: isHouse ? "Lease a floor from the tower to run a desk of your own." : room.lease ? "You are visiting." : "Lease it from the tower to run your own desk here.",
+      { sub: isHouse || room.lease ? null : "Lease it from the tower to run your own desk here.",
         info: HOW_THE_DESK_WORKS, infoTitle: "How the desk works" }));
     el.append(chipRow([
       { label: isHouse ? "House desk" : room.lease ? "Visitor" : "Vacant", value: "", cls: isHouse ? "good" : "warn" },
@@ -88311,9 +88310,15 @@ async function loadOverviewDashboard() {
      or straining is the owner's main instrument; a tile among six tiles is not
      prominent. The slot is attached now and filled when the route answers, so an await
      cannot shuffle the panel underneath it. */
-  const cycleSlot = dashNode("div");
-  el.appendChild(cycleSlot);
-  paintCycleSurface(cycleSlot, { history: false });
+  /* NO CYCLE ON THE OVERVIEW (owner, 2026-09-08: "WHY IS THERE A CYCLE INFO?"). The
+     round, the level and the strain signal are the desk's own machinery — a visitor
+     is here to learn what this place is, not how hard its quota is working. It lives
+     on Calls, and only for a reader who turned Detailed view on. */
+  if (detailedView()) {
+    const cycleSlot = dashNode("div");
+    el.appendChild(cycleSlot);
+    paintCycleSurface(cycleSlot, { history: false });
+  }
   /* Everything below is Detailed view only \u2014 no bar. One exception stays on screen
      for every reader, added to the chips above: overdue rent is a money consequence,
      and a tenant must not have to switch a setting on to find out about it. */
@@ -88411,9 +88416,8 @@ async function loadCandidateBoard() {
        line is kept word for word — it is the sentence a reader must not miss. */
     el.append(plainLead("Coins that passed the free screen and are waiting for the analysts. Nothing here is a call.",
       { sub: "Five per size band, ranked by the screen. The desk may study any of them next, or none.",
-        info: "Before any analyst spends a cent, every new coin is screened for free: how big it is, how old, whether it can be sold, "
-          + "whether the trading looks real. The ones that pass land here, ranked by size band. Being on the shortlist means "
-          + "the desk might study it next; it is not a recommendation, an order, or permission to trade.", infoTitle: "How the shortlist works" }));
+        info: "Every new coin is screened for free: size, age, whether it can be sold, whether the trading looks real. "
+          + "The ones that pass wait here. It means the desk might study one next \u2014 nothing more.", infoTitle: "How the shortlist works" }));
     el.append(chipRow([
       { label: "Shortlisted", value: String(body.candidateCount ?? 0) },
       { label: "Captured", value: captured },
@@ -88517,10 +88521,10 @@ async function loadDashboardCalls(view, { force = false } = {}) {
     window.__grokBoardUpdate?.(feed);
 
     const record = body.record || { wins: 0, losses: 0 };
-    const HOW_A_CALL_WORKS = "A call is a coin the desk would trade itself: an entry price, a stop where the idea is wrong, "
-      + "and a target. The desk publishes the call and tracks it on its own book. Your bot reads the same call and "
-      + "decides on its own whether to buy and how much; this page never sizes a trade or signs for one. "
-      + "A call closes when it hits its target, hits its stop, runs out of time, or the desk closes it.";
+    /* 38 words. */
+    const HOW_A_CALL_WORKS = "A call is a coin the desk would trade: a price to buy at, a price to give up at, and a "
+      + "target. Your bot reads it and decides for itself whether to buy. A call closes when it reaches its target, "
+      + "its stop, or its time.";
     if (view === "published") {
       const published = feed.filter((call) => call.status === "live");
       const forYou = published.filter((call) => call.verdict === "offered").length;
@@ -89045,7 +89049,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "fd7380933940099b5350c25e868b2aaaf993a5ce";
+    const executorReleaseCommit = "69eafa6b1d4ebd45d12223a07c7c9ea71e4b62b5";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
@@ -89441,9 +89445,8 @@ async function loadCalloutsDashboard() {
     el.append(plainLead("Pump.fun-verified accounts whose own wallet holds at least " + (whaleBar ? dashMoney(whaleBar) : "the bar")
       + " of SOL, and the coins they are calling.",
       { sub: "The wallet balance is confirmed on chain. That the caller bought the coin is not.",
-        info: "Every sweep, the desk reads the callouts posted on pump.fun for the coins it is watching. A post counts only if pump.fun "
-          + "has verified the account (its gold check) AND that account's own wallet holds at least the bar in SOL. A username, a quote or "
-          + "a tracked multiple never qualifies on its own, and the desk never shows unverified chatter. The board is a window of the last "
+        info: "A post counts only if pump.fun has verified the account and that account's own wallet holds at least the bar "
+          + "in SOL. Nothing else qualifies, and unverified chatter is never shown. The board covers the last "
           + (coverage.boardHours || 24) + " hours.", infoTitle: "How big callers are chosen" }));
     el.append(chipRow([
       { label: "Big callers", value: String(matched.length), cls: matched.length ? "good" : "" },
