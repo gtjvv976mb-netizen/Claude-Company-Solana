@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-08 16:21 UTC">
-<script>console.log("Claude Company build 2026-09-08 16:21 UTC")</script>
+<meta name="cc-build" content="2026-09-08 16:49 UTC">
+<script>console.log("Claude Company build 2026-09-08 16:49 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -286,6 +286,17 @@ body{
   padding:3px 8px;border-radius:999px;border:1px solid var(--card-line);background:transparent;color:var(--ink-faint);cursor:pointer}
 .info-btn:hover{color:var(--ink);border-color:var(--panel-line)}
 .chiprow{display:flex;gap:6px;flex-wrap:wrap}
+/* THE FIVE FIGURES ON A TENANT'S OVERVIEW (owner, 2026-09-09: "make the other info
+   bigger"). A chip is a 9.5px pill built for a row of eight; these are the only five
+   things on the tab, so they get the room. Page tokens and faces only. */
+.bigfacts{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px 14px;margin:4px 0 2px}
+.bigfact{display:flex;flex-direction:column;gap:2px;padding:9px 11px;border:1px solid var(--card-line);
+  border-radius:8px;background:var(--card)}
+.bigfact .bf-k{font:600 9.5px "JetBrains Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
+.bigfact .bf-v{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:21px;line-height:1.15;
+  color:var(--ink);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.bigfact.good .bf-v{color:var(--good)} .bigfact.warn .bf-v{color:var(--warn)} .bigfact.bad .bf-v{color:var(--bad)}
+@media (max-width:560px){ .bigfacts{grid-template-columns:repeat(auto-fit,minmax(112px,1fr))} .bigfact .bf-v{font-size:18px} }
 .chiprow .dashbadge b{color:var(--ink);font-weight:700}
 @media (max-width:420px){ .chiprow .dashbadge:nth-child(n+3){display:none} }
 .lead-actions{display:flex;gap:7px;flex-wrap:wrap}
@@ -86902,7 +86913,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · dry run by default"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "de2abe4fd91f2789b2bc8583ccec99751e04d73e";
+    const releaseCommit = "2fd0ef93e09774cc0e7f3b035689c3f604d1dbf5";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "f3acdc1ff0d95b2d0c2208ba20c051d810e6fe85199c93dff2f434adb393fca7";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -88292,40 +88303,29 @@ async function loadOverviewDashboard() {
           .toLocaleString(undefined, { maximumFractionDigits: 0 });
       } catch { claudeco = null; }
     }
+    /* THE FIVE FACTS, BIG, AND NO BUTTON (owner, 2026-09-09: "How to turn it off remove
+       this in overview, and make the other info bigger"). Label small above, figure
+       large below. Colour still carries the state and every cell keeps its explanation
+       on hover. */
     el.append(plainLead("Your floor.", { sub: bot.sentence }));
-    el.append(chipRow([
-      { label: "Your bot", value: botOn ? "ON \u00b7 " + bot.chip : bot.chip, cls: bot.cls, title: bot.sentence },
-      { label: "Open position", value: held ? String(held) + (held === 1 ? " coin" : " coins") : "none",
-        cls: held ? "good" : "", title: held ? "Your bot reported holding this." : "Your bot is not in a trade." },
-      { label: "SOL", value: execWallet.balanceSol == null ? "\u2014" : dashSol(execWallet.balanceSol),
-        title: execWallet.address ? "Confirmed on chain for " + execWallet.address : "no wallet reported yet" },
-    ]));
-    el.append(chipRow([
-      { label: "Profit and loss", value: pnl == null ? "private" : money(pnl),
-        cls: pnl == null ? "" : pnl > 0 ? "good" : pnl < 0 ? "bad" : "",
-        title: "Across every trade your bot has closed." },
-      { label: "$CLAUDECO", value: claudeco == null ? "\u2014" : claudeco },
-      feedR?.body?.rent?.overdue ? { label: "Rent", value: "OVERDUE", cls: "bad",
-        title: "This floor's rent is overdue. Settle it from the tower." } : null,
-    ]));
-    /* "WHICH THEY CAN EASILY TURNOFF" — this page cannot stop the bot and must never
-       pretend to: no control channel exists, by design. So the button is the real
-       thing, the one command that stops it, on the machine that runs it. */
-    if (botOn) {
-      el.append(leadButton("How to turn it off", () => {
-        const d = window.openDialog({ label: "off" });
-        const p = dashNode("p", "dp-note",
-          "Your bot runs on your own machine, and nothing on this page can reach it \u2014 that is why no key of yours is here.\n\n"
-          + "To stop it, open a terminal in the bot's folder on that machine and run\n    bash macos-launchagent.sh unload\n"
-          + "It stops immediately and will not start again until you run \u201cload\u201d.\n\n"
-          + "Stopping it does NOT sell what it already holds. If it is in a trade you want out of, sell that yourself from your wallet.");
-        p.style.cssText = "font-size:12.5px;line-height:1.55;color:var(--ink);white-space:pre-line";
-        d.body.appendChild(p);
-        const ok = dashNode("button", "dp-btn", "Got it"); ok.type = "button"; ok.onclick = d.dismiss; d.foot.appendChild(ok);
-      }));
-    } else {
-      el.append(leadButton(bot.action ? "Open your bot" : "See the calls", () => goTo(bot.action ? "wallste" : "calls")));
-    }
+    const facts = dashNode("div", "bigfacts");
+    const fact = (label, value, cls, title) => {
+      const cell = dashNode("div", "bigfact" + (cls ? " " + cls : ""));
+      if (title) cell.title = title;
+      cell.append(dashNode("span", "bf-k", label), dashNode("b", "bf-v", value));
+      facts.appendChild(cell);
+    };
+    fact("Your bot", botOn ? "ON" : bot.chip, bot.cls, bot.sentence);
+    fact("Open position", held ? String(held) + (held === 1 ? " coin" : " coins") : "None",
+      held ? "good" : "", held ? "Your bot reported holding this." : "Your bot is not in a trade.");
+    fact("SOL", execWallet.balanceSol == null ? "\u2014" : dashSol(execWallet.balanceSol), "",
+      execWallet.address ? "Confirmed on chain for " + execWallet.address : "no wallet reported yet");
+    fact("Profit and loss", pnl == null ? "Private" : money(pnl),
+      pnl == null ? "" : pnl > 0 ? "good" : pnl < 0 ? "bad" : "", "Across every trade your bot has closed.");
+    fact("$CLAUDECO", claudeco == null ? "\u2014" : claudeco, "");
+    if (feedR?.body?.rent?.overdue) fact("Rent", "OVERDUE", "bad", "This floor's rent is overdue. Settle it from the tower.");
+    el.appendChild(facts);
+    if (!botOn) el.append(leadButton(bot.action ? "Open your bot" : "See the calls", () => goTo(bot.action ? "wallste" : "calls")));
   } else {
     /* The HQ floor has no lease row by design (rooms.js roomState), so `lease` is null
        for every visitor of the house floor — which is not vacant, it is the one floor
@@ -89020,7 +89020,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "de2abe4fd91f2789b2bc8583ccec99751e04d73e";
+    const executorReleaseCommit = "2fd0ef93e09774cc0e7f3b035689c3f604d1dbf5";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
@@ -89415,17 +89415,14 @@ async function loadCalloutsDashboard() {
     const whaleBar = Number(policy.minimumWalletSolUsd) || 0;
     /* BIG CALLERS: one sentence, three chips, the boundary in six words, and the policy
        paragraph — the window, the coverage, the bar — only in Detailed view. */
-    el.append(plainLead("Pump.fun-verified accounts whose own wallet holds at least " + (whaleBar ? dashMoney(whaleBar) : "the bar")
-      + " of SOL, and the coins they are calling.",
-      { sub: "The wallet balance is confirmed on chain. That the caller bought the coin is not.",
-        info: "A post counts only if pump.fun has verified the account and that account's own wallet holds at least the bar "
-          + "in SOL. Nothing else qualifies, and unverified chatter is never shown. The board covers the last "
-          + (coverage.boardHours || 24) + " hours.", infoTitle: "How big callers are chosen" }));
-    el.append(chipRow([
-      { label: "Big callers", value: String(matched.length), cls: matched.length ? "good" : "" },
-      { label: "Checked", value: String(coverage.succeeded ?? 0) + " of " + String(coverage.attempted ?? 0) + " coins" + (coverage.complete === true ? "" : " so far") },
-      dashWhen(body.generatedAt) ? { label: "As of", value: dashWhen(body.generatedAt) } : null,
-    ]));
+    /* ONLY THE CALLERS AND THEIR CALLS (owner, 2026-09-09). The lead and the line under
+       it are gone from the tab; the criteria and the one fact that matters — a confirmed
+       balance is not proof anyone bought the coin — live in the ⓘ, one tap away. */
+    el.append(plainLead("", { info: "A post counts only if pump.fun has verified the account and that account's own wallet holds at least "
+      + (whaleBar ? dashMoney(whaleBar) : "the bar") + " in SOL. Nothing else qualifies, and unverified chatter is never shown. "
+      + "The balance is confirmed on chain; that the caller bought the coin is not. The board covers the last "
+      + (coverage.boardHours || 24) + " hours.", infoTitle: "How big callers are chosen" }));
+    el.append(chipRow([{ label: "Big callers", value: String(matched.length), cls: matched.length ? "good" : "" }]));
     const boundary = dashNode("div", "boundary-note");
     boundary.append(
       dashNode("strong", "", "PUMP.FUN GOLD CHECK + A WALLET HOLDING THE BAR, OR IT IS NOT POSTED."),
