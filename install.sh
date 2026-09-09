@@ -1413,6 +1413,26 @@ darwin_preflight_label() {
   local label="$1"
   command -v launchctl >/dev/null 2>&1 || return 0
   if launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1; then
+    # NAME A PATH THAT EXISTS. This used to print
+    # ~/claudeco-executor/current/macos-launchagent.sh unconditionally, and that
+    # symlink only exists after an install that COMPLETED into the default directory.
+    # The owner hit exactly that on 2026-09-09: his agent had been installed pointing
+    # elsewhere, the named script was not on his disk, and a correct refusal handed him
+    # a command that could not work. So: read the controller out of the loaded agent's
+    # own plist, fall back to the default path only if that fails, and always print the
+    # launchctl form, which needs no script on disk at all.
+    local plist controller=""
+    plist="$HOME/Library/LaunchAgents/$label.plist"
+    if [ -r "$plist" ]; then
+      controller="$(/usr/bin/awk -F'[<>]' '/<string>.*macos-launchagent\.sh<\/string>/ { print $3; exit }' "$plist" 2>/dev/null || true)"
+      if [ -z "$controller" ]; then
+        # The agent runs launchd-runner.mjs; its controller sits beside it.
+        local runner
+        runner="$(/usr/bin/awk -F'[<>]' '/<string>.*launchd-runner\.mjs<\/string>/ { print $3; exit }' "$plist" 2>/dev/null || true)"
+        [ -n "$runner" ] && controller="$(dirname "$runner")/macos-launchagent.sh"
+      fi
+    fi
+    [ -n "$controller" ] && [ -f "$controller" ] || controller=""
     cat >&2 <<AGENT
 
 A WALL-ST-E LaunchAgent ($label) is already loaded on this Mac.
@@ -1422,10 +1442,21 @@ journal while it is mid-flight, so nothing has been created or changed. Stop it
 deliberately first, then run this installer again:
 
     launchctl print gui/\$(id -u)/$label      # see what is running
-    bash ~/claudeco-executor/current/macos-launchagent.sh unload
+AGENT
+    if [ -n "$controller" ]; then
+      printf '    bash %s unload\n' "$controller" >&2
+    else
+      cat >&2 <<'AGENT2'
+    launchctl bootout gui/$(id -u)/com.claudeco.wallste
+AGENT2
+      echo "" >&2
+      echo "(no macos-launchagent.sh was found for the loaded agent, so the launchctl" >&2
+      echo " form is given instead — it is what that script runs.)" >&2
+    fi
+    cat >&2 <<AGENT3
 
 If that agent is somebody else's install on a shared Mac, do not unload it.
-AGENT
+AGENT3
     return 1
   fi
   return 0
