@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-09 14:30 UTC">
-<script>console.log("Claude Company build 2026-09-09 14:30 UTC")</script>
+<meta name="cc-build" content="2026-09-09 16:52 UTC">
+<script>console.log("Claude Company build 2026-09-09 16:52 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -86933,7 +86933,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · arms on install"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "b30507b585a2a439a5b6565d0389d33c7f8d7db0";
+    const releaseCommit = "c63a3cd1a1540496cbdca86c55969a94fb054079";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "4ca6a3c501e9950a6489566387746efec1944f5cc31108976143ca2d3cedb395";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -89450,7 +89450,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "b30507b585a2a439a5b6565d0389d33c7f8d7db0";
+    const executorReleaseCommit = "c63a3cd1a1540496cbdca86c55969a94fb054079";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
