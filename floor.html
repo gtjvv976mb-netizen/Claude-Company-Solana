@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-09 11:41 UTC">
-<script>console.log("Claude Company build 2026-09-09 11:41 UTC")</script>
+<meta name="cc-build" content="2026-09-09 14:04 UTC">
+<script>console.log("Claude Company build 2026-09-09 14:04 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -1130,6 +1130,11 @@ window.CCModals = (function () {
             + "0600. The key is never transmitted anywhere, and nothing here funds it.",
           "Asks for the feed secret with the typing hidden. It is never a command-line flag, because argv "
             + "lands in your shell history and in the process list.",
+          "Asks only ONCE. If this machine already has an install, re-running the command to move to a "
+            + "newer published commit reuses the feed secret, both RPC endpoints, the Jupiter key and the "
+            + "same burner wallet out of the mode-0600 file it wrote the first time — it names which keys "
+            + "it reused and shows none of their values. Your caps carry over exactly and cannot be raised "
+            + "here; the wallet is still re-checked, and you retype it only if the key on disk changed.",
           "Installs a supervised service, so it starts again by itself. This is the one part that writes "
             + "outside the install folder. On a Mac: a per-user LaunchAgent in your own home folder, and no "
             + "administrator password is asked for. On Linux: it uses sudo to write a hardened service file at "
@@ -86686,7 +86691,7 @@ async function withdrawHqInterest() {
 function openWallsteWalkthrough() {
   return window.CCModals.openInstallWalkthrough({
     floorNo: FLOOR_N,
-    installerSha256: "71aa5b0d2fedffbf574d42eeed211cd82c972d3e98bd40e9ceaac5dadd9bcb4e",
+    installerSha256: "f5dc0b595394c9c43d25e328ea29cee5d336717458b9edc6c8bf909ccaee8aa8",
   });
 }
 function openHqConditions({ alreadyRequested = false, onRecorded = null } = {}) {
@@ -86928,9 +86933,9 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · arms on install"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "ad320ce202a305f4f3aabea896bad146d95b7c98";
+    const releaseCommit = "d5fb1d84b285e50c91344af757e126939e818a3f";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
-    const installerDigest = "71aa5b0d2fedffbf574d42eeed211cd82c972d3e98bd40e9ceaac5dadd9bcb4e";
+    const installerDigest = "f5dc0b595394c9c43d25e328ea29cee5d336717458b9edc6c8bf909ccaee8aa8";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
     /* ONE line, one paste — and now genuinely one line. install.sh has bootstrapped
        itself from $STATIC and read every prompt from /dev/tty for weeks, so piping it
@@ -89445,7 +89450,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "ad320ce202a305f4f3aabea896bad146d95b7c98";
+    const executorReleaseCommit = "d5fb1d84b285e50c91344af757e126939e818a3f";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
@@ -89463,7 +89468,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
      * click to INSTALL must never become one click to trade real money — so the
      * short path buys convenience only in step 2, and steps 4 and 5 stay exactly
      * as deliberate as they were. */
-    const installerSha256 = "71aa5b0d2fedffbf574d42eeed211cd82c972d3e98bd40e9ceaac5dadd9bcb4e";
+    const installerSha256 = "f5dc0b595394c9c43d25e328ea29cee5d336717458b9edc6c8bf909ccaee8aa8";
     /* The build substitutes the digest of the very install.sh it published. Unsubstituted
        means a local preview, and a digest a reader cannot rely on is worse than none. */
     const installerShaKnown = /^[0-9a-f]{64}$/i.test(installerSha256);

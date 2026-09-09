@@ -38,6 +38,11 @@ SOURCE_COMMIT="remote-paper"
 BOOTSTRAP_NODE=0
 EXPECTED_COMMIT=""
 API="https://claude-company-api.onrender.com"
+# Whether the line above was overridden on the command line. The default is a real
+# value, so "is it empty?" cannot tell a flag from a default — and an upgrade that
+# carried the previous CC_API over an explicitly passed --api would silently ignore
+# the flag. Rule: a flag always wins over a carried value.
+API_SET=0
 STATIC="https://claudedotcompany.com"
 # Where a published commit is cloned from when this host has no pinned checkout of it.
 # The transport is not what makes this safe: a Git commit id IS its content, verified
@@ -167,6 +172,12 @@ Options:
                         unattended install. Otherwise prompted on the tty.
   --live                Arm real mainnet trading. This is the DEFAULT now;
                         the flag is kept so older commands still work.
+  --reuse-env FILE      Carry the feed secret, both RPCs and the Jupiter key
+                        forward from an existing mode-0600 environment at FILE
+                        instead of asking for them again. Use it when a prior
+                        install keeps its environment somewhere other than
+                        $HOME/claudeco-executor. Values passed on this line
+                        still win over anything carried.
   --dry-run             Install without arming: EXECUTE=0, nothing is signed
                         and nothing is sent. The opt-out, not the default.
   --expected-commit SHA The exact 40-character published commit to sign with.
@@ -196,6 +207,17 @@ Options:
   --api URL             Claude Company API base.
   --static URL          Static base for the paper-mode runtime download.
   --help                Print this and exit 0.
+
+UPGRADING AN INSTALL THAT IS ALREADY HERE. Re-pinning to a newer published
+commit does not ask you for credentials a second time. If this machine already
+holds a protected environment (mode 0600, owned by you), the feed secret, both
+RPC endpoints, the Jupiter key, the API base and the burner keypair are reused
+from it and are never displayed; the installer names only which keys it reused.
+Your caps carry over exactly as they are. A flag that would RAISE one is
+refused and points you at arm-caps, which is where raising a cap lives. And if
+the burner on disk still derives the address your live acknowledgement names,
+you do not retype it — if it does not, you do. Everything protecting the code
+is unchanged: the 40-character commit, the source check, two providers.
 
 Live install with a terminal and no credential files: the installer walks you
 through the published commit, then the primary RPC, the secondary RPC and the
@@ -230,6 +252,14 @@ while [ "$#" -gt 0 ]; do
     --dry-run) MODE="paper"; shift;;
     --repo) need_value "$@"; REPO="$2"; shift 2;;
     --secret-file) need_value "$@"; SECRET_FILE="$2"; shift 2;;
+    # WHERE THE PRIOR INSTALL ACTUALLY IS. The upgrade carry looks in $INSTALL_DIR,
+    # a fixed ~/claudeco-executor. A machine installed before that default existed —
+    # or pointed at its environment by hand, which is how this desk's own bot runs —
+    # keeps its environment somewhere else, and the carry then finds nothing and asks
+    # the operator for credentials sitting on his own disk. That is the exact
+    # complaint this path exists to answer, so the location is nameable. The file
+    # still has to pass every trust check below.
+    --reuse-env) need_value "$@"; REUSE_ENV="$2"; shift 2;;
     --jupiter-key-file) need_value "$@"; JUPITER_KEY_FILE="$2"; shift 2;;
     --floor) need_value "$@"; FLOOR="$2"; shift 2;;
     --max-sol) need_value "$@"; MAX_SOL="$2"; MAX_SOL_SET=1; shift 2;;
@@ -245,7 +275,7 @@ while [ "$#" -gt 0 ]; do
     # anyone passed this flag. printf is a builtin and tr sees only its own two
     # patterns in argv.
     --expected-commit) need_value "$@"; EXPECTED_COMMIT="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"; shift 2;;
-    --api) need_value "$@"; API="$2"; shift 2;;
+    --api) need_value "$@"; API="$2"; API_SET=1; shift 2;;
     --static) need_value "$@"; STATIC="$2"; shift 2;;
     --bootstrap-node) BOOTSTRAP_NODE=1; shift;;
     *) echo "unknown flag: $1" >&2; exit 1;;
@@ -312,9 +342,18 @@ esac
 # spells them -f '%Lp'. GNU stat also ACCEPTS -f (it means "filesystem" there) and
 # exits 0 printing something else entirely, so probing by trial silently returns a
 # wrong mode on Linux. Branch on the platform that was just determined instead.
+# BEGIN FILE_FACTS
 file_mode() {
   if [ "$PLATFORM" = "darwin" ]; then stat -f '%Lp' "$1"; else stat -c '%a' "$1"; fi
 }
+# Same split for the owning uid, and for the same reason: BSD stat spells it -f '%u'
+# and coreutils spells it -c '%u', and GNU stat ACCEPTS -f meaning something else
+# entirely. Numeric, never a name: a name comparison depends on the passwd database
+# resolving, and the question here is only "is this file mine?".
+file_owner() {
+  if [ "$PLATFORM" = "darwin" ]; then stat -f '%u' "$1"; else stat -c '%u' "$1"; fi
+}
+# END FILE_FACTS
 case "$FLOOR" in
   ""|*[!0-9]*) echo "--floor must be a positive integer" >&2; exit 1;;
 esac
@@ -541,6 +580,192 @@ if [ -n "$SECONDARY_RPC_FILE" ]; then
   SECONDARY_RPC="$REPLY"
 fi
 
+# BEGIN UPGRADE_CARRY
+# RE-PINNING IS NOT A REINSTALL. Told that moving to a new published commit would ask
+# for "your feed secret, two RPC endpoints from different providers, and a Jupiter
+# key", the owner's answer was: "whats this didnt i already give you this". He had.
+# Every one of those values is sitting in the protected environment this installer
+# wrote at the first install, mode 0600, on this machine. write_env_line only ever
+# WROTE that file; nothing ever read one back, so each re-pin interrogated the
+# operator for values already on his disk — which is how a routine code update
+# acquired the friction of a first-time setup.
+#
+# What this block does NOT do is relax anything. It carries values forward; it does
+# not carry PERMISSION forward. The published commit is still typed and still
+# verified, the two-provider RPC rule is still enforced against whatever is reused, a
+# cap can only ever be carried or lowered here, and the wallet binding is RE-CHECKED
+# against the key on disk rather than assumed.
+#
+# THE VALUES NEVER LEAVE THIS SHELL. They are read into shell variables and written
+# only through the same 0600 environment path they came from. Nothing here echoes,
+# prints, logs or passes a credential to another process's argv — the installer says
+# only WHICH keys it reused.
+UPGRADE=0
+UPGRADE_ENV=""
+REUSE_ENV="${REUSE_ENV:-}"
+ENV_SOURCE=""
+UPGRADE_REUSED=""
+UPGRADE_VALUE=""
+UPGRADE_RPC_CARRIED=0
+UPGRADE_SECONDARY_RPC_CARRIED=0
+PRIOR_MAX_SOL=""
+PRIOR_DAILY_CAP=""
+PRIOR_DAILY_LOSS_CAP=""
+PRIOR_LIVE_ACK=""
+PRIOR_LIVE_CAPS_ACK=""
+# The burner is addressed through this from here on. It defaults to the one path this
+# installer has always used, and an upgrade replaces it with whatever KEYPAIR the
+# existing environment names, so a re-pin cannot silently repoint a running executor
+# at a different wallet than the one its acknowledgement is bound to.
+KEYPAIR_PATH="$INSTALL_DIR/burner.json"
+
+# Values in ENV_FILE were written by systemd_env_value: wrapped in double quotes with
+# \ " $ ` each backslash-escaped. Undo that in ONE left-to-right scan. A chain of
+# ${v//\\\"/\"}-style substitutions gets the general case wrong — a value whose
+# literal content ends in a backslash before a quote unescapes to something else
+# entirely — and a credential that comes back subtly altered is a live executor that
+# authenticates against nothing. Result in UPGRADE_VALUE, never on any stream.
+upgrade_unescape() {
+  local s="$1" out="" i=0 n c
+  n="${#s}"
+  while [ "$i" -lt "$n" ]; do
+    c="${s:$i:1}"
+    if [ "$c" = "\\" ] && [ "$((i + 1))" -lt "$n" ]; then
+      i="$((i + 1))"
+      c="${s:$i:1}"
+    fi
+    out="$out$c"
+    i="$((i + 1))"
+  done
+  UPGRADE_VALUE="$out"
+}
+
+# Read one key out of the existing environment. `while ... done < file` is not a
+# pipeline, so the loop runs in THIS shell and the value it finds survives; a
+# `cat | while` here would have set found=1 in a subshell and reported every key
+# missing. The last assignment wins, matching how systemd reads the same file.
+upgrade_env_read() {
+  local want="$1" line raw found=0
+  UPGRADE_VALUE=""
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in "$want"=*) ;; *) continue;; esac
+    raw="${line#*=}"
+    case "$raw" in
+      '"'*'"') raw="${raw%\"}"; raw="${raw#\"}";;
+    esac
+    upgrade_unescape "$raw"
+    found=1
+  done < "$UPGRADE_ENV"
+  [ "$found" -eq 1 ]
+}
+
+# WHAT COUNTS AS A PRIOR INSTALL. Only a file this installer could have written and
+# that nobody else can read or have tampered with: a regular file (not a symlink
+# pointing somewhere else), exactly mode 600, owned by the user running this command.
+# Anything else — a group-readable copy, a file owned by another account on a shared
+# machine, a symlink — is not evidence of anything and falls through to the full
+# path, which asks for everything exactly as it does today.
+upgrade_trusted_env() {
+  local mode owner me
+  # An operator-named environment replaces the default location and is held to the
+  # identical standard: a real file, mode 600, owned by whoever is running this.
+  if [ -n "$REUSE_ENV" ]; then
+    ENV_SOURCE="$REUSE_ENV"
+    if [ ! -e "$ENV_SOURCE" ]; then
+      echo "  · --reuse-env $ENV_SOURCE does not exist — nothing to carry forward" >&2
+      return 1
+    fi
+  else
+    ENV_SOURCE="$ENV_FILE"
+  fi
+  [ -e "$ENV_SOURCE" ] || return 1
+  if [ -L "$ENV_SOURCE" ]; then
+    echo "  · $ENV_SOURCE is a symlink, not a protected environment — installing as if fresh"
+    return 1
+  fi
+  if [ ! -f "$ENV_SOURCE" ] || [ ! -r "$ENV_SOURCE" ]; then
+    echo "  · $ENV_SOURCE is not a readable regular file — installing as if fresh"
+    return 1
+  fi
+  mode="$(file_mode "$ENV_SOURCE")"
+  if [ "$mode" != "600" ]; then
+    echo "  · $ENV_SOURCE is mode $mode, not 600 — not trusting it as a prior install; installing as if fresh"
+    return 1
+  fi
+  owner="$(file_owner "$ENV_SOURCE")"
+  me="$(id -u)"
+  if [ "$owner" != "$me" ]; then
+    echo "  · $ENV_SOURCE is owned by uid $owner, not by you (uid $me) — not trusting it as a prior install; installing as if fresh"
+    return 1
+  fi
+  return 0
+}
+
+if upgrade_trusted_env; then
+  UPGRADE=1
+  UPGRADE_ENV="$ENV_SOURCE"
+  echo "▶ upgrade: carrying forward the install at $ENV_SOURCE (mode 600, owned by you)"
+
+  # Each carry is guarded on the destination still being empty, so a value passed on
+  # this command line — or through --secret-file / --rpc-file / --jupiter-key-file —
+  # always wins over what is on disk. Reuse is the fallback, never the override.
+  if [ -z "$SECRET" ] && [ -z "$SECRET_FILE" ] && upgrade_env_read CC_SECRET &&
+     [ -n "$UPGRADE_VALUE" ]; then
+    SECRET="$UPGRADE_VALUE"
+    UPGRADE_REUSED="$UPGRADE_REUSED CC_SECRET"
+  fi
+  if [ -z "$RPC" ] && [ -z "$RPC_FILE" ] && upgrade_env_read SOLANA_RPC &&
+     [ -n "$UPGRADE_VALUE" ]; then
+    RPC="$UPGRADE_VALUE"
+    UPGRADE_RPC_CARRIED=1
+    UPGRADE_REUSED="$UPGRADE_REUSED SOLANA_RPC"
+  fi
+  if [ -z "$SECONDARY_RPC" ] && [ -z "$SECONDARY_RPC_FILE" ] &&
+     upgrade_env_read SOLANA_RPC_SECONDARY && [ -n "$UPGRADE_VALUE" ]; then
+    SECONDARY_RPC="$UPGRADE_VALUE"
+    UPGRADE_SECONDARY_RPC_CARRIED=1
+    UPGRADE_REUSED="$UPGRADE_REUSED SOLANA_RPC_SECONDARY"
+  fi
+  if [ -z "$JUPITER_KEY" ] && [ -z "$JUPITER_KEY_FILE" ] &&
+     upgrade_env_read JUPITER_API_KEY && [ -n "$UPGRADE_VALUE" ]; then
+    JUPITER_KEY="$UPGRADE_VALUE"
+    UPGRADE_REUSED="$UPGRADE_REUSED JUPITER_API_KEY"
+  fi
+  if [ "$API_SET" -ne 1 ] && upgrade_env_read CC_API && [ -n "$UPGRADE_VALUE" ]; then
+    API="$UPGRADE_VALUE"
+    UPGRADE_REUSED="$UPGRADE_REUSED CC_API"
+  fi
+  # The wallet, not merely a path: repointing a re-pin at a different burner than the
+  # one the existing acknowledgement names is exactly what the re-check below exists
+  # to catch, and carrying the path is what makes that comparison meaningful.
+  if upgrade_env_read KEYPAIR && [ -n "$UPGRADE_VALUE" ]; then
+    case "$UPGRADE_VALUE" in
+      /*) KEYPAIR_PATH="$UPGRADE_VALUE"; UPGRADE_REUSED="$UPGRADE_REUSED KEYPAIR";;
+      *) echo "  · the existing KEYPAIR is not an absolute path; using $KEYPAIR_PATH" >&2;;
+    esac
+  fi
+
+  # Caps and the two acknowledgements are read here and APPLIED later, where the
+  # numbers are validated and where the public key they are bound to actually exists.
+  if upgrade_env_read MAX_SOL_PER_TRADE; then PRIOR_MAX_SOL="$UPGRADE_VALUE"; fi
+  if upgrade_env_read DAILY_SOL_CAP; then PRIOR_DAILY_CAP="$UPGRADE_VALUE"; fi
+  if upgrade_env_read DAILY_LOSS_LIMIT_SOL; then PRIOR_DAILY_LOSS_CAP="$UPGRADE_VALUE"; fi
+  if upgrade_env_read LIVE_TRADING_ACK; then PRIOR_LIVE_ACK="$UPGRADE_VALUE"; fi
+  if upgrade_env_read LIVE_CAPS_ACK; then PRIOR_LIVE_CAPS_ACK="$UPGRADE_VALUE"; fi
+  UPGRADE_VALUE=""
+
+  # Names only. Printing a reused credential here would undo the entire reason the
+  # secret is read hidden from /dev/tty and never passed through argv.
+  if [ -n "$UPGRADE_REUSED" ]; then
+    echo "  reusing what you already supplied (keys named, values never shown):$UPGRADE_REUSED"
+  else
+    echo "  that environment held none of the values this install needs; you will be asked for them"
+  fi
+  echo "  still required and still verified: the 40-character published commit, the"
+  echo "  source-integrity check, the two-provider RPC rule, and the wallet binding."
+fi
+# END UPGRADE_CARRY
+
 # A file-based invocation from a checked-out release automatically stages the five
 # sibling runtime modules. Piped execution has no trusted sibling directory and is
 # therefore never accepted for live signing.
@@ -695,6 +920,11 @@ fi
 if [ -n "$SECRET_FILE" ]; then
   read_private_file "floor secret" "$SECRET_FILE"
   SECRET="$REPLY"
+elif [ -n "$SECRET" ]; then
+  # Carried forward from the existing 0600 environment by UPGRADE_CARRY above. It is
+  # validated by exactly the same two rules as a freshly typed one, immediately below
+  # — a reused value gets no exemption from the checks, only from the typing.
+  echo "  ✓ floor feed secret reused from the existing install (not shown, not retyped)"
 else
   if [ ! -r /dev/tty ]; then
     echo "no terminal available; pass --secret-file with a mode-0600 file" >&2
@@ -854,7 +1084,12 @@ if [ "$MODE" = "live" ]; then
   # Announce the wizard only when one is actually about to run. Inline --rpc values
   # leave RPC_FILE empty yet need no prompt, and a banner with nothing behind it is
   # how an installer teaches people to stop reading it.
-  if { [ -z "$RPC" ] || [ -z "$SECONDARY_RPC" ] || [ -z "$JUPITER_KEY_FILE" ]; } &&
+  # A carried Jupiter key needs no file and no prompt, so "no --jupiter-key-file" is
+  # no longer on its own a reason to raise the banner: an upgrade that reuses all
+  # three would otherwise announce a wizard that then asks nothing, which is how an
+  # installer teaches people to stop reading it.
+  if { [ -z "$RPC" ] || [ -z "$SECONDARY_RPC" ] ||
+       { [ -z "$JUPITER_KEY_FILE" ] && [ -z "$JUPITER_KEY" ]; }; } &&
      [ -r /dev/tty ]; then
     cat > /dev/tty <<'WIZARD'
 
@@ -916,6 +1151,8 @@ WIZARD
   if [ -n "$JUPITER_KEY_FILE" ]; then
     read_private_file "Jupiter API key" "$JUPITER_KEY_FILE"
     JUPITER_KEY="$REPLY"
+  elif [ -n "$JUPITER_KEY" ]; then
+    echo "  ✓ Jupiter API key reused from the existing install (not shown, not retyped)"
   else
     if [ ! -r /dev/tty ]; then
       echo "live mode needs --jupiter-key-file when no terminal is available" >&2
@@ -939,7 +1176,12 @@ WIZARD
   fi
 
   if [ -z "$JUPITER_KEY" ]; then echo "Jupiter API key is empty" >&2; exit 1; fi
-  if [ -z "$RPC_FILE" ] || [ -z "$SECONDARY_RPC_FILE" ]; then
+  # This guard exists to keep an endpoint out of shell history and /proc/PID/cmdline.
+  # A value carried out of the mode-0600 environment already on this machine has been
+  # in neither, so it satisfies the rule rather than evading it. Anything supplied on
+  # THIS run still has to come through a file.
+  if { [ -z "$RPC_FILE" ] && [ "${UPGRADE_RPC_CARRIED:-0}" -ne 1 ]; } ||
+     { [ -z "$SECONDARY_RPC_FILE" ] && [ "${UPGRADE_SECONDARY_RPC_CARRIED:-0}" -ne 1 ]; }; then
     echo "--live requires --rpc-file and --secondary-rpc-file so credentials stay out of argv/history" >&2
     exit 1
   fi
@@ -963,16 +1205,76 @@ LIVE_OPERATOR_MAX_SOL="0.4"
 LIVE_OPERATOR_MAX_DAILY_CAP="1000"
 LIVE_OPERATOR_MAX_DAILY_LOSS_CAP="0.4"
 
-if [ -z "$MAX_SOL" ]; then [ "$MODE" = "live" ] && MAX_SOL="$LIVE_CANARY_MAX_SOL" || MAX_SOL="0.05"; fi
-if [ -z "$DAILY_CAP" ]; then [ "$MODE" = "live" ] && DAILY_CAP="$LIVE_CANARY_DAILY_CAP" || DAILY_CAP="0.5"; fi
-if [ -z "$DAILY_LOSS_CAP" ]; then
-  [ "$MODE" = "live" ] && DAILY_LOSS_CAP="$LIVE_CANARY_DAILY_LOSS_CAP" || DAILY_LOSS_CAP="0.15"
-fi
 # One SOL has exactly 1e9 lamports. Limiting cap literals to that precision keeps
 # the comparison exact enough for the declared unit and prevents awk's binary
 # floating-point conversion from rounding a mathematically out-of-range literal
 # onto an accepted boundary.
 number_re='^(0|[1-9][0-9]*)([.][0-9]{1,9})?$'
+
+# BEGIN UPGRADE_CAPS
+# CAPS CARRY OVER BYTE FOR BYTE, AND AN UPGRADE MAY NEVER WIDEN ONE.
+#
+# The whole point of the upgrade path is to stop re-asking for what the operator
+# already gave. A cap is the one thing where "already gave" must not become "and may
+# now quietly change": re-pinning to a new commit is a code update, and if it could
+# also raise a limit it would be a second, unceremonious way to do the thing that
+# costs a typed sentence on a terminal everywhere else. So the rule here is one
+# direction only — carry, or lower. A flag that would raise is REFUSED and points at
+# arm-caps, which is where raising a cap lives.
+UPGRADE_CAPS_NOT_RAISED=0
+upgrade_cap_refuse_raise() {
+  # $1 environment key, $2 flag name, $3 requested value, $4 the installed value.
+  # A value neither side can parse is not judged here: the grammar check below owns
+  # that, and it fails closed on its own. This function only ever says "higher".
+  local key="$1" flag="$2" want="$3" have="$4"
+  [[ "$have" =~ $number_re ]] || return 0
+  [[ "$want" =~ $number_re ]] || return 0
+  awk -v a="$want" -v b="$have" 'BEGIN { exit !(a > b) }' || return 0
+  cat >&2 <<CAPS
+
+  ✗ REFUSED: $flag $want would RAISE $key above the $have this machine already runs.
+
+    An upgrade re-pins the code and reuses what you already supplied. It does not
+    widen a limit — raising a cap is its own deliberate act, on a terminal, against
+    a stopped and entry-paused executor:
+
+        bash ${INSTALL_DIR:-$HOME/claudeco-executor}/current/macos-launchagent.sh \\
+          arm-caps --max-sol N --daily-sol-cap N --daily-loss-cap N
+
+    Re-run this install without $flag to keep $have, or use arm-caps to raise it.
+CAPS
+  return 1
+}
+if [ "${UPGRADE:-0}" -eq 1 ]; then
+  if [ -n "${PRIOR_MAX_SOL:-}" ]; then
+    if [ "$MAX_SOL_SET" -eq 1 ]; then
+      upgrade_cap_refuse_raise MAX_SOL_PER_TRADE --max-sol "$MAX_SOL" "$PRIOR_MAX_SOL" || exit 1
+    else
+      MAX_SOL="$PRIOR_MAX_SOL"
+    fi
+  fi
+  if [ -n "${PRIOR_DAILY_CAP:-}" ]; then
+    if [ "$DAILY_CAP_SET" -eq 1 ]; then
+      upgrade_cap_refuse_raise DAILY_SOL_CAP --daily-cap "$DAILY_CAP" "$PRIOR_DAILY_CAP" || exit 1
+    else
+      DAILY_CAP="$PRIOR_DAILY_CAP"
+    fi
+  fi
+  if [ -n "${PRIOR_DAILY_LOSS_CAP:-}" ]; then
+    if [ "$DAILY_LOSS_CAP_SET" -eq 1 ]; then
+      upgrade_cap_refuse_raise DAILY_LOSS_LIMIT_SOL --daily-loss-cap "$DAILY_LOSS_CAP" "$PRIOR_DAILY_LOSS_CAP" || exit 1
+    else
+      DAILY_LOSS_CAP="$PRIOR_DAILY_LOSS_CAP"
+    fi
+  fi
+fi
+# END UPGRADE_CAPS
+
+if [ -z "$MAX_SOL" ]; then [ "$MODE" = "live" ] && MAX_SOL="$LIVE_CANARY_MAX_SOL" || MAX_SOL="0.05"; fi
+if [ -z "$DAILY_CAP" ]; then [ "$MODE" = "live" ] && DAILY_CAP="$LIVE_CANARY_DAILY_CAP" || DAILY_CAP="0.5"; fi
+if [ -z "$DAILY_LOSS_CAP" ]; then
+  [ "$MODE" = "live" ] && DAILY_LOSS_CAP="$LIVE_CANARY_DAILY_LOSS_CAP" || DAILY_LOSS_CAP="0.15"
+fi
 if ! [[ "$MAX_SOL" =~ $number_re ]] || ! [[ "$DAILY_CAP" =~ $number_re ]] ||
    ! [[ "$DAILY_LOSS_CAP" =~ $number_re ]] ||
    ! awk -v m="$MAX_SOL" -v d="$DAILY_CAP" -v l="$DAILY_LOSS_CAP" \
@@ -994,12 +1296,28 @@ if [ "$MODE" = "live" ]; then
     echo "live caps cannot exceed ${LIVE_OPERATOR_MAX_SOL} SOL per trade, ${LIVE_OPERATOR_MAX_DAILY_CAP} SOL daily deploy, or a ${LIVE_OPERATOR_MAX_DAILY_LOSS_CAP} SOL daily realized-loss entry brake" >&2
     exit 1
   fi
+  # An upgrade that carries an already-installed tuple forward is not raising
+  # anything, so the three-flag ceremony below would be demanding flags for numbers
+  # nobody changed — which is the exact friction this path removes. Judged against
+  # what is INSTALLED, not against the canary defaults, and only when all three prior
+  # values are present and none of the final three exceeds its own prior.
+  if [ "${UPGRADE:-0}" -eq 1 ] && [ -n "${PRIOR_MAX_SOL:-}" ] &&
+     [ -n "${PRIOR_DAILY_CAP:-}" ] && [ -n "${PRIOR_DAILY_LOSS_CAP:-}" ] &&
+     [[ "${PRIOR_MAX_SOL:-}" =~ $number_re ]] &&
+     [[ "${PRIOR_DAILY_CAP:-}" =~ $number_re ]] &&
+     [[ "${PRIOR_DAILY_LOSS_CAP:-}" =~ $number_re ]] &&
+     awk -v m="$MAX_SOL" -v d="$DAILY_CAP" -v l="$DAILY_LOSS_CAP" \
+       -v pm="$PRIOR_MAX_SOL" -v pd="$PRIOR_DAILY_CAP" -v pl="$PRIOR_DAILY_LOSS_CAP" \
+       'BEGIN { exit !(m <= pm && d <= pd && l <= pl) }'; then
+    UPGRADE_CAPS_NOT_RAISED=1
+  fi
   if awk -v m="$MAX_SOL" -v d="$DAILY_CAP" -v l="$DAILY_LOSS_CAP" \
       -v cm="$LIVE_CANARY_MAX_SOL" -v cd="$LIVE_CANARY_DAILY_CAP" \
       -v cl="$LIVE_CANARY_DAILY_LOSS_CAP" \
       'BEGIN { exit !(m > cm || d > cd || l > cl) }'; then
     CAPS_RAISED=1
-    if [ "$MAX_SOL_SET" -ne 1 ] || [ "$DAILY_CAP_SET" -ne 1 ] || [ "$DAILY_LOSS_CAP_SET" -ne 1 ]; then
+    if [ "$UPGRADE_CAPS_NOT_RAISED" -ne 1 ] &&
+       { [ "$MAX_SOL_SET" -ne 1 ] || [ "$DAILY_CAP_SET" -ne 1 ] || [ "$DAILY_LOSS_CAP_SET" -ne 1 ]; }; then
       echo "raising any live cap requires --max-sol, --daily-cap, and --daily-loss-cap together" >&2
       exit 1
     fi
@@ -1022,6 +1340,12 @@ validate_https_endpoint "static endpoint" "$STATIC"
 if [ -n "$RPC" ]; then validate_https_endpoint "primary RPC" "$RPC"; fi
 if [ -n "$SECONDARY_RPC" ]; then validate_https_endpoint "secondary RPC" "$SECONDARY_RPC"; fi
 
+# BEGIN RPC_TWO_PROVIDER
+# The rule that makes a second endpoint worth having, and the one place it is
+# enforced for every source of a value alike — a flag, a credential file, the wizard,
+# or a pair carried forward from an existing install. Reuse is not grandfathering: an
+# upgrade whose two stored endpoints turn out to share a provider is refused here
+# exactly as a fresh install typing them would be.
 if [ "$MODE" = "live" ]; then
   # Same bash-3.2 rule as cred_check_rpc above, and for the same two reasons: the
   # expansion does not exist on a stock Mac, and the endpoint must never become
@@ -1050,6 +1374,7 @@ if (host(primary) === host(secondary)) {
 }
 NODE
 fi
+# END RPC_TWO_PROVIDER
 
 # BEGIN DARWIN_ACTIVATION
 # The macOS half of the install. Everything above this point is shared with Linux and
@@ -1343,19 +1668,55 @@ RELEASE_DIR="$RELEASES_DIR/$(date -u +%Y%m%dT%H%M%SZ)-${SOURCE_COMMIT:0:12}-$$"
 mv "$STAGE_DIR" "$RELEASE_DIR"
 STAGE_DIR=""
 
-if [ ! -f "$INSTALL_DIR/burner.json" ]; then
+# KEYPAIR_PATH is $INSTALL_DIR/burner.json on a fresh install and whatever KEYPAIR the
+# existing 0600 environment names on an upgrade, so a re-pin keeps the same wallet the
+# operator already acknowledged rather than generating a second one beside it.
+if [ ! -f "$KEYPAIR_PATH" ]; then
   echo "▶ generating a dedicated, unfunded burner wallet locally…"
-  (cd "$RELEASE_DIR" && BURNER_FILE="$INSTALL_DIR/burner.json" node -e 'const{Keypair}=require("@solana/web3.js");const fs=require("fs");const k=Keypair.generate();fs.writeFileSync(process.env.BURNER_FILE,JSON.stringify(Array.from(k.secretKey)),{mode:0o600})')
+  mkdir -p "$(dirname "$KEYPAIR_PATH")"
+  (cd "$RELEASE_DIR" && BURNER_FILE="$KEYPAIR_PATH" node -e 'const{Keypair}=require("@solana/web3.js");const fs=require("fs");const k=Keypair.generate();fs.writeFileSync(process.env.BURNER_FILE,JSON.stringify(Array.from(k.secretKey)),{mode:0o600})')
 fi
-chmod 600 "$INSTALL_DIR/burner.json"
-PUBKEY="$(cd "$RELEASE_DIR" && BURNER_FILE="$INSTALL_DIR/burner.json" node -e 'const{Keypair}=require("@solana/web3.js");const fs=require("fs");console.log(Keypair.fromSecretKey(new Uint8Array(JSON.parse(fs.readFileSync(process.env.BURNER_FILE)))).publicKey.toBase58())')"
+chmod 600 "$KEYPAIR_PATH"
+PUBKEY="$(cd "$RELEASE_DIR" && BURNER_FILE="$KEYPAIR_PATH" node -e 'const{Keypair}=require("@solana/web3.js");const fs=require("fs");console.log(Keypair.fromSecretKey(new Uint8Array(JSON.parse(fs.readFileSync(process.env.BURNER_FILE)))).publicKey.toBase58())')"
 
+# BEGIN LIVE_ACK
+# THE BINDING IS RE-CHECKED, NEVER ASSUMED.
+#
+# LIVE_TRADING_ACK does not mean "this operator once agreed to trade". It means "this
+# operator armed THIS wallet", because what they typed was that wallet's own public
+# key. So the question an upgrade has to answer is not "is there an ack on disk" but
+# "does the keypair on disk still derive the key that ack names". PUBKEY above was
+# just derived from $KEYPAIR_PATH, so this is a real re-check against the private key
+# that is actually about to be used, not a lookup of a flag.
+#
+# Same key  → the binding the operator made still holds and is not retyped. That is
+#             the entire point of the upgrade path.
+# Different, missing, or no ack at all → it is typed here, exactly as it is today.
+# Either way the branch that was taken is said on screen, in words.
 LIVE_ACK=""
 LIVE_CAPS_ACK=""
 EXECUTE_VALUE="0"
 if [ "$MODE" = "live" ]; then
-  if [ ! -r /dev/tty ]; then echo "live mode requires a terminal acknowledgement" >&2; exit 1; fi
-  cat > /dev/tty <<NOTICE
+  if [ -n "${PRIOR_LIVE_ACK:-}" ] && [ "$PRIOR_LIVE_ACK" = "$PUBKEY" ]; then
+    LIVE_ACK="$PRIOR_LIVE_ACK"
+    cat <<NOTICE
+
+WALLET BINDING CARRIED FORWARD — you are not retyping it.
+  The environment already on this machine is armed for this exact wallet:
+      $PUBKEY
+  The keypair at $KEYPAIR_PATH still derives that address, so the acknowledgement
+  you typed when you armed it still binds this install. Nothing changed hands.
+NOTICE
+  else
+    if [ ! -r /dev/tty ]; then echo "live mode requires a terminal acknowledgement" >&2; exit 1; fi
+    if [ "${UPGRADE:-0}" -eq 1 ]; then
+      if [ -z "${PRIOR_LIVE_ACK:-}" ]; then
+        echo "  · the existing environment carries no LIVE_TRADING_ACK, so this wallet has to be acknowledged here."
+      else
+        echo "  · the keypair at $KEYPAIR_PATH derives a DIFFERENT address from the one the existing acknowledgement names, so it has to be retyped."
+      fi
+    fi
+    cat > /dev/tty <<NOTICE
 
 WALL-ST-E LIVE CANARY
   Wallet:       $PUBKEY
@@ -1366,11 +1727,22 @@ WALL-ST-E LIVE CANARY
 This is real mainnet trading from a dedicated wallet. The site cannot stop it.
 Retype the public wallet above to arm this local service:
 NOTICE
-  IFS= read -r LIVE_ACK < /dev/tty
-  if [ "$LIVE_ACK" != "$PUBKEY" ]; then echo "public-key acknowledgement did not match; live mode not armed" >&2; exit 1; fi
+    IFS= read -r LIVE_ACK < /dev/tty
+    if [ "$LIVE_ACK" != "$PUBKEY" ]; then echo "public-key acknowledgement did not match; live mode not armed" >&2; exit 1; fi
+  fi
   if [ "$CAPS_RAISED" -eq 1 ]; then
     CAPS_ACK_EXPECTED="I acknowledge WALL-ST-E caps v2 for $PUBKEY: $MAX_SOL SOL per trade, $DAILY_CAP SOL per day, $DAILY_LOSS_CAP SOL rolling realized-loss entry brake"
-    cat > /dev/tty <<NOTICE
+    # The sentence is wallet-bound AND number-bound, which makes it its own upgrade
+    # test: it can only be reused when the wallet and all three caps are the ones it
+    # already names. Change any of them — including LOWERING a cap — and the strings
+    # differ and it is typed again. Nothing here can accept a sentence for numbers
+    # other than the ones about to be written.
+    if [ -n "${PRIOR_LIVE_CAPS_ACK:-}" ] && [ "$PRIOR_LIVE_CAPS_ACK" = "$CAPS_ACK_EXPECTED" ]; then
+      LIVE_CAPS_ACK="$PRIOR_LIVE_CAPS_ACK"
+      echo "  · raised caps carried forward unchanged; the sentence you typed for this wallet and these exact numbers still stands."
+    else
+      if [ ! -r /dev/tty ]; then echo "live mode requires a terminal acknowledgement" >&2; exit 1; fi
+      cat > /dev/tty <<NOTICE
 
 RAISED LIVE CAPS
 The canary defaults are 0.005 SOL/trade, 0.01 SOL/day deploy, and a 0.01 SOL rolling realized-loss entry brake.
@@ -1378,20 +1750,22 @@ To accept the higher limits above, type this entire sentence exactly:
 
 $CAPS_ACK_EXPECTED
 NOTICE
-    IFS= read -r LIVE_CAPS_ACK < /dev/tty
-    if [ "$LIVE_CAPS_ACK" != "$CAPS_ACK_EXPECTED" ]; then
-      echo "wallet-and-cap acknowledgement did not match; raised live caps not armed" >&2
-      exit 1
+      IFS= read -r LIVE_CAPS_ACK < /dev/tty
+      if [ "$LIVE_CAPS_ACK" != "$CAPS_ACK_EXPECTED" ]; then
+        echo "wallet-and-cap acknowledgement did not match; raised live caps not armed" >&2
+        exit 1
+      fi
     fi
   fi
   EXECUTE_VALUE="1"
 fi
+# END LIVE_ACK
 
 {
   write_env_line CC_SECRET "$SECRET"
   write_env_line CC_FLOOR "$FLOOR"
   write_env_line CC_API "$API"
-  write_env_line KEYPAIR "$INSTALL_DIR/burner.json"
+  write_env_line KEYPAIR "$KEYPAIR_PATH"
   write_env_line STATE_DB "$STATE_DB"
   write_env_line LOCK_FILE "$LOCK_FILE"
   write_env_line PAUSE_ENTRIES_FILE "$PAUSE_FILE"
@@ -1457,7 +1831,7 @@ STATE_PREPARED=1
 CC_SECRET="$SECRET" \
 CC_FLOOR="$FLOOR" \
 CC_API="$API" \
-KEYPAIR="$INSTALL_DIR/burner.json" \
+KEYPAIR="$KEYPAIR_PATH" \
 STATE_DB="$STATE_DB" \
 LOCK_FILE="$LOCK_FILE" \
 PAUSE_ENTRIES_FILE="$PAUSE_FILE" \
@@ -1564,7 +1938,10 @@ prune_releases "$RELEASES_DIR" "$(readlink "$CURRENT_LINK" 2>/dev/null || true)"
 
 case "$MODE" in live) MODE_BANNER="LIVE";; *) MODE_BANNER="PAPER";; esac
 SECRET=""; JUPITER_KEY=""; LIVE_ACK=""; LIVE_CAPS_ACK=""; CAPS_ACK_EXPECTED=""; REPLY=""; CRED_VALUE=""
-unset SECRET JUPITER_KEY LIVE_ACK LIVE_CAPS_ACK CAPS_ACK_EXPECTED REPLY CRED_VALUE
+# UPGRADE_VALUE is the variable every carried credential passed through on its way out
+# of the existing environment; it is cleared here for the same reason as the rest.
+UPGRADE_VALUE=""
+unset SECRET JUPITER_KEY LIVE_ACK LIVE_CAPS_ACK CAPS_ACK_EXPECTED REPLY CRED_VALUE UPGRADE_VALUE
 
 cat <<DONE
 
@@ -1602,7 +1979,7 @@ fi
 cat <<DONE
 
   No wallet was funded by this installer. The private key stays at
-  $INSTALL_DIR/burner.json and must never be uploaded or pasted.
+  $KEYPAIR_PATH and must never be uploaded or pasted.
 
   BACK IT UP BEFORE YOU FUND IT — it exists on this disk and nowhere else:
       node $CURRENT_LINK/burner-backup.mjs --out ~/wall-st-e-recovery.txt
