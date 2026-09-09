@@ -134,6 +134,24 @@ export const DEFAULTS = {
   minSolPerTrade: 0.005,
 };
 
+/** THE SMALLEST POSITION WORTH OPENING, in SOL. ONE definition, two callers.
+ *
+ * planEntry computed this inline; the long note at its old site (fees are judged against
+ * the STOP, not the trade) still stands and now lives at the call site below. It is
+ * hoisted here because the route-sizing ladder (executor/entry-sizing.mjs) needs the SAME
+ * floor to know when halving has gone as far as the wallet allows, and a second copy of
+ * the arithmetic would be a second thing to keep in step. The formula is unchanged byte
+ * for byte: fees may be at most maxFeeShareOfStop of the distance being risked.
+ */
+export function minViableSolPerTrade(c, effectiveStopFrac) {
+  const feeReserve = Math.max(0, Number(c.networkFeeReserveSol) || 0);
+  const stopForFees = Math.max(effectiveStopFrac, 0.01);
+  const feeFloorSol = feeReserve > 0 && c.maxFeeShareOfStop > 0
+    ? (2 * feeReserve) / (c.maxFeeShareOfStop * stopForFees)
+    : 0;
+  return Math.max(0.0005, Number(c.minSolPerTrade) || 0, feeFloorSol);
+}
+
 /** Should we take this entry at all, and at what size? */
 export function planEntry({ call, cfg = DEFAULTS, state }) {
   const c = { ...DEFAULTS, ...cfg };
@@ -247,38 +265,6 @@ export function planEntry({ call, cfg = DEFAULTS, state }) {
    * moved. Everything below is this process's own number — its risk fraction against
    * its own equity, its own fixedSol, its own maxSolPerTrade, its own per-name cap, its
    * own book heat, its own daily cap, its own spendable balance, its own fee floor. */
-  /* THE SMALLEST POSITION WORTH OPENING, in SOL rather than as a fraction.
-   *
-   * Network fees are fixed per trade, so below this size the round trip costs more than
-   * maxFeeShareOfTrade of the position and the trade is mostly fees. It is hoisted here
-   * because it must bound EVERY sizing path, not only the one that produced `want`: the
-   * risk rails could still clamp a position under it, and then the fee share exceeded what
-   * the desk assumes when it decides whether to publish a call at all. That gap broke
-   * the contract the desk and the executor are supposed to keep — the desk published a
-   * 16% stop on a rough coin and the bot refused it, because the rails had sized to
-   * 0.0309 SOL where fees are 3.2% rather than the 2.5% the desk had assumed.
-   *
-   * With the floor applied everywhere, a trade the executor takes ALWAYS costs at most
-   * maxFeeShareOfTrade in fees, which is exactly what the desk assumes. What remains is
-   * not a disagreement but a money fact: a wallet too small to fund a viable position
-   * gets a refusal, and no cost model can wish that away. */
-  /* FEES ARE JUDGED AGAINST THE RISK BEING TAKEN, NOT AGAINST THE TRADE.
-   *
-   * A flat share of the position was wrong in both directions. It let a 5% stop pay 2.5%
-   * in fees — half the whole stop — while refusing a 30% stop that could comfortably
-   * carry more, because the per-name risk cap correctly sizes a wide-stop position
-   * SMALLER and that pushed it under a fixed floor. Measured at the live 0.3366 SOL
-   * wallet: 20%, 30% and 38% stops all refused at 0.0337, 0.0232 and 0.0185 SOL — the
-   * exact calls the desk had just been fixed to publish.
-   *
-   * So the cap is a share of the STOP. Fees may be at most maxFeeShareOfStop of the
-   * distance being risked, which is the ratio that actually decides whether costs eat
-   * the trade: a quarter of a 10% stop is 2.5%, a quarter of a 30% stop is 7.5%, and
-   * the minimum viable size falls as the stop widens instead of rising. */
-  const stopForFees = Math.max(effectiveStopFrac, 0.01);
-  const feeFloorSol = feeReserve > 0 && c.maxFeeShareOfStop > 0
-    ? (2 * feeReserve) / (c.maxFeeShareOfStop * stopForFees)
-    : 0;
 
   /* THE CEILING, then the rails. `fixedSol` is what the OPERATOR permits on one trade,
    * not an instruction to bet exactly that: the risk rails may size under it and never
@@ -327,10 +313,38 @@ export function planEntry({ call, cfg = DEFAULTS, state }) {
     `rolling 24h deploy cap (${state.deployedTodaySol.toFixed(3)}/${c.dailySolCap} SOL)`);
   if (state.spendableSol != null) bind(state.spendableSol - feeReserve, "spendable balance after the fee reserve");
 
+  /* THE SMALLEST POSITION WORTH OPENING, in SOL rather than as a fraction.
+   *
+   * Network fees are fixed per trade, so below this size the round trip costs more than
+   * maxFeeShareOfTrade of the position and the trade is mostly fees. It is hoisted here
+   * because it must bound EVERY sizing path, not only the one that produced `want`: the
+   * risk rails could still clamp a position under it, and then the fee share exceeded what
+   * the desk assumes when it decides whether to publish a call at all. That gap broke
+   * the contract the desk and the executor are supposed to keep — the desk published a
+   * 16% stop on a rough coin and the bot refused it, because the rails had sized to
+   * 0.0309 SOL where fees are 3.2% rather than the 2.5% the desk had assumed.
+   *
+   * With the floor applied everywhere, a trade the executor takes ALWAYS costs at most
+   * maxFeeShareOfTrade in fees, which is exactly what the desk assumes. What remains is
+   * not a disagreement but a money fact: a wallet too small to fund a viable position
+   * gets a refusal, and no cost model can wish that away. */
+  /* FEES ARE JUDGED AGAINST THE RISK BEING TAKEN, NOT AGAINST THE TRADE.
+   *
+   * A flat share of the position was wrong in both directions. It let a 5% stop pay 2.5%
+   * in fees — half the whole stop — while refusing a 30% stop that could comfortably
+   * carry more, because the per-name risk cap correctly sizes a wide-stop position
+   * SMALLER and that pushed it under a fixed floor. Measured at the live 0.3366 SOL
+   * wallet: 20%, 30% and 38% stops all refused at 0.0337, 0.0232 and 0.0185 SOL — the
+   * exact calls the desk had just been fixed to publish.
+   *
+   * So the cap is a share of the STOP. Fees may be at most maxFeeShareOfStop of the
+   * distance being risked, which is the ratio that actually decides whether costs eat
+   * the trade: a quarter of a 10% stop is 2.5%, a quarter of a 30% stop is 7.5%, and
+   * the minimum viable size falls as the stop widens instead of rising. */
   /* The floor is the LARGER of the configured minimum and the size at which fees stop
      dominating. A position under it is not a smaller bet, it is the same fees against
      less upside — and it is the case the desk cannot see when it publishes. */
-  const minSize = Math.max(0.0005, Number(c.minSolPerTrade) || 0, feeFloorSol);
+  const minSize = minViableSolPerTrade(c, effectiveStopFrac);
   if (!(want >= minSize))
     return { action: "skip",
       reason: boundBy

@@ -27,6 +27,9 @@ const TRADING_RUNTIME_FILES = Object.freeze([
      decides whether a published call is enterable at all, so its bytes are as much a
      part of what this process IS as the stop policy's are. */
   "entry-contract.mjs",
+  /* The route-sizing ladder is a runtime import of poller.mjs and decides the AMOUNT
+     that gets signed, so its bytes are part of what this process IS. */
+  "entry-sizing.mjs",
 ]);
 
 /** A byte identity for exactly the modules loaded by the trading process. */
@@ -46,6 +49,12 @@ export function executorRuntimeFingerprint(executorDir) {
 /** Build the bounded, non-secret health facts sent after a completed poll cycle. */
 export function executorHeartbeatHealth({
   entriesPaused = false, hardStop = false, blockingIntent = false, positions = [],
+  /* THE TENANT'S OFF SWITCH, AS THIS PROCESS SEES IT. `deskEntriesEnabled` is the flag
+     this bot last read out of the feed's rules block — null until it has read one, which
+     is why the desk's page can only ever say "pending" before the first poll. It is
+     echoed rather than obeyed silently: the page shows what the BOT says, never what the
+     server asked for, because a bot that is asleep has agreed to nothing. */
+  deskEntriesEnabled = null,
   lastTickCompletedAt = 0, lastFeedSuccessAt = 0, consecutiveFeedFailures = 0,
   consecutiveTickFailures = 0, feedRollback = false, executionReadiness = null,
   caps = null, runtimeCommit = null, runtimeFingerprint = null,
@@ -91,8 +100,17 @@ export function executorHeartbeatHealth({
     publicCaps.dailySolCap >= publicCaps.maxSolPerTrade;
   if (caps != null && !capsValid && (state === "healthy" || state === "entries-paused"))
     state = "degraded";
+  /* THE EFFECTIVE ANSWER TO "WILL YOU OPEN A NEW POSITION?", derived from all three
+     switches at once so no screen has to re-implement the precedence and get it wrong.
+     The two LOCAL sentinels are ORed in independently of the desk flag, which is what
+     makes a server "on" powerless: it can only ever fail to block, never unblock. This
+     is the switch state and not a promise to trade — the entry contract, the risk
+     history, the book and the rails all still stand between this and a signature. */
+  const deskFlag = deskEntriesEnabled === true ? true : deskEntriesEnabled === false ? false : null;
+  const entriesEnabled = !entriesPaused && !hardStop && deskFlag !== false;
   return {
     state, entriesPaused: Boolean(entriesPaused), hardStop: Boolean(hardStop),
+    entriesEnabled, deskEntriesEnabled: deskFlag,
     blockingIntent: Boolean(blockingIntent), blockedPositions, manualAction, exitBlocked,
     lastTickCompletedAt: Number(lastTickCompletedAt) || 0,
     lastFeedSuccessAt: Number(lastFeedSuccessAt) || 0,

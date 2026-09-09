@@ -332,16 +332,20 @@ export function refreshDeskLevels(pos, call) {
  *    id could return another call's state).
  *  - the feed must be currently REACHABLE. Mirror mode already owns the unreachable
  *    case, and a desk that cannot be reached cannot answer this route either.
- *  - the authenticated feed must NOT be in rollback. When latest_id has fallen behind
- *    the durable cursor the desk's database is not the one the bot has been trading
- *    against, and entries are frozen for exactly that reason (poller.mjs, the SKIP on
- *    feedRollbackActive). The call-state route reads the SAME suspect database, and its
- *    ids are AUTOINCREMENT — a restored backup re-issues ids the bot is holding — so a
- *    rollback is the moment its answers are least worth acting on and most likely to be
- *    about another coin. Note the mirror's clock keeps running: consumeFeed calls
- *    noteDeskReachable() BEFORE the rollback branch on purpose (a desk that answers is
- *    reachable, and mirroring a talking desk would be the bot second-guessing it), which
- *    is why this gate reads the rollback flag itself rather than unreachability.
+ *  - a feed ROLLBACK no longer refuses the pass, and that is a deliberate reversal. The
+ *    old gate reasoned that a desk whose latest_id has fallen behind the durable cursor
+ *    is serving a database the bot has not been trading against, and that its
+ *    AUTOINCREMENT ids could therefore be another coin's row wearing a held number. The
+ *    second half of that is now answered where it belongs: every reconciled row must
+ *    NAME THE HELD MINT or it is refused outright (reconcileVerdict → callIdentityVerdict,
+ *    and journal.mjs deskExitDecisionForPosition on the event path), so a re-issued id
+ *    cannot produce a sell. The first half was costing the bot its last exit lane: under
+ *    rollback the feed is frozen, so reconciliation is the ONLY route by which a closed
+ *    call can still reach a position the bot is holding, and a coin the bot cannot sell
+ *    is not a call. Entries stay frozen (poller.mjs, the SKIP on feedRollbackActive) —
+ *    it is new exposure the suspect database must not authorise, not the way out of old
+ *    exposure. The flag still travels here so the verdict, and the transcript, can say
+ *    the pass ran under a rollback alarm.
  *  - at most once per RECONCILE_MS, and never overlapping itself.
  *
  * Returns {run, why} — `why` names the gate, so a caller and a transcript can say which.
@@ -352,7 +356,6 @@ export function reconcileGate({ execute = false, inFlight = false, deskUnreachab
   if (!execute) return { run: false, why: "paper" };
   if (inFlight) return { run: false, why: "in-flight" };
   if (deskUnreachableSince != null) return { run: false, why: "desk-unreachable" };
-  if (feedRollback === true) return { run: false, why: "feed-rollback" };
   if (Number(now) - Number(lastReconcileAt) < Number(reconcileMs)) return { run: false, why: "throttled" };
   const ids = [];
   for (const value of heldCallIds) {
@@ -360,7 +363,8 @@ export function reconcileGate({ execute = false, inFlight = false, deskUnreachab
     if (Number.isSafeInteger(id) && id > 0 && !ids.includes(id)) ids.push(id);
   }
   if (!ids.length) return { run: false, why: "nothing-held" };
-  return { run: true, why: "reconcile", ids: ids.slice(0, RECONCILE_MAX_IDS) };
+  return { run: true, why: "reconcile", ids: ids.slice(0, RECONCILE_MAX_IDS),
+    feedRollback: feedRollback === true };
 }
 
 /* ── A STAND-IN DETERMINATION MUST EXPIRE ───────────────────────────────────────────

@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-08 16:49 UTC">
-<script>console.log("Claude Company build 2026-09-08 16:49 UTC")</script>
+<meta name="cc-build" content="2026-09-09 11:41 UTC">
+<script>console.log("Claude Company build 2026-09-09 11:41 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -1085,9 +1085,10 @@ window.CCModals = (function () {
           + "number is already in the line.",
         commands: [{ label: "Copy the install command", text: oneCommand }],
         points: [
-          "This installs a dry run. What it installs IS the software that trades — it starts in the mode "
-            + "where it reads your floor's calls, writes down what it would have done, and signs nothing. It "
-            + "trades only once you arm it yourself on that machine, at step 7.",
+          "THIS ARMS REAL TRADING. There is no rehearsal install to do first: one command arms your bot, "
+            + "and it asks you here for whatever that needs. It cannot spend anything yet, because the wallet "
+            + "it creates is empty and this installer never funds one \u2014 sending SOL is the switch, not this "
+            + "command. Pass --dry-run instead if you want it installed without arming.",
           "Before you run it: this is a script written by somebody else, running on your machine. The two "
             + "commands further down let you look first — one prints the fingerprint of the exact file this "
             + "site is serving, the other prints what the installer would do and stops.",
@@ -1098,7 +1099,7 @@ window.CCModals = (function () {
             note: "For anyone who would rather not open a terminal. It downloads the same installer, asks you "
               + "for your floor number, prints that file's SHA-256 for you to compare against this site, and "
               + "waits for you to press Return before it runs anything. It carries no credential and no live "
-              + "flag, so it can only ever start a dry run. macOS quarantines a downloaded .command file: "
+              + "flag; it arms the same way the line above does. macOS quarantines a downloaded .command file: "
               + "right-click it and choose Open the first time." },
           shaKnown ? { kind: "sha", text: String(context.installerSha256) } : null,
           { kind: "command", label: "Copy the checksum command",
@@ -1117,7 +1118,7 @@ window.CCModals = (function () {
       { n: 4, title: "What the installer is doing",
         lede: "Five things, in this order, so none of it is a surprise. It stops and asks you for the feed "
           + "secret — and, only when this machine's Node is missing or the wrong version, whether it may "
-          + "install a private copy of Node first. For a dry run that is everything it asks; going live at "
+          + "install a private copy of Node first, then for what arming needs. Going live at "
           + "step 7 asks for more.",
         points: [
           "Checks Node (it needs >=22.13 and <25). If it is missing or the wrong version it asks before "
@@ -1133,7 +1134,7 @@ window.CCModals = (function () {
             + "outside the install folder. On a Mac: a per-user LaunchAgent in your own home folder, and no "
             + "administrator password is asked for. On Linux: it uses sudo to write a hardened service file at "
             + "/etc/systemd/system/cc-executor.service, reload systemd and enable it.",
-          "Starts in dry run, and brings itself back after a crash. On a Mac it starts again at login, not "
+          "Starts armed, and brings itself back after a crash. On a Mac it starts again at login, not "
             + "at boot — after a reboot it stays down until somebody logs in. On Linux it is enabled as a "
             + "system service, so it comes up at boot.",
         ] },
@@ -1156,9 +1157,10 @@ window.CCModals = (function () {
         notes: ["This is the one step where skipping it can cost you everything you later deposit. A "
           + "reimaged disk, a dead drive or a lost machine takes the balance with it."] },
 
-      { n: 6, title: "Watch it work, with no money at risk",
-        lede: "It is reading your floor's live calls and running the whole policy, writing down what it "
-          + "WOULD have done. It signs nothing and submits nothing.",
+      { n: 6, title: "Watch it work \u2014 armed, but with an empty wallet",
+        lede: "It is armed and reading your floor's live calls, and it still cannot spend a lamport: the "
+          + "wallet it made is empty. This is the window in which you can watch the whole policy run for "
+          + "real with nothing at stake.",
         commands: [
           { label: "Copy the macOS log command",
             text: "tail -f ~/Library/Logs/ClaudeCompany/wallste.stdout.log" },
@@ -1166,13 +1168,15 @@ window.CCModals = (function () {
         ],
         points: [
           "Within about a minute the panel behind this window shows a check-in and the burner wallet's "
-            + "public address, and your bot's chip there reads DRY RUN.",
-          "Watch a few calls go by before you consider going live. That is the entire point of the dry run.",
+            + "public address, and your bot's chip there reads LIVE \u00b7 UNFUNDED.",
+          "Watch a few calls go by before you fund it. An empty wallet is the only rehearsal there is now, "
+            + "and it is a real one \u2014 every decision it makes here is the decision it will make with money.",
         ] },
 
-      { n: 7, title: "Going live — this is where real money starts",
-        lede: "Six conditions, and the software enforces every one. None of them is a suggestion, and none "
-          + "of them can be waived from this site.",
+      { n: 7, title: "Funding it \u2014 this is where real money starts",
+        lede: "Installing armed it. SENDING IT SOL is the moment your money is at risk, and it is the only "
+          + "step nobody but you can take. What the software enforced before it armed is listed here, so you "
+          + "know what already held; none of it can be waived from this site.",
         points: [
           "Two Solana RPC endpoints, from two DIFFERENT companies. An RPC endpoint is how this machine reads "
             + "the chain and sends a transaction; a free private tier is enough to start. Before it acts your "
@@ -1184,7 +1188,7 @@ window.CCModals = (function () {
             + "wallet signs; live mode refuses to start without a key. The installer checks the one you give "
             + "it with a price quote that names no wallet and cannot be signed.",
           "A pinned local checkout plus the exact 40-character published commit. Live mode never runs "
-            + "downloaded code, so this step needs a git clone even though the dry run did not.",
+            + "downloaded code, so the installer clones the repository and checks out that exact commit.",
           "You fund the burner address yourself, from your own wallet. The installer never funds anything, "
             + "and nobody here ever holds that key.",
           "You RETYPE THE BURNER'S OWN PUBLIC KEY when prompted. What you type has to match that wallet "
@@ -1193,10 +1197,10 @@ window.CCModals = (function () {
             + "rolling 24h realised-loss brake. Raising any one of them requires all three raised together, "
             + "plus a second acknowledgement typed out as a whole sentence.",
         ],
-        notes: ["From here on the losses are real, and nothing on this site can stop the bot. The only "
-          + "controls are the ones on that machine — learn them at step 9 before you fund anything.",
-          "The exact live command, with the pinned commit and the cap flags, is on the install card in "
-            + "the panel behind this window. This step is the decision; that card is the paste."] },
+        notes: ["Once it is funded the losses are real. You can stop new buys from the panel behind this "
+          + "window, and your bot obeys that on its next check-in \u2014 but the controls that always win are the "
+          + "ones on that machine; learn them at step 9 before you fund anything.",
+          "Nothing on this site can move that money or send it back. The wallet is the bot's own."] },
 
       { n: 8, title: "Confirm it is armed",
         lede: "Two readings, answering two different questions: whether your bot is armed, and whether it "
@@ -1270,9 +1274,9 @@ window.CCModals = (function () {
     const total = steps.length;
     const dialog = openDialog({
       title: "Run it yourself — the nine steps",
-      subtitle: "Floor " + floorNo + ". Steps 1 to 6 set up a bot that trades nothing. Step 7 is where real "
-        + "money starts, and it is a decision of its own. You can close this and come back; it remembers "
-        + "where you were.",
+      subtitle: "Floor " + floorNo + ". Installing ARMS your bot \u2014 there is no rehearsal install. It still "
+        + "cannot spend anything until you send it SOL at step 7, and that is the decision that puts money at "
+        + "risk. You can close this and come back; it remembers where you were.",
       label: "walkthrough",
     });
 
@@ -83635,7 +83639,7 @@ window.__showChatter = (() => { try { return localStorage.getItem("cc_detailed")
     const live = String(h?.mode || "").toLowerCase() === "live";
     const needs = (sentence, action) => ({ chip: "NEEDS YOU", cls: "bad", sentence, action });
     if (!h && !runnerChoice) return { chip: "NO TRACK", cls: "warn", sentence: "Choose who runs your bot: you, on your own machine, or the house.", action: "choose" };
-    if (!h) return { chip: "NOT SET UP", cls: "warn", sentence: "Your bot has never checked in. Install it with one command; it starts as a dry run.", action: "install" };
+    if (!h) return { chip: "NOT SET UP", cls: "warn", sentence: "Your bot has never checked in. Install it with one command; it arms, with an empty wallet.", action: "install" };
     if (health?.hardStop === true) return needs("Your bot hit its hard stop and will not buy again until you clear it on your machine.", "hardstop");
     if (health?.exitBlocked || health?.manualAction) return needs("Your bot holds a coin it could not sell. Sell it by hand from your wallet.", "sell");
     if (!fresh) return { chip: "OFFLINE" + (ageMs != null ? " \u00b7 " + plainAge(ageMs) : ""), cls: "bad",
@@ -85769,7 +85773,18 @@ function showBotWallet(after, wallet) {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getBalance", params: [wallet] }),
   }).then((r) => r.json()).then((d) => {
-    const sol = (d?.result?.value ?? 0) / 1e9;
+    /* `?? 0` TOLD EVERY TENANT THEIR FUNDED BOT WAS EMPTY. /api/bot/rpc is a retired
+       route — src/execution-gates.js answers it 410 with {error} and no `result` — so
+       this read has been resolving to `undefined ?? 0` and painting "0.0000 SOL —
+       empty, it cannot trade" in amber over a wallet that may hold plenty. On a funding
+       surface that is the most expensive possible thing to get wrong: it is the sentence
+       that sends someone to deposit money they did not need to deposit. refreshBotBalance
+       twenty lines below already draws this distinction correctly ("empty" and "could not
+       ask" are different things to tell someone about their own money); this is the same
+       rule applied here. The route itself is left alone — reviving it is not this change. */
+    const lamports = Number(d?.result?.value);
+    if (!Number.isFinite(lamports)) { bal.textContent = "balance unavailable"; return; }
+    const sol = lamports / 1e9;
     bal.textContent = `${sol.toFixed(4)} SOL`;
     bal.style.color = sol > 0 ? "var(--good,#4f8f52)" : "var(--amber,#e0ad3d)";
     if (sol === 0) bal.textContent += " — empty, it cannot trade";
@@ -86561,7 +86576,7 @@ function renderRunnerFork(choice, onChoose, hooks) {
     badgeTone: "good",
     custody: "You hold the key. It is generated on your own machine, never leaves it, and the desk never "
       + "receives it — nobody here can move your funds, including us.",
-    how: "One command, on macOS or Linux, and it starts in dry run: it watches the feed and trades nothing "
+    how: "One command, on macOS or Linux, and it starts ARMED \u2014 with an empty wallet, so it trades nothing "
       + "until you arm it yourself on that machine. Choosing this opens the install card below.",
     cost: "What it costs you: a machine that stays awake, and two RPC accounts of your own before it can "
       + "trade live.",
@@ -86671,7 +86686,7 @@ async function withdrawHqInterest() {
 function openWallsteWalkthrough() {
   return window.CCModals.openInstallWalkthrough({
     floorNo: FLOOR_N,
-    installerSha256: "f3acdc1ff0d95b2d0c2208ba20c051d810e6fe85199c93dff2f434adb393fca7",
+    installerSha256: "71aa5b0d2fedffbf574d42eeed211cd82c972d3e98bd40e9ceaac5dadd9bcb4e",
   });
 }
 function openHqConditions({ alreadyRequested = false, onRecorded = null } = {}) {
@@ -86842,7 +86857,7 @@ function buildControls(settings) {
   exec_.setAttribute("aria-label", "Executor webhook URL");
   box.appendChild(exec_);
   const execNote = mk("div", "dp-note",
-    "Run the open-source poller on a machine you control. It defaults to dry run and can trade only after an explicit local --live setup. " +
+    "Run the open-source poller on a machine you control. Installing arms it, and it can trade only once you fund its wallet yourself. " +
     "Its dedicated burner key stays there; this site and the disabled webhook adapter never receive it. First run skips feed history.");
   box.appendChild(execNote);
   if (!settings.executor_secret) {
@@ -86910,12 +86925,12 @@ function buildControls(settings) {
     const installBox = mk("div");
     // Install from the exact source commit that built this page. The installer prompts
     // through /dev/tty so the feed secret never lands in argv or shell history.
-    installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · dry run by default"));
+    installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · arms on install"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "2fd0ef93e09774cc0e7f3b035689c3f604d1dbf5";
+    const releaseCommit = "ad320ce202a305f4f3aabea896bad146d95b7c98";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
-    const installerDigest = "f3acdc1ff0d95b2d0c2208ba20c051d810e6fe85199c93dff2f434adb393fca7";
+    const installerDigest = "71aa5b0d2fedffbf574d42eeed211cd82c972d3e98bd40e9ceaac5dadd9bcb4e";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
     /* ONE line, one paste — and now genuinely one line. install.sh has bootstrapped
        itself from $STATIC and read every prompt from /dev/tty for weeks, so piping it
@@ -86943,7 +86958,7 @@ function buildControls(settings) {
     installBox.appendChild(copyBtn);
     // The promise belongs next to the command, where the decision is actually made.
     installBox.appendChild(mk("p", "dp-note",
-      "This installs a dry run: it watches the feed and trades nothing until you separately arm it on that machine."));
+      "This ARMS your bot. It cannot spend anything until you send SOL to the wallet it creates — funding is the switch, not this command."));
     if (hasPinnedExecutorRelease && installerDigestKnown) {
       installBox.appendChild(mk("p", "dp-note",
         "Check it before you run it: curl -fsSL https://solana.claudedotcompany.com/install.sh | shasum -a 256 "
@@ -87002,11 +87017,11 @@ function buildControls(settings) {
 
     installBox.appendChild(mk("div", "dp-h", "Optional · supervised live canary"));
     installBox.appendChild(mk("div", "dp-note",
-      "Only after reviewing the dry run: put two private HTTPS Solana RPC URLs from independent providers and the Jupiter API key in separate mode-0600 files. " +
+      "The installer asks for these while it arms: two private HTTPS Solana RPC URLs from independent providers and a Jupiter API key, each read hidden or from a mode-0600 file you name. " +
       "The installer shows the new burner address and arms only when you retype that public key in the terminal. " +
       "The default canary is 0.005 SOL per trade, 0.01 SOL rolling deployment, and a 0.01 SOL rolling realized-loss entry brake. " +
       "A larger profile is local-only, requires all three values plus a fresh v2 wallet-and-values acknowledgement, and cannot exceed 0.05 / 0.5 / 0.15 SOL."));
-    // Same single pinned line as the dry-run install, with the canary flags.
+    // The same single pinned line the installer runs, with the canary flags spelled out.
     const liveCmd = hasPinnedExecutorRelease
       ? `git clone https://github.com/gtjvv976mb-netizen/Claude-Company.git && cd Claude-Company && git checkout --detach ${releaseCommit} && bash executor/install.sh --floor ${FLOOR_N} --live --expected-commit ${releaseCommit} --max-sol 0.005 --daily-cap 0.01 --daily-loss-cap 0.01 --rpc-file /absolute/path/to/primary-rpc --secondary-rpc-file /absolute/path/to/secondary-rpc --jupiter-key-file /absolute/path/to/jupiter-api-key`
       : "Live-canary installation is unavailable in this local preview. Build a release with an exact EXECUTOR_COMMIT.";
@@ -87857,6 +87872,319 @@ const leadButton = (label, onClick, { ghost = false, title = null } = {}) => {
    definition stays because the primitives test asserts the anatomy set is complete. */
 const detailsFold = (label, count = null) => window.foldSection(label + (count != null ? " · " + count : ""), { open: detailedView() });
 
+/* ═══ ONE-CLICK DEPOSIT — BEGIN ══════════════════════════════════════════════════
+ *
+ * The owner, 2026-09-09: "a one click deposit from solflare/phantom/jupiter/raydium
+ * etc". Until now this page showed the burner's address and a Copy button and left the
+ * reader to paste it into a wallet by hand. That hand-copy is the step standing between
+ * the product and its first trade: measured today the burner holds 0.107 SOL while one
+ * 0.4 SOL trade needs about 0.42 including the fee-and-rent reserve, so the bot is short
+ * and cannot trade at all.
+ *
+ * THE LINE THAT DOES NOT MOVE. The desk never holds a key. Nothing below reads, asks
+ * for, stores or transmits key material, and nothing below signs. The page builds a
+ * plain System-Program transfer MESSAGE — three public keys, a blockhash and a lamport
+ * count, no signatures — and hands it to the reader's OWN wallet to sign and send. The
+ * destination is always the address the bot reported in its own heartbeat; there is no
+ * address constant in this block that a transfer could be pointed at.
+ *
+ * NO WEB3 LIBRARY, NO NEW DEPENDENCY. tower.html pulls @solana/web3.js off a CDN for
+ * its lease payment; this page loads no such thing and is not going to start. The
+ * message is ~215 bytes of a documented wire format, encoded here by hand — which is
+ * also what makes it checkable: test-deposit-button.mjs decodes these bytes with the
+ * REAL @solana/web3.js Message parser and asserts the destination and the lamports off
+ * the parse, rather than trusting the encoder that produced them.
+ */
+const DEPOSIT = (() => {
+  const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  /* The same encoder and decoder as src/lib/base58.js, including its one hard-won
+     detail: the working list must start EMPTY. Seeding it with [0] adds a spurious
+     leading zero byte, which shows only on addresses that begin with '1' — and the
+     System Program's address is 32 zero bytes, i.e. all '1's, so a seeded decoder would
+     break on exactly the account this block needs. */
+  const b58decode = (str) => {
+    if (typeof str !== "string" || !str.length) throw new Error("base58: empty");
+    const bytes = [];
+    for (const ch of str) {
+      const v = ALPHABET.indexOf(ch);
+      if (v < 0) throw new Error("base58: bad character");
+      let carry = v;
+      for (let i = 0; i < bytes.length; i++) { carry += bytes[i] * 58; bytes[i] = carry & 0xff; carry >>= 8; }
+      while (carry) { bytes.push(carry & 0xff); carry >>= 8; }
+    }
+    for (let k = 0; k < str.length && str[k] === "1"; k++) bytes.push(0);
+    return Uint8Array.from(bytes.reverse());
+  };
+  const b58encode = (bytes) => {
+    const arr = Array.from(bytes), digits = [];
+    for (const byte of arr) {
+      let carry = byte;
+      for (let i = 0; i < digits.length; i++) { carry += digits[i] << 8; digits[i] = carry % 58; carry = (carry / 58) | 0; }
+      while (carry) { digits.push(carry % 58); carry = (carry / 58) | 0; }
+    }
+    let out = "";
+    for (let k = 0; k < arr.length && arr[k] === 0; k++) out += "1";
+    return out + digits.reverse().map((d) => ALPHABET[d]).join("");
+  };
+  /** A Solana address is 32 bytes that round-trip through base58. Nothing that fails
+   *  this reaches a transaction, a URI or the clipboard. */
+  const isAddress = (s) => {
+    try { return typeof s === "string" && s.length >= 32 && s.length <= 44 && b58decode(s).length === 32; }
+    catch { return false; }
+  };
+  /** Solana's compact-u16 (shortvec): 7 bits per byte, high bit means "another". */
+  const compactU16 = (n) => {
+    const out = [];
+    let v = n;
+    for (;;) { const b = v & 0x7f; v >>= 7; if (!v) { out.push(b); break; } out.push(b | 0x80); }
+    return out;
+  };
+  const SYSTEM_PROGRAM = "11111111111111111111111111111111";
+  const LAMPORTS_PER_SOL = 1000000000;
+
+  /* A legacy Solana message, hand-encoded. The account order is fixed by the runtime —
+     writable signers, then writable non-signers, then readonly signers, then readonly
+     non-signers — so [payer, recipient, system program] with a 1 / 0 / 1 header. Get
+     that order wrong and the wallet signs something that does not do what the page
+     said, which is why the test parses the result back rather than diffing bytes. */
+  const transferMessage = ({ from, to, lamports, blockhash }) => {
+    if (!isAddress(from)) throw new Error("the paying wallet is not a Solana address");
+    if (!isAddress(to)) throw new Error("the destination is not a Solana address");
+    if (from === to) throw new Error("that would send the money to itself");
+    if (!isAddress(blockhash)) throw new Error("no usable blockhash");
+    const amount = Number(lamports);
+    if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error("the amount must be a positive number of lamports");
+    const data = new Uint8Array(12);
+    const view = new DataView(data.buffer);
+    view.setUint32(0, 2, true);                        // System instruction 2 = Transfer
+    view.setBigUint64(4, BigInt(amount), true);
+    const out = [];
+    out.push(1, 0, 1);                                 // 1 signature, 0 readonly signed, 1 readonly unsigned
+    out.push(...compactU16(3));
+    out.push(...b58decode(from), ...b58decode(to), ...b58decode(SYSTEM_PROGRAM));
+    out.push(...b58decode(blockhash));
+    out.push(...compactU16(1));                        // one instruction
+    out.push(2);                                       // programIdIndex → the system program
+    out.push(...compactU16(2), 0, 1);                  // its accounts: payer, recipient
+    out.push(...compactU16(data.length), ...data);
+    return Uint8Array.from(out);
+  };
+
+  /* SOLANA PAY. The path that needs no injected wallet at all, and the only one that
+     works on a phone's plain browser: Phantom and Solflare both register the solana:
+     scheme. The whole URI — address and amount — is printed beside the link before the
+     reader ever follows it; the page navigates nowhere on its own. */
+  const payUri = ({ to, sol, label = "Claude Company", message = "Fund your trading bot" }) => {
+    if (!isAddress(to)) throw new Error("the destination is not a Solana address");
+    const amount = Number(sol);
+    const q = [];
+    if (Number.isFinite(amount) && amount > 0) q.push("amount=" + String(amount));
+    q.push("label=" + encodeURIComponent(label));
+    q.push("message=" + encodeURIComponent(message));
+    return "solana:" + to + "?" + q.join("&");
+  };
+
+  /* WHAT TO OFFER. Exactly the shortfall against the readiness reserve the payload
+     already carries (the bot's own trade cap + network fee + two ATA rents + the
+     untouched reserve), rounded UP to the next hundredth so a reader is never left a
+     lamport short of the figure the page just told them they needed. With no reserve
+     reported it offers NOTHING and the reader types their own: a made-up default is
+     worse than an empty box when it is someone's money. */
+  const suggestedSol = ({ requiredForReadinessSol, balanceSol } = {}) => {
+    const need = Number(requiredForReadinessSol);
+    if (!Number.isFinite(need) || need <= 0) return null;
+    const have = Number.isFinite(Number(balanceSol)) ? Math.max(0, Number(balanceSol)) : 0;
+    const short = need - have;
+    if (short <= 0) return null;
+    return Math.ceil(short * 100) / 100;
+  };
+
+  /** The wallets that inject themselves into the page. Phantom exposes both
+   *  window.phantom.solana and window.solana; Solflare and Backpack expose their own. */
+  const injectedWallet = () => {
+    const w = typeof window === "undefined" ? {} : window;
+    const found = (w.phantom && w.phantom.solana) || w.solflare ||
+      (w.backpack && w.backpack.solana) || w.solana || null;
+    return found && typeof found.connect === "function" ? found : null;
+  };
+
+  /* THE HAND-OFF. Connect, take a blockhash from the server (the public RPC 403s
+     browsers, so /api/pay/blockhash is the one chain read this page can make), build the
+     message, and give it to the wallet. The wallet signs and submits it through its own
+     infrastructure. This function holds no key, is never given one, and would have
+     nowhere to put one: `provider` is the extension's object, not ours. A wallet that
+     does not implement the request lane throws here and the caller falls back to the
+     Solana Pay link rather than pretending something was sent. */
+  const sendFromWallet = async ({ provider, to, sol, blockhash }) => {
+    if (!provider || typeof provider.connect !== "function") throw new Error("no wallet is available in this browser");
+    const connected = await provider.connect();
+    const key = (connected && connected.publicKey) || provider.publicKey;
+    const from = String(key && key.toString ? key.toString() : key || "");
+    if (!isAddress(from)) throw new Error("the wallet did not return an address");
+    const lamports = Math.round(Number(sol) * LAMPORTS_PER_SOL);
+    const message = b58encode(transferMessage({ from, to, lamports, blockhash }));
+    if (typeof provider.request !== "function")
+      throw new Error("this wallet cannot be handed a transaction here — use the link below instead");
+    const res = await provider.request({ method: "signAndSendTransaction", params: { message } });
+    const signature = (res && res.signature) || res;
+    if (typeof signature !== "string" || !signature) throw new Error("the wallet did not return a signature");
+    return { from, to, lamports, signature };
+  };
+
+  return { b58encode, b58decode, isAddress, compactU16, transferMessage, payUri,
+    suggestedSol, injectedWallet, sendFromWallet, SYSTEM_PROGRAM, LAMPORTS_PER_SOL };
+})();
+window.__deposit = DEPOSIT;
+
+/** The one sentence a reader must have before they press anything here, and it is the
+ *  unrecoverability that matters. It stands in the lead, never only behind an ⓘ. */
+const DEPOSIT_TRUTH = "This sends real SOL to your bot's own wallet. Your bot is the only thing that can spend it — "
+  + "the desk cannot move it, cannot spend it, and cannot send it back.";
+/* Jupiter's default input when someone has no SOL at all. It is a swap INPUT, never a
+   transfer destination — the money still lands in the reader's own wallet. */
+const DEPOSIT_SWAP_IN = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
+/** Send SOL to the bot's wallet: the wallet signs, this page never does. */
+function openDeposit({ address, requiredForReadinessSol = null, balanceSol = null } = {}) {
+  if (typeof window.openDialog !== "function") return null;
+  const d = window.openDialog({ title: "Send SOL to your bot", label: "deposit" });
+  /* An address that does not decode to 32 bytes is not an address, and a page that
+     offers to send money to one is worse than a page that offers nothing. */
+  if (!DEPOSIT.isAddress(address)) {
+    d.body.appendChild(plainLead("Your bot has not reported a wallet yet.", {
+      sub: "The address appears here with its first heartbeat. Nothing can be sent until then." }));
+    const shut = dashNode("button", "dp-btn", "Got it"); shut.type = "button"; shut.onclick = d.dismiss;
+    d.foot.appendChild(shut);
+    return d;
+  }
+  const suggested = DEPOSIT.suggestedSol({ requiredForReadinessSol, balanceSol });
+  const provider = DEPOSIT.injectedWallet();
+
+  d.body.appendChild(plainLead("Send SOL to your bot's wallet.", {
+    sub: DEPOSIT_TRUTH,
+    infoTitle: "Where this money goes",
+    info: "The address below is the one your bot reported in its own heartbeat. Its private key was generated on "
+      + "your machine and lives there; this site has never received it and cannot sign for it. Pressing the button "
+      + "asks YOUR wallet to sign a plain SOL transfer: this page builds the transfer out of public addresses and a "
+      + "number, your wallet signs and sends it, and no key of yours is read, stored or sent anywhere by this page. "
+      + "Once it lands it is your bot's money — the desk cannot claw it back and neither can this page. Send SOL and "
+      + "nothing else.",
+  }));
+  d.body.appendChild(chipRow([
+    { label: "To your bot", value: address.slice(0, 4) + "…" + address.slice(-4),
+      title: "From your bot's own heartbeat: " + address },
+    { label: "It holds", value: balanceSol == null ? "unknown" : dashSol(balanceSol),
+      title: "Confirmed on chain, read-only." },
+    { label: "You sign it", value: "in your wallet",
+      title: "The desk holds no key of yours, so it cannot sign or send anything for you." },
+  ]));
+
+  const field = dashNode("div", "dp-row");
+  const amount = document.createElement("input");
+  amount.className = "dp-in";
+  amount.type = "number"; amount.min = "0"; amount.step = "0.001";
+  amount.placeholder = "amount in SOL";
+  amount.value = suggested == null ? "" : String(suggested);
+  amount.setAttribute("aria-label", "Amount of SOL to send");
+  field.append(dashNode("span", "dp-note", "SOL"), amount);
+  d.body.appendChild(field);
+  d.body.appendChild(dashNode("p", "dp-note", suggested == null
+    ? "No amount is filled in. Your bot has not reported a trade cap, so the page has no honest figure to offer — type what you are willing to lose."
+    : "Offered: " + dashSol(suggested) + " — exactly what your bot is short of the reserve it reported it needs for one trade at its own cap, rounded up. A starting figure, not a recommendation; type over it."));
+  const say = dashNode("p", "dp-note", "");
+  d.body.appendChild(say);
+
+  /* THE NO-WALLET PATH, ALWAYS OFFERED. Solana Pay first, because Phantom and Solflare
+     both handle the scheme and it is the only thing that works on a phone's plain
+     browser; then the bare address, which works when everything else has failed. The
+     URI is rebuilt as the amount is typed and PRINTED IN FULL underneath, so nothing is
+     ever followed that the reader has not seen. */
+  const linkRow = dashNode("div", "dp-row");
+  const link = dashNode("a", "dp-btn ghost", "Open in a Solana wallet");
+  link.rel = "noopener";
+  linkRow.appendChild(link);
+  d.body.appendChild(linkRow);
+  const uriText = dashNode("p", "dp-note", "");
+  uriText.style.overflowWrap = "anywhere";
+  d.body.appendChild(uriText);
+  const paint = () => {
+    const sol = Number(amount.value);
+    const uri = DEPOSIT.payUri({ to: address, sol });
+    link.href = uri;
+    uriText.textContent = "This link opens: " + uri;
+  };
+  amount.addEventListener("input", paint);
+  paint();
+
+  const box = dashNode("div", "secretbox");
+  const code = dashNode("code", "", address);
+  code.style.userSelect = "all";
+  box.appendChild(code);
+  const copy = dashNode("button", "dp-btn ghost", "Copy address");
+  copy.type = "button";
+  copy.title = "Copy your bot's public address. It is public; the key behind it is not here.";
+  copy.onclick = async () => {
+    try { await navigator.clipboard.writeText(address); copy.textContent = "Copied ✓"; }
+    catch { copy.textContent = "Clipboard blocked"; }
+    setTimeout(() => { copy.textContent = "Copy address"; }, 1600);
+  };
+  box.appendChild(copy);
+  d.body.appendChild(box);
+  d.body.appendChild(dashNode("p", "dp-note",
+    "Sending by hand works too — that is the whole address. SOL only: anything else sent there is stuck."));
+
+  /* JUPITER AND RAYDIUM ARE SWAP VENUES, NOT DEPOSIT SOURCES. A reader holding no SOL
+     needs some first, and that swap settles in THEIR wallet — it does not and cannot
+     land in the bot. Say so plainly, then reuse the page's own Jupiter hand-off pointed
+     at SOL as the output. */
+  d.body.appendChild(dashNode("p", "dp-note",
+    "No SOL to send? Swap something into SOL first. The swap lands in YOUR wallet, not your bot's — you come back here and send it on."));
+  const swap = dashNode("button", "dp-btn ghost", "Swap into SOL first");
+  swap.type = "button";
+  swap.title = "Opens Jupiter with SOL as the output. Change the top token to whatever you hold. The result is yours, not your bot's.";
+  swap.onclick = () => { d.dismiss(); openSwap({ mint: DEPOSIT_SWAP_IN, symbol: "USDC", side: "sell" }); };
+  d.body.appendChild(swap);
+
+  if (!provider) {
+    d.body.appendChild(dashNode("p", "dp-note",
+      "No Solana wallet is available in this browser, so nothing here can be signed on this page. Use the link above — Phantom and Solflare both open it — or send to the address by hand."));
+    const shut = dashNode("button", "dp-btn", "Close"); shut.type = "button"; shut.onclick = d.dismiss;
+    d.foot.appendChild(shut);
+    try { shut.focus(); } catch {}
+    return d;
+  }
+
+  const act = dashNode("button", "dp-btn", "Send from my wallet");
+  act.type = "button";
+  act.title = "Your wallet opens next. Nothing moves until you sign it there.";
+  act.onclick = async () => {
+    const sol = Number(amount.value);
+    if (!Number.isFinite(sol) || sol <= 0) { say.textContent = "Type an amount above zero first."; return; }
+    act.disabled = true;
+    try {
+      say.textContent = "Getting a fresh blockhash…";
+      const { status, body } = await call_api("/api/pay/blockhash");
+      if (status !== 200 || !body || !body.blockhash) throw new Error("could not fetch a blockhash — try again in a moment");
+      say.textContent = "Sign it in your wallet…";
+      const out = await DEPOSIT.sendFromWallet({ provider, to: address, sol, blockhash: body.blockhash });
+      say.textContent = "Sent ✓ " + String(out.signature).slice(0, 8) + "… — " + dashSol(sol) +
+        " on its way to your bot. It arrives when the chain confirms it, and it cannot be recalled.";
+      window.tape?.("Funded", dashSol(sol) + " sent to your bot's wallet (your wallet, your signature)", "hi");
+    } catch (e) {
+      const msg = String((e && e.message) || e);
+      /* A cancelled signature is not a failure and must not be reported as one. */
+      say.textContent = /reject|denied|4001/i.test(msg)
+        ? "You cancelled it. Nothing was sent."
+        : "That did not send: " + msg.slice(0, 140) + ". The link and the address above still work.";
+    } finally { act.disabled = false; }
+  };
+  d.foot.appendChild(act);
+  try { act.focus(); } catch {}
+  return d;
+}
+window.__openDeposit = openDeposit;
+/* ═══ ONE-CLICK DEPOSIT — END ════════════════════════════════════════════════════ */
+
 /* ═══ COHORT CYCLE SURFACE — BEGIN ══════════════════════════════════════════════
  *
  * The owner asked for at least three published calls per cycle, "at any cost, by any
@@ -88325,6 +88653,68 @@ async function loadOverviewDashboard() {
     fact("$CLAUDECO", claudeco == null ? "\u2014" : claudeco, "");
     if (feedR?.body?.rent?.overdue) fact("Rent", "OVERDUE", "bad", "This floor's rent is overdue. Settle it from the tower.");
     el.appendChild(facts);
+    /* THE OFF/ON BUTTON, BESIDE THE FIGURES (owner, 2026-09-09: "an off/on button";
+       2026-09-08: "IF THEIR BOT IS ON (WHICH THEY CAN EASILY TURNOFF)"). One press.
+       OFF asks for no confirmation — stopping is the safe direction — and ON does,
+       because starting to buy with real money is not something to do by mis-tap.
+       WHAT THE CHIP SHOWS IS THE BOT'S OWN ECHO, never the request: runControl.chip
+       reads "TURNING OFF…" until the bot has confirmed it on its own next poll, because
+       nothing on this page can reach the machine, and a bot that is asleep has heard
+       nothing. Off means new buys only; it never sells and never stops the bot managing
+       or exiting what it already holds. */
+    const run = exec.runControl || null;
+    let actionRow = null;
+    if (run) {
+      el.append(chipRow([{ label: "New buys", value: run.chip, cls: run.cls, title: run.sentence }]));
+      const setRun = async (enabled) => {
+        const r = await call_api("/api/floor/" + FLOOR_N + "/bot-run", {
+          method: "POST", body: JSON.stringify({ enabled }),
+        });
+        if (r.status !== 200) {
+          const d = window.openDialog({ title: "That did not save", label: "off/on" });
+          d.body.appendChild(dashNode("p", "dp-note", r.body?.error
+            || (r.status === 401 ? "Not signed in on this device — connect the wallet that holds this floor."
+              : "The desk answered " + r.status + ". Nothing changed.")));
+          const ok = dashNode("button", "dp-btn", "Got it"); ok.type = "button"; ok.onclick = d.dismiss; d.foot.appendChild(ok);
+          return;
+        }
+        setTimeout(loadOverviewDashboard, 250);
+      };
+      const turningOn = run.nextAction === "on";
+      /* Held rather than appended inline so the Send-SOL button below can join this same
+         `.lead-actions` row instead of opening a second one. Same helper, same class. */
+      actionRow = leadButton(turningOn ? "Turn new buys on" : "Turn new buys off", () => {
+        if (!turningOn) return setRun(false);
+        const d = window.openDialog({ title: "Let your bot buy again?", label: "off/on" });
+        d.body.appendChild(dashNode("p", "dp-note",
+          "Your bot will open new positions again the next time it checks in — with real money if it is running live. "
+          + "Its own hard stop and entry pause, on its machine, still bind: this cannot clear those."));
+        const go = dashNode("button", "dp-btn", "Turn it on"); go.type = "button";
+        go.onclick = () => { d.dismiss(); setRun(true); };
+        const no = dashNode("button", "dp-btn ghost", "Cancel"); no.type = "button"; no.onclick = d.dismiss;
+        d.foot.append(no, go);
+      }, { ghost: turningOn });
+      el.append(actionRow);
+    }
+    /* SEND SOL, BESIDE THE FIGURE THAT SAYS IT IS SHORT (owner, 2026-09-09: "a one click
+       deposit from solflare/phantom/jupiter/raydium etc"). The SOL tile above is where a
+       reader learns their bot cannot trade; making them leave it, find the bot tab and
+       hand-copy an address is the step that has kept the burner at 0.107 SOL against the
+       ~0.42 one trade needs. The destination is execWallet.address — the address the BOT
+       reported in its own heartbeat — never a constant in this file. */
+    if (execWallet.address) {
+      const openIt = () => openDeposit({ address: execWallet.address,
+        requiredForReadinessSol: execWallet.requiredForReadinessSol,
+        balanceSol: execWallet.balanceSol });
+      const why = "Send SOL from your own wallet to your bot's wallet. The desk cannot move it or send it back.";
+      if (actionRow) {
+        const send = dashNode("button", "dp-btn ghost", "Send SOL");
+        send.type = "button"; send.title = why; send.onclick = openIt;
+        actionRow.appendChild(send);
+      } else {
+        el.append(leadButton("Send SOL", openIt, { title: why }));
+      }
+    }
     if (!botOn) el.append(leadButton(bot.action ? "Open your bot" : "See the calls", () => goTo(bot.action ? "wallste" : "calls")));
   } else {
     /* The HQ floor has no lease row by design (rooms.js roomState), so `lease` is null
@@ -88706,8 +89096,19 @@ async function loadWallsteDashboard({ background = false } = {}) {
     const botNow = window.PLAIN.botState({ heartbeat, ageMs: telemetry.ageMs ?? null, connected, runnerChoice,
       readiness: health?.executionReadiness || null });
     window.__botState = botNow;
+    /* THE BOUNDARY SENTENCE, RE-WORDED 2026-09-09 BECAUSE THE OLD ONE WOULD NOW BE A
+       LIE BY OMISSION. It used to end "it cannot start, stop, steer, sign for, or fund
+       it", written when the page had no control of any kind. The floor has an off switch
+       now, and it is still true that nothing here reaches the machine — the switch is a
+       flag the BOT collects on its own poll — so the sentence says both halves rather
+       than dropping the half that changed. */
+    const runNow = status.runControl || null;
     const lead = dashLead("",
-      botNow.sentence + " This page can see your bot; it cannot start, stop, steer, sign for, or fund it.",
+      botNow.sentence
+      + (runNow ? " New buys: " + runNow.chip + " — " + runNow.sentence : "")
+      + " Nothing on this page reaches your bot's machine: it cannot start, stop, sign for, or fund it."
+      + " The off switch on the Overview is a request your bot reads on its own next check-in,"
+      + " and your machine's own hard stop always wins.",
       botNow.chip, botNow.cls);
     /* THE TRACK RIDES IN THE HEADER, BESIDE THE MODE. A tenant must never have to
        reason about which of the two arrangements they are on: it is stated wherever
@@ -88782,7 +89183,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
         if (value === RUNNER_SELF) runnerChoiceLocalSelf = true;
         repaintTrack();
         return { ok: true, message: value === RUNNER_HQ ? RUNNER_HQ_CONFIRMATION
-          : "You run it. The install card is below — one command, dry run by default." };
+          : "You run it. The install card is below — one command, and it arms." };
       }
       if (value === RUNNER_SELF) {
         /* Bookkeeping failed, not the track. Self-hosting asks this server for nothing,
@@ -88812,7 +89213,11 @@ async function loadWallsteDashboard({ background = false } = {}) {
     const boundary = dashNode("div", "boundary-note");
     boundary.innerHTML = "<strong>OBSERVATION ONLY · TENANT MACHINE ONLY.</strong> " +
       "Telemetry is self-reported by your machine. Burner balance is a read-only confirmed-chain lookup. " +
-      "Remote control and browser signing are disabled.";
+      /* Sharpened 2026-09-09 alongside Send SOL. "Browser signing is disabled" read, after
+         a deposit button appeared, as though the page had started signing for the burner.
+         It has not and cannot: what the browser may now sign is the READER'S OWN transfer,
+         in the reader's own wallet. Name whose key that is. */
+      "Remote control is disabled and nothing here signs for your bot — the only key this page can ask to sign is your own wallet's.";
     /* The custody fact is already the second half of the lead sentence above; this
        paragraph repeated it. Detailed view only. */
     if (detailedView()) el.appendChild(boundary);
@@ -88874,6 +89279,21 @@ async function loadWallsteDashboard({ background = false } = {}) {
         catch { copy.textContent = "Clipboard blocked"; }
       };
       addressRow.appendChild(copy);
+      /* ONE CLICK, WHERE THE ADDRESS ALREADY IS. This card has always ended at "copy
+         this and paste it into a wallet", and that is the step the burner never got
+         past. Gated on `connected` for exactly the reason Copy is: funding an address
+         from a stale heartbeat is funding a wallet that may no longer be the bot's, and
+         that SOL is not coming back. The destination is wallet.address from the
+         heartbeat; nothing here carries an address of its own. */
+      const send = dashNode("button", "dp-btn", "Send SOL");
+      send.type = "button";
+      send.disabled = !connected;
+      send.title = connected
+        ? "Send SOL from your own wallet to this address. Your bot is the only thing that can spend it."
+        : "Disabled: this address came from a stale heartbeat; confirm it on the executor host before funding";
+      send.onclick = () => openDeposit({ address: wallet.address,
+        requiredForReadinessSol: wallet.requiredForReadinessSol, balanceSol: wallet.balanceSol });
+      addressRow.appendChild(send);
       funding.appendChild(addressRow);
       funding.appendChild(dashNode("p", "dp-note",
         (connected ? "Fresh heartbeat address" : "LAST-REPORTED ADDRESS · STALE — DO NOT FUND") +
@@ -88883,9 +89303,14 @@ async function loadWallsteDashboard({ background = false } = {}) {
       if (wallet.requiredForReadinessSol != null) funding.appendChild(dashNode("p", "dp-note",
         "Conservative no-sign readiness reserve for the reported active trade cap: " +
         dashSol(wallet.requiredForReadinessSol) + ". This is not a recommendation to fund more."));
+      /* RE-WORDED 2026-09-09, because the old sentence became false the moment Send SOL
+         landed: this page DOES now offer a transfer. What is still true — and is the
+         part that matters — is that it is signed in the reader's own wallet, that the
+         burner key never reaches this page, and that the money is one-way. Say the true
+         thing rather than keeping the comfortable one. */
       funding.appendChild(dashNode("p", "dp-note",
         connected
-          ? "Fund with SOL from your own wallet only. This page has no transfer control and never receives the burner key."
+          ? "Fund with SOL from your own wallet only. Send SOL builds the transfer here and your own wallet signs and sends it — this page never receives the burner key, and it cannot move or return what you send."
           : "Wait for a fresh heartbeat and verify the address on the executor host before funding. The last-reported address may no longer be current."));
     } else {
       funding.appendChild(dashNode("p", "locked",
@@ -88960,7 +89385,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     checklistCard.appendChild(dashNode("p", "dp-note",
       activation.currentLiveMode
         ? "The local machine currently reports LIVE mode. Any change must be made and confirmed on that machine."
-        : "No browser button can arm live mode. Review dry-run output and activate only from the local host."));
+        : "No browser button can arm or fund your bot. Installing arms it on your own machine; sending it SOL is yours alone."));
     split.appendChild(checklistCard);
     healthFold.body.appendChild(split);
     if (showHealth) el.appendChild(healthFold.wrap);
@@ -89020,7 +89445,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "2fd0ef93e09774cc0e7f3b035689c3f604d1dbf5";
+    const executorReleaseCommit = "ad320ce202a305f4f3aabea896bad146d95b7c98";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
@@ -89038,7 +89463,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
      * click to INSTALL must never become one click to trade real money — so the
      * short path buys convenience only in step 2, and steps 4 and 5 stay exactly
      * as deliberate as they were. */
-    const installerSha256 = "f3acdc1ff0d95b2d0c2208ba20c051d810e6fe85199c93dff2f434adb393fca7";
+    const installerSha256 = "71aa5b0d2fedffbf574d42eeed211cd82c972d3e98bd40e9ceaac5dadd9bcb4e";
     /* The build substitutes the digest of the very install.sh it published. Unsubstituted
        means a local preview, and a digest a reader cannot rely on is worse than none. */
     const installerShaKnown = /^[0-9a-f]{64}$/i.test(installerSha256);
@@ -89095,7 +89520,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
         : "Create the credential above, then copy it only after the privacy confirmation. It authenticates feed reads and outbound heartbeats, never wallet custody.",
       activation.feedCredentialReady === true);
 
-    const installStep = setupStep(2, "Install WALL-ST-E · one command, dry run by default",
+    const installStep = setupStep(2, "Install WALL-ST-E · one command, and it arms",
       releaseIsPinned
         ? "Paste this into a terminal on the machine that will run the bot. Dry run is the installer default."
         : "The deployment has not embedded its exact 40-character source commit, so installation copy is locked. Publish the build with the source placeholder replaced first.",
@@ -89113,8 +89538,8 @@ async function loadWallsteDashboard({ background = false } = {}) {
        spend money on its own. The ceremonies are further down the page; the promise is
        here, where the decision is being made. */
     installStep.appendChild(dashNode("p", "dp-note",
-      "This installs a dry run: WALL-ST-E watches the feed, writes what it would have done, and trades nothing. "
-      + "It cannot buy or sell until you separately arm it on that machine — steps 4 and 5 below. "
+      "This ARMS your bot: one command, no rehearsal install first. It cannot buy anything yet because the "
+      + "wallet it creates is empty, and this installer never funds one — sending SOL is the switch. "
       + "The burner key is generated on your host, is never sent anywhere, and no button on this page can arm, sign, or fund it."));
 
     /* The double-click path, for the readers who will never open a terminal at all. It is
@@ -89126,7 +89551,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     installStep.appendChild(launcherLink);
     installStep.appendChild(dashNode("p", "dp-note",
       "macOS marks a downloaded .command as quarantined: right-click it and choose Open the first time, "
-      + "or run the line above instead. It installs exactly the same dry run."));
+      + "or run the line above instead. It installs exactly the same armed bot."));
 
     /* VERIFY WHAT YOU ARE ABOUT TO RUN. Piping a URL into a shell is only as good as the
        reader's ability to check that the URL served what the publisher says it served, so
@@ -89171,7 +89596,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
         ? "The latest heartbeat reports PAPER. Watch multiple decisions and verify local policy, pauses, and recovery before considering live mode."
         : activation.currentLiveMode
           ? "The latest heartbeat reports LIVE; this page cannot prove that the earlier paper review was completed."
-          : "Start only the locally installed dry-run service, then review its journal before proceeding.",
+          : "Start only the service you installed locally, and read its journal before you fund it.",
       activation.currentPaperMode === true);
     paperStep.appendChild(dashNode("pre", "commandbox", reviewCommand));
     const copyReview = dashNode("button", "dp-btn ghost commandcopy", "Copy review command");

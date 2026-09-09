@@ -85,7 +85,19 @@ const ALLOWED_ENV = new Set([
      own environment. 0 (the default) means conviction is not consulted at all.
      Bounded 0-100 in poller.mjs. */
   "MIN_CONVICTION",
-  "MAX_RENT_LAMPORTS", "MAX_SOL_PER_TRADE", "MAX_TX_ATTEMPTS", "PAUSE_ENTRIES_FILE",
+  "MAX_RENT_LAMPORTS", "MAX_SOL_PER_TRADE", "MAX_TX_ATTEMPTS",
+  /* TEST SEAM, allowlisted for the same reason DS_OFFLINE is: this allowlist must name
+     every setting the runtime references, and refusing to name one only hides it.
+     PAPER_PREFLIGHT carries the paper path PAST its "no transaction signed" return and
+     into the executable-cost and executable-quote fences, so a simulation can measure the
+     refusals that actually decide whether a published call is taken (SIM C,
+     test-sim-c.mjs). It is dead under EXECUTE=1 — the constant that reads it is written
+     `!EXECUTE && ...` — and PAPER_SOL_USD is the declared SOL/USD that path prices its
+     implied mark with, since paper mode has no chain to read Pyth from. Neither belongs
+     in a production env file: an operator who sets them changes nothing about a live run
+     and gains a log line about quotes nobody signed. */
+  "PAPER_PREFLIGHT", "PAPER_SOL_USD",
+  "PAUSE_ENTRIES_FILE",
   "POLL_MS",
   /* How long the no-sign readiness rehearsal may run before it is abandoned. It gates
      nothing — the rehearsal signs nothing and is not consulted before an entry — but a

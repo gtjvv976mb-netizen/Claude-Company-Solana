@@ -17,7 +17,7 @@ import {
 import {
   JupiterV2Executor, MAX_GROSS_RENT_LAMPORTS, WSOL, associatedTokenAddress,
   walletTokenAmount, independentClassicMintDecimals, independentMintProgram, mintTokenProgram,
-  TOKEN_2022_PROGRAM, EXECUTION_READINESS_ROUTE,
+  TOKEN_2022_PROGRAM, EXECUTION_READINESS_ROUTE, validateOrderEnvelope,
 } from "./jupiter.mjs";
 import { token2022Enabled } from "./token2022.mjs";
 import {
@@ -26,14 +26,19 @@ import {
 import {
   advanceFrozenBatchCursor, authenticatedFeedCursorState, waitForRecoveryBudget,
 } from "./feed-drain.mjs";
-import { clearMarkUnavailable, executableExitMark, noteMarkUnavailable } from "./exit-trigger.mjs";
+import {
+  clearExitImpactRefusals, clearMarkUnavailable, executableExitMark, exitRetryFraction,
+  isPriceImpactRefusal, noteExitImpactRefusal, noteMarkUnavailable,
+} from "./exit-trigger.mjs";
 import {
   MIRROR_MARK_MS, evaluateMirror, mirrorLatchExpiry, mirrorPriceable,
   reconcileGate, reconcileVerdict, refreshDeskLevels,
 } from "./desk-mirror.mjs";
 import { consensusMark } from "./dexscreener-consensus.mjs";
 import { executorHeartbeatHealth, executorRuntimeFingerprint } from "./heartbeat-health.mjs";
-import { validateEntryPreflightContext } from "./entry-quote-guard.mjs";
+import {
+  validateEntryPreflightContext, validateExecutableEntryOrder,
+} from "./entry-quote-guard.mjs";
 import {
   inspectOwnerControlFile, requireMacEntryPower, sleepAssertionFaultPath,
 } from "./sleep-assertion.mjs";
@@ -41,7 +46,9 @@ import {
   independentSolUsdPrice, PYTH_SOL_USD_CACHE_SOURCE, solanaRpcConnectionConfig,
   usableSolUsdCache,
 } from "./sol-usd-oracle.mjs";
-import { DEFAULTS, POLICY_VERSION, planEntry, openPosition, stepPosition, freshState } from "./strategy.mjs";
+import { DEFAULTS, POLICY_VERSION, planEntry, minViableSolPerTrade, openPosition, stepPosition,
+  freshState } from "./strategy.mjs";
+import { sizeEntryToRoute } from "./entry-sizing.mjs";
 import { policyConfigForPosition, resolveTakeProfitRule, validateEntryReference } from "./trade-policy.mjs";
 import { ENTRY_WINDOW_FLOOR_MS, entryContract, entryWindowMs } from "./entry-contract.mjs";
 
@@ -51,6 +58,28 @@ const API = (process.env.CC_API || "https://claude-company-api.onrender.com").re
 const SECRET = process.env.CC_SECRET || "";
 const FLOOR = process.env.CC_FLOOR || "";
 const EXECUTE = process.env.EXECUTE === "1";
+/* THE PAPER-PREFLIGHT SEAM — OFF UNLESS ASKED FOR, AND IMPOSSIBLE WHILE EXECUTING.
+ *
+ * Paper mode returns at the ENTRY line, before the executable-cost gates, so SIM A's
+ * "the bot decided to BUY all 12 published calls" is a decision taken ahead of the four
+ * fences that actually refused live entries: the round-trip cap (measured 14%), the
+ * entry impact cap (7%), the executable-quote drift (8.20% and 26.04% on 2026-09-04/05)
+ * and the gross-rent ceiling (3,742,803 and 4,078,560 against 4,200,000). A simulation
+ * that stops before them cannot say anything about the take rate, which is the whole
+ * question.
+ *
+ * With PAPER_PREFLIGHT=1 the paper path continues into those gates against whatever
+ * JUPITER_API_BASE points at — a local fixture server in SIM C — and stops one line
+ * before anything is journaled or signed. `&& !EXECUTE` is written into the constant
+ * itself rather than checked at the call site so no later edit can reach the paper
+ * branch from a live run; paperPreflightEntry() refuses a second time on its own. */
+const PAPER_PREFLIGHT = !EXECUTE && process.env.PAPER_PREFLIGHT === "1";
+/* The SOL/USD the paper preflight prices its implied marks with. There is no chain in
+ * paper mode, so there is no Pyth read to take it from — and the drift test only needs
+ * the two sides to share ONE anchor, because it compares Jupiter's implied mark with the
+ * desk's monitored mark. Live, this number comes from independentSolUsdPrice across both
+ * RPC providers and nothing else is accepted (validateEntryPreflightContext). */
+const PAPER_SOL_USD = Number(process.env.PAPER_SOL_USD || 150);
 /* FIVE SECONDS, NOT FIFTEEN. Under desk-led-v4 the poll is the bot's ONLY way to hear the
  * exit the desk determined, so its period is the floor on how late every exit lands.
  * Shrek, call 55 (2026-09-05): the desk's stop_hit was written at 03:10:24Z; at 15 s the
@@ -571,6 +600,38 @@ const clearFeedRollback = () => {
   feedRollback = null;
   journal.setMeta("feed_rollback", null);
 };
+
+/* ── THE TENANT'S OFF SWITCH ──────────────────────────────────────────────────
+ *
+ * The floor page has an off/on button now (owner, 2026-09-09: "an off/on button"). It
+ * does not, and cannot, reach this process: there is no inbound port, no callback and
+ * no queue. The desired state is a boolean in the `rules` block of the feed THIS
+ * process asks for, and this is the whole of the mechanism — read it on the poll that
+ * already happens, remember it, and let onEntry consult it.
+ *
+ * null until a feed has been read, and only a literal boolean moves it: an older or
+ * damaged server that omits the field leaves the switch exactly where it was rather
+ * than inventing a state. Not persisted on purpose — the value arrives in the SAME
+ * payload as the events it governs, so a restart cannot act on an entry before it has
+ * seen the flag that goes with it.
+ *
+ * OFF MEANS: OPEN NO NEW POSITIONS. It is checked in onEntry alone. Exits, marks,
+ * reconciliation, the desk mirror, the fill reports and the heartbeat are untouched —
+ * an off switch that stranded an open position would be worse than no switch.
+ *
+ * AND IT CANNOT TURN TRADING ON. `false` blocks; nothing here ever clears the hard-stop
+ * or entry-pause sentinels, which are separate, local, and checked on their own. */
+let deskEntriesEnabled = null;
+const deskEntriesOff = () => deskEntriesEnabled === false;
+const noteDeskEntriesRule = (rules) => {
+  const wanted = rules && typeof rules === "object" ? rules.entries_enabled : undefined;
+  if (wanted !== true && wanted !== false) return;
+  if (wanted === deskEntriesEnabled) return;
+  deskEntriesEnabled = wanted;
+  log(wanted
+    ? "your floor's switch is ON — new positions are permitted again (your machine's own hard stop and entry pause still bind)"
+    : "your floor's switch is OFF — no new positions will be opened; exits, marks and reconciliation continue");
+};
 const save = () => journal.saveRuntime(S);
 save();
 if (process.env.INIT_ONLY === "1") {
@@ -790,6 +851,9 @@ function clearExitLatch(pos) {
     "exitExecutionObservedAt", "exitExecutionTrigger", "exitExecutionLastError",
     "exitExecutionLastAttemptAt", "exitExecutionDeskCode", "exitExecutionKind",
     "exitExecutionStandIn"]) delete pos[key];
+  // The impact ladder belongs to THIS latch: a new determination starts at the whole
+  // position again rather than inheriting a quarter clip from a pool that has since healed.
+  clearExitImpactRefusals(pos);
 }
 
 /**
@@ -810,8 +874,15 @@ function clearExitLatch(pos) {
 function dropExpiredMirrorLatch(pos) {
   let intentState = null;
   try {
-    intentState = pos.exitExecutionIntentId
-      ? journal.getIntent(pos.exitExecutionIntentId)?.state ?? null : null;
+    /* The clip in flight is the one that matters: once the impact ladder has stepped
+     * down, the sell lives under a `#clip<n>` id and the base intent sits in whatever
+     * state its full-position attempt ended in. Reading only the base id could drop a
+     * latch whose reduced sell had already crossed the signing boundary. */
+    const current = pos.exitExecutionIntentId
+      ? exitClipIntentId(pos.exitExecutionIntentId, pos, exitRetryFraction(pos)) : null;
+    intentState = current
+      ? journal.getIntent(current)?.state ?? journal.getIntent(pos.exitExecutionIntentId)?.state ?? null
+      : null;
   } catch {}
   const expiry = mirrorLatchExpiry({ position: pos, deskReachable: deskUnreachableSince == null,
     deskSilent: deskSilentPositions.has(pos.mint), intentState });
@@ -1180,6 +1251,77 @@ function accountConfirmedIntents() {
   return count;
 }
 
+/**
+ * THE PAPER PREFLIGHT — every cost and geometry fence an entry faces, and no signature.
+ *
+ * Runs only under PAPER_PREFLIGHT (which already implies EXECUTE=0) and refuses again
+ * here, because the branch below deliberately does something a live run must never do:
+ * it prices the implied entry mark with a declared constant instead of the two-RPC Pyth
+ * read, since paper mode has no chain to read. Everything else is the real code —
+ * sizeEntryToRoute's halving ladder, planEntry re-run against the friction the route
+ * actually measured, validateOrderEnvelope's rent/impact/fee/router caps, and
+ * validateExecutableEntryOrder's drift/zone/stop/target tests — so a refusal here is the
+ * refusal the live path would have produced from the same quotes.
+ *
+ * It journals nothing, signs nothing and touches no key. The line it prints is the
+ * measurement: PAPER PREFLIGHT <sym> — CLEARED|REFUSED, with the numbers.
+ */
+async function paperPreflightEntry(ev, plan, perCall, entryReference, normalizedCall) {
+  if (EXECUTE || !PAPER_PREFLIGHT) throw new Error("the paper preflight is not reachable from a live run");
+  if (!jupiter) return log(`PAPER PREFLIGHT ${ev.symbol} — SKIPPED: no Jupiter client (JUPITER_API_KEY unset)`);
+  const routeStopFrac = Math.max(1e-9, 1 - entryReference.stopRatio);
+  const sizing = await sizeEntryToRoute({
+    probe: (amountRaw) => jupiter.preflightEntryProbe(WSOL, ev.mint, amountRaw),
+    sol: plan.sol, lamportsPerSol: LAMPORTS, stopRatio: entryReference.stopRatio,
+    expectedNetworkFeeLamports: jupiter.cfg.expectedNetworkFeeLamports,
+    slippageBps: jupiter.cfg.slippageBps,
+    minSizeFor: (conservativeLossPct) => minViableSolPerTrade(perCall,
+      Math.min(1, routeStopFrac + Math.max(0, conservativeLossPct) / 100)),
+  });
+  if (!sizing.ok) return log(`PAPER PREFLIGHT ${ev.symbol} — REFUSED [executable_cost] ${sizing.refusal}`);
+  if (sizing.sizedDown) log(`SIZED ${ev.symbol} — ${sizing.reason}`);
+  const sized = planEntry({ call: normalizedCall,
+    cfg: { ...perCall, measuredRoundTripLossPct: sizing.conservativeLossPct,
+      maxSolPerTrade: Math.min(perCall.maxSolPerTrade, sizing.sol) }, state: S.state });
+  if (sized.action !== "buy")
+    return log(`PAPER PREFLIGHT ${ev.symbol} — REFUSED [rails_after_cost] ${sized.reason}`);
+  const amountRaw = String(Math.floor(sized.sol * LAMPORTS));
+  const observedAt = Date.now();
+  let order;
+  try {
+    order = await jupiter.order({ inputMint: WSOL, outputMint: ev.mint, amountRaw, taker: true });
+    validateOrderEnvelope(order, { inputMint: WSOL, outputMint: ev.mint, amountRaw,
+      wallet: jupiter.wallet, feeBasisLamports: amountRaw }, jupiter.cfg);
+  } catch (error) {
+    return log(`PAPER PREFLIGHT ${ev.symbol} — REFUSED [order_envelope] ${error.message}`);
+  }
+  const intent = { kind: "entry", amountRaw, mint: ev.mint, inputMint: WSOL, outputMint: ev.mint,
+    context: { event: ev, entryReference,
+      entryPreflight: {
+        inputAmountRaw: String(sizing.amountRaw),
+        forwardOutputRaw: String(sizing.preflight.forward.outAmount),
+        reverseOutputRaw: String(sizing.preflight.reverse.outAmount),
+        roundTripLossPct: sizing.preflight.lossPct,
+        solUsd: PAPER_SOL_USD, solUsdSource: PYTH_SOL_USD_CACHE_SOURCE,
+        solUsdPublishTime: Math.floor(observedAt / 1000) - 2,
+        solUsdConfidencePct: 0.01, solUsdProviderDivergencePct: 0.01,
+        tokenDecimals: Number(ev.token_decimals ?? 6), observedAt,
+      } } };
+  let bound;
+  try {
+    bound = validateExecutableEntryOrder(intent, order, { nowMs: Date.now(),
+      maxEntryQuoteDriftPct: jupiter.cfg.maxEntryQuoteDriftPct,
+      maxEntryPreflightAgeMs: jupiter.cfg.maxEntryPreflightAgeMs });
+  } catch (error) {
+    return log(`PAPER PREFLIGHT ${ev.symbol} — REFUSED [executable_quote] ${error.message}`);
+  }
+  const hops = Array.isArray(order.routePlan) ? order.routePlan.length : 0;
+  return log(`PAPER PREFLIGHT ${ev.symbol} — CLEARED ${sized.sol} SOL ` +
+    `(round trip ${sizing.preflight.lossPct.toFixed(2)}%, impact ${sizing.preflight.impactPct.toFixed(2)}%, ` +
+    `drift ${bound.driftPct.toFixed(2)}%, rent ${Number(order.rentFeeLamports ?? 0)} lamports, ${hops} hop(s)) ` +
+    "— PAPER, no transaction signed");
+}
+
 async function onEntry(ev) {
   const intentId = `entry:${ev.event_id || `${FLOOR}:${ev.id}`}`;
   const existingIntent = journal.getIntent(intentId);
@@ -1213,6 +1355,13 @@ async function onEntry(ev) {
     return log(`SKIP ${ev.symbol}: authenticated feed latest_id rolled behind durable cursor — entries frozen`);
   if (pauseEntries()) return log(`SKIP ${ev.symbol}: PAUSE ENTRIES file is present`);
   if (hardStop()) return log(`SKIP ${ev.symbol}: HARD STOP file is present`);
+  /* The floor's own off switch, read off the feed this process polls. It sits BELOW the
+     two local sentinels deliberately: those are the operator's, they are checked first,
+     and no value of this flag can reach past them. This is the only place it is
+     consulted — the exit path below and manageOpen never ask. */
+  if (deskEntriesOff())
+    return log(`SKIP ${ev.symbol}: your floor's switch is OFF — no new positions ` +
+      "(exits, marks and reconciliation continue)");
   const history = journal.riskHistoryStatus(Date.now());
   if (!history.complete)
     return log(`SKIP ${ev.symbol}: rolling risk history is quarantined until ${new Date(history.incompleteUntil).toISOString()}`);
@@ -1263,7 +1412,8 @@ async function onEntry(ev) {
 
   if (!EXECUTE) {
     log(`ENTRY ${ev.symbol} — ${plan.sol} SOL | stop ${ev.stop} target ${ev.target}`);
-    return log("PAPER — no transaction signed");
+    if (!PAPER_PREFLIGHT) return log("PAPER — no transaction signed");
+    return paperPreflightEntry(ev, plan, perCall, entryReference, normalizedCall);
   }
   if (!jupiter) throw new Error("Jupiter client is unavailable");
 
@@ -1274,36 +1424,47 @@ async function onEntry(ev) {
    * classic entry too. */
   if (!token2022Enabled() && (await mintProgramFor(ev.mint)) === TOKEN_2022_PROGRAM)
     throw new Error("CC_TOKEN_2022=0 keeps this executor on classic SPL Token mints");
-  const preliminaryAmountRaw = BigInt(Math.floor(plan.sol * LAMPORTS));
-  const [preflight, tokenDecimals, solUsdOracle] = await Promise.all([
-    jupiter.preflightEntry(WSOL, ev.mint, preliminaryAmountRaw.toString()),
+  /* THE COST GATES ARE A SIZE DECISION, SO SIZE TO THEM (executor/entry-sizing.mjs).
+   *
+   * This was three binary refusals in a row — the round-trip cap, the entry impact cap
+   * the order envelope applies at signing, and the stop floor below — and every one of
+   * them is a function of the AMOUNT, not of the coin. A 0.4 SOL clip refused at 14%
+   * round trip through a thin pool was thrown away whole and landed on the acknowledge
+   * branch of the poll loop (a permanent, un-retried loss of the call), when the same
+   * pool at 0.1 SOL costs 3% and clears all three.
+   *
+   * So the ladder re-quotes at half, at most MAX_ROUTE_HALVINGS times, and binds the
+   * trade to the largest amount that clears them together. The desk is not consulted
+   * anywhere in it: the starting amount is this process's own plan.sol, the caps are
+   * this process's own jupiter.cfg, and the floor it stops at is strategy.mjs's own
+   * minimum viable size. A cost-shaped refusal becomes a smaller fill; a wallet-shaped
+   * one is still a refusal, because no cost model can wish a too-small wallet away. */
+  const routeStopFrac = Math.max(1e-9, 1 - entryReference.stopRatio);
+  const [sizing, tokenDecimals, solUsdOracle] = await Promise.all([
+    sizeEntryToRoute({
+      probe: (amountRaw) => jupiter.preflightEntryProbe(WSOL, ev.mint, amountRaw),
+      sol: plan.sol, lamportsPerSol: LAMPORTS, stopRatio: entryReference.stopRatio,
+      expectedNetworkFeeLamports: jupiter.cfg.expectedNetworkFeeLamports,
+      slippageBps: jupiter.cfg.slippageBps,
+      minSizeFor: (conservativeLossPct) => minViableSolPerTrade(perCall,
+        Math.min(1, routeStopFrac + Math.max(0, conservativeLossPct) / 100)),
+    }),
     independentClassicMintDecimals(conn, secondaryConn, ev.mint),
     independentSolUsdPrice(conn, secondaryConn),
   ]);
   entryEventSubmissionGate({ kind: "entry", context: { event: ev } });
-  const executableReturnRatio = Number(BigInt(preflight.reverse.outAmount) * 1_000_000n /
-    preliminaryAmountRaw) / 1_000_000;
-  const worstFeeRatio = 2 * jupiter.cfg.expectedNetworkFeeLamports / Number(preliminaryAmountRaw);
-  const slippageHaircut = (1 - jupiter.cfg.slippageBps / 10_000) ** 2;
-  const conservativeReturnRatio = executableReturnRatio * slippageHaircut - worstFeeRatio;
-  if (conservativeReturnRatio <= entryReference.stopRatio)
-    /* Say the NUMBERS, not just the verdict. Four consecutive refusals on this line
-     * told us nothing about which side was wrong: a desk authoring stops too tight
-     * for a coin's real liquidity, or a reconstruction too pessimistic to ever pass.
-     * "It keeps refusing" is not actionable; a measured round trip against a stop
-     * ratio is. */
-    /* And say WHICH term dominated. Once the fee model can outweigh the measured round
-       trip, a message that only names "the authored stop" sends the reader to the desk
-       for a problem that lives in this file — the exact misattribution the note above
-       was written to cure. */
-    throw new Error(`entry round trip plus worst-case fees is already at/below the authored stop ` +
-      `[dominant term: ${worstFeeRatio > (1 - executableReturnRatio * slippageHaircut) ? "the fee model" : "the measured round trip"}] ` +
-      `(measured round trip ${Number(preflight.lossPct ?? 0).toFixed(2)}% → executable ${(executableReturnRatio * 100).toFixed(2)}%; ` +
-      `slippage haircut ${((1 - slippageHaircut) * 100).toFixed(2)}%, worst-case fees ${(worstFeeRatio * 100).toFixed(2)}%; ` +
-      `conservative return ${(conservativeReturnRatio * 100).toFixed(2)}% vs stop at ${(entryReference.stopRatio * 100).toFixed(2)}% of entry)`);
-  const conservativeLossPct = Math.max(preflight.lossPct, (1 - conservativeReturnRatio) * 100);
+  if (!sizing.ok) throw new Error(sizing.refusal);
+  const preflight = sizing.preflight;
+  const preliminaryAmountRaw = sizing.amountRaw;
+  const conservativeLossPct = sizing.conservativeLossPct;
+  if (sizing.sizedDown) log(`SIZED ${ev.symbol} — ${sizing.reason}`);
+  /* The rails run again against the friction that was actually MEASURED, and against a
+     ceiling the route just set. maxSolPerTrade is the honest place for it: it is a
+     per-trade ceiling this process owns, and every rail below it (per-name risk, book
+     heat, the daily cap, the spendable balance, the fee floor) still binds underneath. */
   plan = planEntry({ call: normalizedCall,
-    cfg: { ...perCall, measuredRoundTripLossPct: conservativeLossPct }, state: S.state });
+    cfg: { ...perCall, measuredRoundTripLossPct: conservativeLossPct,
+      maxSolPerTrade: Math.min(perCall.maxSolPerTrade, sizing.sol) }, state: S.state });
   if (plan.action !== "buy") return log(`SKIP ${ev.symbol} after executable-cost check: ${plan.reason}`);
   const amountRaw = BigInt(Math.floor(plan.sol * LAMPORTS));
   log(`ENTRY ${ev.symbol} — ${plan.sol} SOL | stop ${ev.stop} target ${ev.target}`);
@@ -1347,6 +1508,14 @@ async function onEntry(ev) {
   applyConfirmedEntry(fill);
 }
 
+/** The durable id for THIS attempt: the latch's own id at a full clip, and a
+ *  refusal-numbered variant once the impact ladder has stepped the clip down. */
+function exitClipIntentId(baseIntentId, pos, fraction) {
+  const refusals = Number(pos?.exitImpactRefusals);
+  const step = Number.isSafeInteger(refusals) && refusals > 0 ? refusals : 0;
+  return Number(fraction) >= 1 || step <= 0 ? baseIntentId : `${baseIntentId}#clip${step}`;
+}
+
 /* Every sell in this process goes through here. Three intent kinds, told apart by the
  * intent id the caller supplies: `desk-exit:<eventId>` is the desk's determination heard
  * on the feed; `mirror-exit:<entryIntentId>` is the desk's determination evaluated by the
@@ -1355,7 +1524,16 @@ async function onEntry(ev) {
  * latch persisted by an older journal ever produce one. `meta.deskCode` is the desk's
  * close code and rides into the intent context so the fill report can carry it. */
 async function sellAll(pos, why, fraction = 1, suppliedIntentId = null, trigger = null, meta = {}) {
-  const intentId = suppliedIntentId || `risk-exit:${pos.entryIntentId || `${pos.mint}:${pos.openedAtMs || pos.openedAt}`}`;
+  const baseIntentId = suppliedIntentId || `risk-exit:${pos.entryIntentId || `${pos.mint}:${pos.openedAtMs || pos.openedAt}`}`;
+  /* A SMALLER CLIP IS A DIFFERENT TRANSACTION, SO IT NEEDS A DIFFERENT DURABLE INTENT.
+   * journal.ensureIntent holds amountRaw immutable for an id ("changed amountRaw;
+   * refusing replay") — that immutability is what makes a replay safe, so the impact
+   * ladder's reduced attempt gets its own id rather than mutating the first one's. The
+   * suffix is the refusal count, so it is deterministic: a crash mid-attempt resumes the
+   * SAME intent instead of opening a second sell for the same clip. The latch keeps the
+   * base id (latchExit assigns with ||=), and the desk still hears the base event id on
+   * the fill report — the determination did not change, only how much is sold at once. */
+  const intentId = exitClipIntentId(baseIntentId, pos, fraction);
   latchExit(pos, why, intentId, trigger, meta);
   const existingIntent = journal.getIntent(intentId);
   if (existingIntent?.state === "confirmed") {
@@ -1384,7 +1562,7 @@ async function sellAll(pos, why, fraction = 1, suppliedIntentId = null, trigger 
   const fill = await jupiter.executeIntent({
     id: intentId,
     kind,
-    eventId: kind === "desk_exit" ? suppliedIntentId.slice(10) : null,
+    eventId: kind === "desk_exit" ? baseIntentId.slice(10) : null,
     mint: pos.mint,
     inputMint: pos.mint,
     outputMint: WSOL,
@@ -1397,6 +1575,32 @@ async function sellAll(pos, why, fraction = 1, suppliedIntentId = null, trigger 
     },
   });
   applyConfirmedExit(fill);
+}
+
+/* ONE GARBLED ROW MUST NOT PIN THE CURSOR FOREVER.
+ *
+ * handleDeskExitEvent throws on a row it cannot identify — an unparseable mint, a
+ * non-positive call id — and every throw in the sequential pass leaves the cursor where
+ * it is so the event is re-read next poll. For a TRANSIENT failure that is exactly
+ * right. For a STRUCTURALLY unusable row it is a permanent head-of-line block: the row
+ * will parse no better on the ten-thousandth poll, and behind it sit every later entry
+ * AND every later exit, invisible for as long as the row exists. The desk's feed can
+ * produce one without anybody being at fault — office.js builds the payload with
+ * `alerts LEFT JOIN calls`, so an alert whose call row is gone yields a null mint.
+ *
+ * So a row that fails this test is acknowledged: logged loudly, by name, and crossed.
+ * Nothing is sold and nothing is inferred from it. The safety net is reconciliation,
+ * which asks the desk every RECONCILE_MS about the calls the bot is ACTUALLY HOLDING and
+ * recovers a closed one as a RECOVERED DESK EXIT — a lane that does not depend on this
+ * row being readable, and (since this same change) is no longer switched off by a feed
+ * rollback either. Returns the reason, or null when the row is usable. */
+function malformedExitRow(ev) {
+  if (ev?.type !== "exit") return null;
+  try { new PublicKey(ev?.mint); }
+  catch { return `unusable mint ${JSON.stringify(ev?.mint ?? null)}`; }
+  try { requirePositiveCallId(ev?.call_id, "desk exit call_id"); }
+  catch { return `unusable call_id ${JSON.stringify(ev?.call_id ?? null)}`; }
+  return null;
 }
 
 /** Execute an exit for a held position, or durably defer it for the exact buy that
@@ -1444,7 +1648,8 @@ async function handleDeskExitEvent(ev) {
  * exit that could not be executed yet, a deferred desk exit attached at fill, a legacy
  * risk exit, a manual-review latch), values every position on the chain-simulated
  * executable mark for the heartbeat and the board, and flags an unreadable mark as a
- * HEALTH fact (markUnavailableSince, riskDataUnavailable → new entries blocked). The
+ * HEALTH fact (markUnavailableSince, riskDataUnavailable — a heartbeat/monitor signal,
+ * and since journal.mjs POSITION_BLOCK_FLAGS dropped it, no longer an entry block). The
  * price-exit trigger path, the exit-mark-outage sell and the two-witness mark-failure
  * sell that used to live here are gone: each was a bot-originated exit, and Shrek call 55
  * (2026-09-05) showed what one costs — sold 03:01:42Z on the bot's own normalised stop,
@@ -1540,7 +1745,13 @@ async function manageOpen() {
       // the desk has since taken back is never the thing the retry below executes.
       if (pos.exitExecutionRequired) dropExpiredMirrorLatch(pos);
       if (pos.exitExecutionRequired) {
-        await sellAll(pos, pos.exitExecutionReason || "required risk exit", 1,
+        /* The clip steps down only after an impact refusal; with none recorded this is 1
+         * and the whole position is sold, exactly as before. */
+        const fraction = exitRetryFraction(pos);
+        if (fraction < 1)
+          log(`EXIT RETRY ${pos.symbol}: selling ${(fraction * 100).toFixed(0)}% of the position after ` +
+            `${pos.exitImpactRefusals} price-impact refusal(s) — the determination is unchanged, the clip is smaller`);
+        await sellAll(pos, pos.exitExecutionReason || "required risk exit", fraction,
           pos.exitExecutionIntentId || null, pos.exitExecutionTrigger || null,
           { deskCode: pos.exitExecutionDeskCode || null });
         continue;
@@ -1592,10 +1803,16 @@ async function manageOpen() {
            * was to classify. Under desk-led-v4 the classification is all that survives:
            * the bot has no stop of its own for a hostile quote service to hide, the desk
            * determines the exit on its own ruler, and a desk_exit intent never consults
-           * this mark. So a failed mark blocks new exposure (as before), timestamps
-           * markUnavailableSince for the heartbeat and monitor, says whether it looks
-           * like weather or like a refusal — and holds. Shrek, call 55: a bot that sells
-           * on its own reading is a bot that sells nine minutes before the desk. */
+           * this mark. So a failed mark timestamps markUnavailableSince for the heartbeat
+           * and monitor, says whether it looks like weather or like a refusal — and
+           * holds. Shrek, call 55: a bot that sells on its own reading is a bot that
+           * sells nine minutes before the desk.
+           *
+           * IT NO LONGER BLOCKS NEW ENTRIES, and that is this change, not an oversight:
+           * riskDataUnavailable left journal.mjs POSITION_BLOCK_FLAGS. Under v4 this
+           * mark decides nothing — a desk_exit never consults it — so one coin the bot
+           * cannot quote was silencing the whole book, and a drained pump.fun pool
+           * produces exactly that all day. Custody and identity facts still block. */
           const transient = isTransientEntryFailure(error);
           const outageMs = noteMarkUnavailable(pos, {
             observedAt: pos.riskDataUnavailableAt, reason: error.message, transient,
@@ -1642,10 +1859,22 @@ function recordPositionFailure(posKey, error, phase) {
     }
     pos.exitExecutionLastError = error.message;
     pos.exitExecutionLastAttemptAt = Date.now();
-    if (/price impact .* exceeds cap/i.test(error.message)) {
-      pos.manualExitRequired = true;
-      pos.manualExitReason = error.message;
-      pos.manualExitObservedAt = Date.now();
+    /* A DRAINED POOL IS A CLIP SIZE, NOT AN OPERATOR. This branch used to set
+     * manualExitRequired on the first "price impact X% exceeds cap" — which permanently
+     * disabled the automated exit for the position and froze every entry on the book
+     * behind it. A full-position sell into a bled-out pump.fun pool quotes over 50%
+     * impact routinely; the answer is a smaller clip on the next tick (the ladder in
+     * exit-trigger.mjs: whole position, half, quarter), with the exit still LATCHED and
+     * still retried ahead of all other work. Manual review stays reserved for custody
+     * and identity facts — a balance two RPCs disagree on, a desk row about another
+     * coin — where an operator really is the only next step. */
+    if (isPriceImpactRefusal(error.message)) {
+      const next = noteExitImpactRefusal(pos, { observedAt: Date.now(), reason: error.message });
+      save();
+      log(`EXIT IMPACT ${pos.symbol}: ${error.message} — the exit remains latched and the next attempt ` +
+        `sells ${(next * 100).toFixed(0)}% of the position (refusal ${pos.exitImpactRefusals}); ` +
+        "price impact is not a custody or identity fact, so nothing is latched for manual review");
+      return;
     }
     save();
     log(`EXIT BLOCKED ${pos.symbol}: ${error.message} — fired exit remains latched; new entries blocked`);
@@ -1953,6 +2182,11 @@ function sendHeartbeat() {
   try {
     health = executorHeartbeatHealth({
       entriesPaused: pauseEntries(), hardStop: hardStop(),
+      /* The floor's switch, ECHOED not obeyed-in-silence: the page shows what this bot
+         says it heard, never what the server asked for. Until this line reports the
+         value the tenant pressed, their screen says the request is pending — because
+         it is. */
+      deskEntriesEnabled,
       blockingIntent: Boolean(journal.hasBlockingIntent()), positions: openList(),
       lastTickCompletedAt: runtimeHealth.lastTickCompletedAt,
       lastFeedSuccessAt: runtimeHealth.lastFeedSuccessAt,
@@ -1973,7 +2207,7 @@ function sendHeartbeat() {
   } catch {
     // Telemetry can lose detail; it can never stop the trading/reconciliation loop.
     health = executorHeartbeatHealth({
-      entriesPaused: pauseEntries(), hardStop: hardStop(), blockingIntent: true,
+      entriesPaused: pauseEntries(), hardStop: hardStop(), deskEntriesEnabled, blockingIntent: true,
       lastTickCompletedAt: runtimeHealth.lastTickCompletedAt,
       lastFeedSuccessAt: runtimeHealth.lastFeedSuccessAt,
       consecutiveFeedFailures: runtimeHealth.consecutiveFeedFailures,
@@ -2388,16 +2622,23 @@ async function reconcileOneHeldCall(pos, call, deskNow) {
     /* THE LOUDEST THING THIS PASS CAN SAY. Nothing below runs: no level is adopted from
      * this row and no sell is taken on it. The position keeps the levels it already has
      * and is held for a determination that can prove which coin it is about. The
-     * position is also flagged riskDataUnavailable — the desk's state answer for it IS
-     * unusable risk data — which blocks new exposure (journal positionEntryBlock) and
-     * shows in the heartbeat as a blocked position, i.e. DEGRADED on the floor's card. */
+     * position is also flagged deskIdentityMismatch — which blocks new exposure (journal
+     * positionEntryBlock) — and riskDataUnavailable, which shows in the heartbeat as a
+     * blocked position, i.e. DEGRADED on the floor's card. */
     const changed = pos.deskIdentityMismatch !== true || pos.deskIdentityAnsweredMint !== verdict.answeredMint;
     pos.deskIdentityMismatch = true;
     pos.deskIdentityAnsweredMint = String(verdict.answeredMint || "");
     pos.deskIdentityMismatchAt = Date.now();
-    pos.riskDataUnavailable = true;
-    pos.riskDataUnavailableReason =
+    /* THE BLOCKING FLAG IS deskIdentityMismatch ITSELF NOW. It used to block only as a
+     * side effect of riskDataUnavailable, and riskDataUnavailable has since left
+     * journal.mjs POSITION_BLOCK_FLAGS — an unreadable quote is weather, but a desk row
+     * about ANOTHER COIN is an identity fact about the book and must keep freezing new
+     * exposure. Both are still set: riskDataUnavailable remains the health signal the
+     * heartbeat and the monitor read. */
+    pos.deskIdentityMismatchReason =
       `the desk's answer for call ${callId} is about ${pos.deskIdentityAnsweredMint || "(no mint)"}, not the held ${pos.mint}`;
+    pos.riskDataUnavailable = true;
+    pos.riskDataUnavailableReason = pos.deskIdentityMismatchReason;
     pos.riskDataUnavailableAt = pos.deskIdentityMismatchAt;
     save();
     if (changed)
@@ -2428,6 +2669,7 @@ async function reconcileOneHeldCall(pos, call, deskNow) {
     delete pos.deskIdentityMismatch;
     delete pos.deskIdentityAnsweredMint;
     delete pos.deskIdentityMismatchAt;
+    delete pos.deskIdentityMismatchReason;
     delete pos.riskDataUnavailable;
     delete pos.riskDataUnavailableReason;
     delete pos.riskDataUnavailableAt;
@@ -2507,6 +2749,13 @@ async function reconcileHeldCalls() {
     now, lastReconcileAt, reconcileMs: RECONCILE_MS,
     heldCallIds: held.map((position) => position?.callId) });
   if (!gate.run) return gate.why;
+  /* A ROLLBACK NO LONGER REFUSES THIS PASS — under a frozen feed it is the ONLY route by
+   * which a closed call still reaches a held position — but it is said out loud, because
+   * every row this pass reads comes from the database that rewound. Each one must name
+   * the held mint or it is refused (reconcileVerdict → callIdentityVerdict). */
+  if (gate.feedRollback === true)
+    log(`reconcile: running under the FEED ROLLBACK alarm — it is the only exit lane while the feed ` +
+      "is frozen, and every row must name the held mint or it is refused");
   lastReconcileAt = now;
   reconcileInFlight = true;
   try {
@@ -2614,6 +2863,11 @@ async function consumeFeed() {
       if (payload.cluster !== "mainnet-beta") throw new Error("feed cluster is not mainnet-beta");
       if (!Array.isArray(payload.events)) throw new Error("feed omitted its events array");
       const events = payload.events;
+      /* THE FLOOR'S OFF SWITCH, BEFORE ANY EVENT IN THIS PAYLOAD IS ACTED ON. The flag
+         and the entries it governs arrive in the same response, so a call published
+         after the tenant pressed OFF can never be entered on the strength of a stale
+         reading. It is read even on the rollback path below, which returns early. */
+      noteDeskEntriesRule(payload.rules);
       /* Say why a call was NOT offered. An empty feed is indistinguishable from a
        * desk that published nothing, and today it hid two published calls the floor
        * had declined. The feed now carries the floor's recent verdicts; log each
@@ -2637,8 +2891,28 @@ async function consumeFeed() {
       if (feedCursor.rollback) {
         persistFeedRollback(latestId);
         noteFeedFailure();
+        /* A COIN THE BOT CANNOT SELL IS NOT A CALL.
+         *
+         * This branch used to return here, and the line it printed — "local position/risk
+         * exits continue" — stopped being true at desk-led-v4: the bot has no exit of its
+         * own any more (strategy.mjs stepPosition holds unless a desk exit is supplied),
+         * so returning closed EVERY exit path at once. Entries must stay frozen — a
+         * database that has rewound must not authorise NEW exposure — but that argument
+         * says nothing about getting OUT of exposure the bot already has.
+         *
+         * So the batch's EXIT rows are still executed, and reconciliation still runs
+         * (desk-mirror.mjs reconcileGate no longer refuses on rollback). Both are
+         * identity-checked against the held coin — deskExitDecisionForPosition here,
+         * callIdentityVerdict there — so the one real hazard a rewound AUTOINCREMENT id
+         * poses, another coin's row wearing a held number, is refused on its own merits
+         * rather than by shutting the lane. The cursor does NOT move: these ids have not
+         * been validated against a latest_id that is behind them, and an exit executed
+         * twice is idempotent (the intent id is the durable unit) while an entry crossed
+         * unseen is gone. */
+        const { count } = await runExitPrepass(events);
         log(`CRITICAL FEED ROLLBACK: authenticated latest_id ${latestId} is behind durable cursor ` +
-          `${S.cursor} — entries remain frozen; local position/risk exits continue`);
+          `${S.cursor} — entries remain frozen; the batch's ${count} desk exit(s) were still executed ` +
+          "and reconciliation still runs, both identity-checked against the held mint");
         return;
       }
       const returnedIds = events.map((event) => Number(event?.id));
@@ -2665,25 +2939,7 @@ async function consumeFeed() {
          * a retry is worth keeping — but only for an exit whose first attempt THREW. One
          * that was handled is remembered here and skipped below, so a determination is
          * executed once and reads once in the log. */
-        let unsafeExitPrepass = false;
-        const prepassed = new Set();
-        for (const ev of events.filter((event) => event.type === "exit")) {
-          try {
-            const disposition = await handleDeskExitEvent(ev);
-            prepassed.add(String(ev.id));
-            if (disposition === "not-held") log(`EXIT ${ev.symbol} — not held`);
-          } catch (error) {
-            const positionLatched = S.positions[ev.mint]?.exitExecutionRequired === true;
-            let deferred = false;
-            try {
-              const entry = journal.blockingEntryForDeskExit({ mint: ev.mint, callId: ev.call_id });
-              deferred = Boolean(entry && journal.deferredDeskExitForEntry(entry.id));
-            } catch {}
-            if (!positionLatched && !deferred) unsafeExitPrepass = true;
-            log(`EXIT PREPASS ${ev.symbol || ev.id}: ${error.message} — ` +
-              `${positionLatched || deferred ? "durable exit remains latched" : "exit was not durably recorded"}`);
-          }
-        }
+        const { prepassed, unsafe: unsafeExitPrepass } = await runExitPrepass(events);
         const blockingIntent = journal.hasBlockingIntent();
         if (blockingIntent) {
           /* The server returns at most 50 rows. Returning forever without moving
@@ -2795,6 +3051,17 @@ async function consumeFeed() {
               save();
               continue;
             }
+            /* A structurally unusable EXIT row is acknowledged rather than re-read for
+             * ever; reconciliation every RECONCILE_MS is the net. See malformedExitRow. */
+            const malformed = malformedExitRow(ev);
+            if (malformed) {
+              log(`MALFORMED EXIT ROW ${ev.symbol || ev.id}: ${malformed} — nothing was sold and nothing ` +
+                "was inferred; the row is acknowledged and the cursor advances so later events are not " +
+                "hidden behind it. Reconciliation asks the desk about the calls actually held.");
+              S.cursor = Number(ev.id);
+              save();
+              continue;
+            }
             log(`ERROR on ${ev.symbol || ev.id}: ${error.message} — event remains pending`);
             break;
           }
@@ -2806,6 +3073,55 @@ async function consumeFeed() {
     noteDeskUnreachable(error.message);
     log(`poll error: ${error.message}`);
   }
+}
+
+/* THE EXIT PREPASS — ONE IMPLEMENTATION, TWO CALLERS.
+ *
+ * Exit safety is not held hostage by an earlier bad entry: every exit in the batch is
+ * pre-latched/processed before the sequential cursor pass, and the same pass is what a
+ * ROLLED-BACK feed runs instead of returning empty-handed.
+ *
+ * AND EXACTLY ONCE. consumeFeed used to hand every exit to handleDeskExitEvent here and
+ * then the cursor loop handed it over a SECOND time: measured 2026-09-07, 24 exit
+ * executions for 12 desk determinations. The second call is a retry, and a retry is
+ * worth keeping — but only for an exit whose first attempt THREW. One that was handled
+ * is remembered in `prepassed` and skipped below, so a determination is executed once
+ * and reads once in the log.
+ *
+ * `unsafe` means an exit could not be durably represented anywhere — the one condition
+ * that pins the cursor. A MALFORMED row is not that: it is a row that will never be
+ * executable, so it is acknowledged and never allowed to pin anything. */
+async function runExitPrepass(events) {
+  let unsafeExitPrepass = false;
+  let count = 0;
+  const prepassed = new Set();
+  for (const ev of events.filter((event) => event.type === "exit")) {
+    const malformed = malformedExitRow(ev);
+    if (malformed) {
+      prepassed.add(String(ev.id));
+      log(`MALFORMED EXIT ROW ${ev.symbol || ev.id}: ${malformed} — nothing was sold and nothing was ` +
+        "inferred; the row is acknowledged so it cannot pin the cursor and hide every later event. " +
+        "Reconciliation asks the desk about the calls actually held.");
+      continue;
+    }
+    try {
+      const disposition = await handleDeskExitEvent(ev);
+      prepassed.add(String(ev.id));
+      count++;
+      if (disposition === "not-held") log(`EXIT ${ev.symbol} — not held`);
+    } catch (error) {
+      const positionLatched = S.positions[ev.mint]?.exitExecutionRequired === true;
+      let deferred = false;
+      try {
+        const entry = journal.blockingEntryForDeskExit({ mint: ev.mint, callId: ev.call_id });
+        deferred = Boolean(entry && journal.deferredDeskExitForEntry(entry.id));
+      } catch {}
+      if (!positionLatched && !deferred) unsafeExitPrepass = true;
+      log(`EXIT PREPASS ${ev.symbol || ev.id}: ${error.message} — ` +
+        `${positionLatched || deferred ? "durable exit remains latched" : "exit was not durably recorded"}`);
+    }
+  }
+  return { prepassed, unsafe: unsafeExitPrepass, count };
 }
 
 let lastManageOpenAt = 0;

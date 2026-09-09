@@ -7,9 +7,12 @@
 # what is about to happen BEFORE it happens — because the thing on the other end of
 # this file can, later and deliberately, trade real money.
 #
-# Deliberately NOT here: any credential, any wallet, any --live. This launcher can
-# only ever start a dry run. Going live stays a typed command with typed
-# acknowledgements, exactly as it is today.
+# Deliberately NOT here: any credential, any wallet, any cap, any acknowledgement.
+# This launcher passes a floor number and nothing else. Since 2026-09-09 install.sh
+# arms by default, so this reaches a live executor — but every value that makes that
+# real is still asked for by install.sh itself, on the terminal, one at a time: the
+# published commit, two RPCs, a Jupiter key, and the burner's own public key retyped.
+# None of them is ever a flag this file could set on someone's behalf.
 set -u
 
 STATIC="${STATIC:-https://claudedotcompany.com}"
@@ -26,16 +29,24 @@ cat <<'ABOUT'
     2. Runs it. It creates a brand-new, EMPTY wallet on this machine, saves the
        key locally at ~/claudeco-executor/burner.json, and installs WALL-ST-E
        as a background LaunchAgent that starts again whenever you log in.
+    3. Asks you, on this screen, for what real trading needs: the published
+       release commit shown next to the install button, two Solana RPC
+       endpoints from different providers, and a Jupiter API key. Then it
+       makes you retype the new wallet's own public address before it arms.
+
+  This installs a bot that trades REAL MONEY. There is no rehearsal step to
+  do first and no second command later — this is the one install.
 
   What it does NOT do:
 
-    · It does not trade. This installs a DRY RUN: the executor reads your
-      floor's calls and runs the whole policy without signing or sending
-      anything. Not one cent moves.
-    · It does not fund anything, ask for a wallet you already own, or send any
-      key anywhere. The key it makes stays on this disk.
-    · Trading for real is a separate command you run later, on purpose, and it
-      makes you retype the wallet's public address before it will arm.
+    · It does not fund anything. The wallet it makes starts empty, and an
+      empty wallet cannot trade, so nothing moves until you send it SOL
+      yourself from your own wallet. That transfer is the on switch.
+    · It does not ask for a wallet you already own, a seed phrase, or a
+      private key, and it sends no key anywhere. The key it makes stays on
+      this disk. Back it up before you fund it.
+    · It cannot be steered from the website. Nothing can start, stop, fund or
+      sign for this bot except you, on this machine.
 
 ABOUT
 
@@ -49,7 +60,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
   installed outside your home folder, and you can stop it at any time with the
   command the installer prints when it finishes.
 
-  Two things worth knowing before you eventually fund anything:
+  Two things worth knowing before you fund anything:
 
     · A laptop that is asleep is not trading. For a wallet you intend to fund,
       a machine that stays awake is the safer host.
@@ -98,7 +109,9 @@ fi
 printf '  SHA-256 of the downloaded installer:\n    %s\n' \
   "$(shasum -a 256 "$TMP/install.sh" | awk '{print $1}')"
 printf '  Compare that with the value shown next to the install button on %s\n' "$STATIC"
-printf '\n  Press Return to run it (still a dry run), or close this window.\n'
+printf '\n  Have the published release commit ready — it is the 40-character\n'
+printf '  value shown next to the install button on %s\n' "$STATIC"
+printf '\n  Press Return to run the installer, or close this window.\n'
 IFS= read -r _ < /dev/tty || exit 1
 printf '\n'
 

@@ -69,11 +69,28 @@ export function validateRiskState(value, { now = Date.now() } = {}) {
   return value;
 }
 
+/* WHAT MAY FREEZE THE WHOLE BOOK: CUSTODY AND IDENTITY FACTS, NOT WEATHER.
+ *
+ * `riskDataUnavailable` used to sit in this list and it no longer does. Under
+ * desk-led-v4 the bot has no exit of its own, so the Jupiter exit MARK decides nothing
+ * (poller.mjs manageOpen: "held for the desk's determination — no local exit"). It is a
+ * HEALTH signal — it still rides in the heartbeat's blockedPositions and in the monitor
+ * — but one unreadable mark on one position was silencing every entry on the book, and
+ * an unreadable mark is exactly what a drained pump.fun pool produces all day. Nothing
+ * about a coin the bot cannot quote makes the NEXT call unsafe to take.
+ *
+ * `deskIdentityMismatch` takes its place, and it is the opposite kind of fact: the desk
+ * answered about a DIFFERENT coin under a call id the bot holds (reconcileOneHeldCall).
+ * That is an identity contradiction about the book itself — it must keep blocking, and
+ * before this it blocked only as a side effect of riskDataUnavailable.
+ *
+ * Every entry here must be registered explicitly; a flag not in this list does not
+ * block, and one added to it must state which custody or identity fact it carries. */
 const POSITION_BLOCK_FLAGS = [
   ["callIdentityIncomplete", "callIdentityIncompleteReason", "legacy call identity is incomplete"],
   ["accountingIncomplete", "accountingIncompleteReason", "legacy accounting is incomplete"],
   ["balanceReconciliationRequired", "balanceReconciliationReason", "balance reconciliation"],
-  ["riskDataUnavailable", "riskDataUnavailableReason", "risk data unavailable"],
+  ["deskIdentityMismatch", "deskIdentityMismatchReason", "the desk's answer names another coin"],
   ["exitExecutionRequired", "exitExecutionReason", "required exit unresolved"],
   ["manualExitRequired", "manualExitReason", "manual exit required"],
 ];

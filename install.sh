@@ -1,10 +1,23 @@
 #!/usr/bin/env bash
-# Install WALL-ST-E's outbound-only polling executor on Debian/Ubuntu + systemd.
-# Dry run is the default. --live is an explicit, locally acknowledged mode.
+# Install WALL-ST-E's outbound-only polling executor on Linux (systemd) or macOS
+# (launchd). Installing ARMS it; --dry-run is the explicit opt-out.
 set -euo pipefail
 umask 077
 
-MODE="paper"
+# INSTALLING MEANS TRADING. Until 2026-09-09 the dry run was the default and going
+# live was a SECOND install: clone the repository by hand, detach it at the published
+# commit, rerun with --live. Everything in that second act was ceremony about where
+# the code comes from — none of it was ceremony about money — and it is where the path
+# ended for anyone who does not already live in a shell.
+#
+# The stage looked like a safety margin and never was one. This installer GENERATES
+# the burner wallet here and funds nothing, so an armed executor with an empty wallet
+# cannot spend a lamport: the desk's own burner holds 0.107 SOL and cannot open a
+# 0.4 SOL position today for exactly that reason. FUNDING is the moment money is at
+# risk, not installing — so the ceremony belongs on the wallet, and it is still here:
+# LIVE_TRADING_ACK makes the operator retype THIS wallet's public key, and a raised
+# cap still costs a second typed sentence. What is gone is the second install.
+MODE="live"
 SECRET=""
 SECRET_FILE=""
 JUPITER_KEY=""
@@ -26,6 +39,11 @@ BOOTSTRAP_NODE=0
 EXPECTED_COMMIT=""
 API="https://claude-company-api.onrender.com"
 STATIC="https://claudedotcompany.com"
+# Where a published commit is cloned from when this host has no pinned checkout of it.
+# The transport is not what makes this safe: a Git commit id IS its content, verified
+# object by object by git and then checked against the operator's --expected-commit
+# below, so a hostile mirror can serve no bytes that answer to that name.
+REPO="https://github.com/gtjvv976mb-netizen/Claude-Company.git"
 
 # BEGIN RELEASE_PRUNER
 # Every install leaves a ~136 MB release behind and nothing ever removed one.
@@ -125,16 +143,19 @@ macOS hosts get a per-user launchd LaunchAgent. Everything before that last
 step — Node, the burner wallet, the secret prompt, the staged release — is one
 shared path on both.
 
-THE DEFAULT IS A DRY RUN. Without --live the executor reads your floor's call
-feed and runs the entire local policy WITHOUT signing or submitting anything.
-It trades no money at all. Going live is a separate, deliberate act: --live
-makes you retype the burner wallet's own public key on this terminal before
-the service is armed, and raising any cap makes you type a second sentence.
+INSTALLING ARMS REAL TRADING. There is no rehearsal install to do first. One
+command arms the executor, and it asks you here for whatever live needs that
+you did not pass on the line: the published commit it must sign with, two
+private RPCs from different providers, and a Jupiter key. Then it makes you
+retype the burner wallet's own public key before it arms, and raising any cap
+makes you type a second sentence. Pass --dry-run to install without arming.
 
-This installer never funds a wallet. It generates a dedicated burner keypair
-on THIS machine at $HOME/claudeco-executor/burner.json (mode 0600) and never
-transmits it anywhere. Back that file up before you fund it: it exists on this
-disk and nowhere else.
+The wallet it arms is EMPTY, and this installer never funds one. It generates
+a dedicated burner keypair on THIS machine at
+$HOME/claudeco-executor/burner.json (mode 0600) and never transmits it. So an
+armed executor still cannot spend anything until you send it SOL yourself:
+funding is the switch, not this command. Back that file up before you fund
+it — it exists on this disk and nowhere else.
 
 The floor feed secret is NEVER a command-line flag, because argv lands in your
 shell history and in the process list. It is read hidden from /dev/tty, or
@@ -144,9 +165,16 @@ Options:
   --floor N             Required. Your floor number, as shown by the panel.
   --secret-file FILE    Mode-0600 file holding the floor feed secret, for an
                         unattended install. Otherwise prompted on the tty.
-  --live                Arm real mainnet trading. Not the default. Needs two
-                        independent private RPCs, a Jupiter key, a pinned
-                        local checkout, and a typed acknowledgement.
+  --live                Arm real mainnet trading. This is the DEFAULT now;
+                        the flag is kept so older commands still work.
+  --dry-run             Install without arming: EXECUTE=0, nothing is signed
+                        and nothing is sent. The opt-out, not the default.
+  --expected-commit SHA The exact 40-character published commit to sign with.
+                        Live never runs code downloaded from the site. If you
+                        do not pass it, you are asked for it; the site prints
+                        it beside the install button.
+  --repo URL            Where to clone that commit from when this machine has
+                        no checkout of it already.
   --rpc-file FILE       Mode-0600 file holding the primary Solana RPC URL.
   --secondary-rpc-file FILE
                         Mode-0600 file holding a SECOND RPC URL from a
@@ -161,20 +189,19 @@ Options:
   --daily-loss-cap SOL  Live rolling-24h realized-loss entry brake. 0.01.
                         Raising any one of these three requires all three
                         together plus a second typed acknowledgement.
-  --source-dir DIR      The executor directory of a pinned local checkout.
-                        Required by --live: live never runs downloaded code.
-  --expected-commit SHA The exact 40-character published commit. Required by
-                        --live, and it must match the checkout's HEAD.
+  --source-dir DIR      The executor directory of a checkout to sign with. It
+                        is used only when it is already detached at exactly
+                        --expected-commit; otherwise that commit is cloned.
   --bootstrap-node      Accept the private Node install without being asked.
   --api URL             Claude Company API base.
   --static URL          Static base for the paper-mode runtime download.
   --help                Print this and exit 0.
 
 Live install with a terminal and no credential files: the installer walks you
-through each of the primary RPC, the secondary RPC and the Jupiter key. It
-explains each one, reads it hidden from /dev/tty, checks it against the
-provider before accepting it, and stores it mode 0600 under
-$HOME/claudeco-executor so the next run can be unattended.
+through the published commit, then the primary RPC, the secondary RPC and the
+Jupiter key. It explains each one, reads each credential hidden from /dev/tty,
+checks it against the provider before accepting it, and stores it mode 0600
+under $HOME/claudeco-executor so the next run can be unattended.
 
 Node >=22.13 and <25 is required for the durable SQLite journal. If this host
 has no Node in that range, the installer offers to download the pinned build,
@@ -198,6 +225,10 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --help|-h) usage; exit 0;;
     --live) MODE="live"; shift;;
+    # Kept, and now the default it names. Scripts and documents that pass it keep
+    # working byte for byte; --dry-run is the flag that changes anything.
+    --dry-run) MODE="paper"; shift;;
+    --repo) need_value "$@"; REPO="$2"; shift 2;;
     --secret-file) need_value "$@"; SECRET_FILE="$2"; shift 2;;
     --jupiter-key-file) need_value "$@"; JUPITER_KEY_FILE="$2"; shift 2;;
     --floor) need_value "$@"; FLOOR="$2"; shift 2;;
@@ -246,9 +277,10 @@ that Ubuntu shell (not PowerShell, not Git Bash):
     sudo apt-get update && sudo apt-get install -y curl
     curl -fsSL https://claudedotcompany.com/install.sh | bash -s -- --floor N
 
-Replace N with your floor number. That install is still a dry run and trades
-nothing. Keep the Ubuntu window open: closing it stops WSL2, and a stopped WSL2
-stops the executor.
+Replace N with your floor number. That install arms the bot and then asks you
+for what live needs; the wallet it creates is empty until you fund it yourself.
+Keep the Ubuntu window open: closing it stops WSL2, and a stopped WSL2 stops
+the executor.
 WSL
     exit 1;;
 esac
@@ -521,6 +553,107 @@ fi
 if [ -n "$SOURCE_DIR" ]; then
   SOURCE_DIR="$(cd "$SOURCE_DIR" && pwd -P)"
 fi
+
+# BEGIN LIVE_SOURCE
+# WHERE THE SIGNING CODE COMES FROM, IN ONE INSTALL.
+#
+# Live has always refused downloaded runtime: the modules that sign are staged with
+# `git cat-file blob <commit>:executor/...`, never from the site. Nothing about that
+# rule moves here. What moves is WHO PERFORMS THE CLONE. Making the operator run
+# `git clone` and `git checkout --detach <sha>` first IS the second install this
+# track removes, and it proved nothing the verification immediately below does not
+# already prove for itself: the commit is named by the operator, HEAD is detached at
+# exactly it, every one of the runtime files is clean against it, and every staged
+# byte is read out of that commit's own blobs.
+#
+# The transport is deliberately not the thing being trusted. A Git commit id is the
+# hash of its content, so the only bytes any mirror can serve under the name the
+# operator typed are the bytes that commit already had.
+#
+# The 40 characters stay an OPERATOR INPUT. They are what makes "arm real money"
+# mean one specific published release rather than whatever is current, and a commit
+# the installer looked up for itself would let whatever answered choose the code it
+# was then going to verify against its own answer. So it is prompted for, exactly
+# like the RPCs and the Jupiter key below, and never fetched.
+live_source_is_pinned() {
+  # A cheap, non-fatal "is this already the right checkout?". Deliberately does NOT
+  # judge cleanliness: a dirty worktree sitting at the right commit must be REFUSED
+  # loudly by the authoritative block below, never silently replaced by a clone.
+  local dir="$1" root
+  [ -n "$dir" ] || return 1
+  command -v git >/dev/null 2>&1 || return 1
+  root="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  root="$(cd "$root" && pwd -P)" || return 1
+  [ "$dir" = "$root/executor" ] || return 1
+  ! git -C "$root" symbolic-ref -q HEAD >/dev/null 2>&1 || return 1
+  [ "$(git -C "$root" rev-parse HEAD 2>/dev/null)" = "$EXPECTED_COMMIT" ] || return 1
+  return 0
+}
+
+fetch_pinned_source() {
+  # Two statements, not one `local a=$1 b=...$a`: bash 3.2 (every stock Mac) expands
+  # the whole declaration before the first name is bound, so the second word read
+  # $commit as unbound and `set -u` killed the install. Caught by the fixture run in
+  # test-install.mjs, which is the only reason this file has one.
+  local commit="$1"
+  local dest="$INSTALL_DIR/source/$commit"
+  if ! command -v git >/dev/null 2>&1; then
+    echo "live signing needs git to obtain the published commit; install git and rerun" >&2
+    return 1
+  fi
+  mkdir -p "$INSTALL_DIR/source"
+  chmod 700 "$INSTALL_DIR" "$INSTALL_DIR/source"
+  if [ ! -d "$dest/.git" ]; then
+    rm -rf "$dest"
+    echo "▶ cloning the published source at $commit" >&2
+    # A full clone, not --depth 1 of one SHA: fetching a bare object id needs the far
+    # end to permit it, and the failure mode when it does not is a clone that quietly
+    # lands on a branch tip instead. The checkout below is the pin either way, and a
+    # full clone can always satisfy it.
+    git clone --quiet "$REPO" "$dest" >&2 || { rm -rf "$dest"; return 1; }
+  fi
+  if ! git -C "$dest" -c advice.detachedHead=false checkout --quiet --detach "$commit" 2>/dev/null; then
+    git -C "$dest" fetch --quiet origin >/dev/null 2>&1 || true
+    if ! git -C "$dest" -c advice.detachedHead=false checkout --quiet --detach "$commit" 2>/dev/null; then
+      echo "published commit $commit is not in $REPO" >&2
+      return 1
+    fi
+  fi
+  ( cd "$dest/executor" && pwd -P )
+}
+
+if [ "$MODE" = "live" ]; then
+  if [ -z "$EXPECTED_COMMIT" ]; then
+    if [ ! -r /dev/tty ]; then
+      echo "live mode needs --expected-commit <40-character published commit>: it is printed beside the install button on $STATIC, and it is the release this executor will sign with" >&2
+      exit 1
+    fi
+    cat > /dev/tty <<'PIN'
+
+  PUBLISHED RELEASE
+  WALL-ST-E signs with code from one published commit and never with code this
+  script downloaded. Paste the 40-character commit shown beside the install
+  button on the site — the same value GitHub shows for that release.
+PIN
+    printf '  Published commit (40 hex characters): ' > /dev/tty
+    IFS= read -r EXPECTED_COMMIT < /dev/tty
+    # Same bash-3.2 rule as everywhere else in this file: ${x,,} does not exist on a
+    # stock Mac, and printf is a builtin so the value never becomes another argv.
+    EXPECTED_COMMIT="$(printf '%s' "$EXPECTED_COMMIT" | tr '[:upper:]' '[:lower:]')"
+  fi
+  if ! [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "the published commit must be exactly 40 hexadecimal characters" >&2
+    exit 1
+  fi
+  if ! live_source_is_pinned "$SOURCE_DIR"; then
+    SOURCE_DIR="$(fetch_pinned_source "$EXPECTED_COMMIT")" || {
+      echo "could not obtain the published source at $EXPECTED_COMMIT; nothing was installed" >&2
+      exit 1
+    }
+  fi
+fi
+# END LIVE_SOURCE
+
 if [ "$MODE" = "live" ] && [ -z "$SOURCE_DIR" ]; then
   echo "live mode requires --source-dir from a locally pinned Claude Company checkout" >&2
   exit 1
@@ -549,7 +682,7 @@ if [ "$MODE" = "live" ]; then
     echo "live --expected-commit must exactly match the published commit $SOURCE_COMMIT" >&2
     exit 1
   fi
-  for source_file in poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs strategy.mjs trade-policy.mjs entry-contract.mjs dexscreener-consensus.mjs desk-mirror.mjs package.json package-lock.json; do
+  for source_file in poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs dexscreener-consensus.mjs desk-mirror.mjs package.json package-lock.json; do
     if [ -n "$(git -C "$source_root" status --porcelain -- "executor/$source_file")" ]; then
       echo "live source file executor/$source_file differs from commit $SOURCE_COMMIT" >&2
       exit 1
@@ -1153,7 +1286,7 @@ rollback_install() {
 trap rollback_install EXIT
 
 echo "▶ fetching the executor and shared policy…"
-RUNTIME_FILES=(poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs strategy.mjs trade-policy.mjs entry-contract.mjs dexscreener-consensus.mjs desk-mirror.mjs)
+RUNTIME_FILES=(poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs dexscreener-consensus.mjs desk-mirror.mjs)
 SOURCE_FILES=("${RUNTIME_FILES[@]}" package.json package-lock.json)
 # launchd adopts a DIRECTORY, not a command line: macos-launchagent.sh resolves
 # launchd-runner.mjs and poller.mjs out of the --executor-dir it is handed, and
@@ -1444,8 +1577,9 @@ cat <<DONE
   Runtime commit: $SOURCE_COMMIT
   Max $MAX_SOL SOL/trade · $DAILY_CAP SOL/rolling 24h deploy
   Realized-loss entry brake $DAILY_LOSS_CAP SOL/rolling 24h
-  Pause entries:  touch $PAUSE_FILE
-  Hard stop:      touch $HARD_STOP_FILE
+  Pause entries:  install -m 600 /dev/null $PAUSE_FILE
+  Resume entries: rm -f $PAUSE_FILE
+  Hard stop:      install -m 600 /dev/null $HARD_STOP_FILE
   Protected env:  $ENV_FILE
   Durable state:  $STATE_DB
 DONE
@@ -1478,21 +1612,49 @@ cat <<DONE
 ════════════════════════════════════════════════════════════════
 DONE
 
-if [ "$MODE" != "live" ]; then
+# THE SWITCH IS THE WALLET, AND IT IS WORTH SAYING SO HERE. An armed executor with
+# an empty burner is inert in exactly the way the old dry-run stage pretended to be,
+# and the owner's next action is not another command — it is a transfer from a wallet
+# this installer has never seen and never asks about.
+#
+# The two control files are printed with `install -m 600`, never `touch`. Measured:
+# `touch` writes 644 under a normal login umask, inspectOwnerControlFile() in
+# sleep-assertion.mjs then reports the sentinel "is not owner-only", and a 644 pause
+# sentinel created during a versioned adoption latched a sleep-assertion fault that
+# SIGTERMed the agent ten seconds after every load.
+if [ "$MODE" = "live" ]; then
 cat <<DONE
-  THIS IS A DRY RUN. EXECUTE=0. Nothing is signed and nothing is sent, so the
-  wallet above does not need any SOL for this to run. Watch it decide for a
-  while before you consider funding it.
+  THIS EXECUTOR IS ARMED. EXECUTE=1 — it signs and submits real mainnet
+  transactions. It can do nothing at all yet, because the wallet above holds
+  nothing and this installer funds nothing, ever. Sending SOL to that address
+  from your own wallet is the only step left, and it is what starts it.
 
-  When you do want it to trade for real, that is a separate command you run on
-  purpose, from a checkout you have reviewed — it is never this one-liner:
+  Size the deposit for the cap you just set: a $MAX_SOL SOL trade needs that
+  much again plus roughly 0.02 SOL of fee-and-rent reserve. Measured on this
+  desk's own burner, a 0.4 SOL trade wants about 0.42 SOL, and 0.107 SOL is
+  why it has not opened one. An entry that cannot cover both refuses itself
+  rather than quietly trading smaller.
 
-      git clone https://github.com/gtjvv976mb-netizen/Claude-Company.git
-      cd Claude-Company && git checkout --detach <PUBLISHED_COMMIT_SHA>
-      bash executor/install.sh --floor $FLOOR --live \\
-        --expected-commit <PUBLISHED_COMMIT_SHA>
+  Off and on afterwards, without reinstalling anything:
+      install -m 600 /dev/null $PAUSE_FILE   # stop opening new positions
+      rm -f $PAUSE_FILE                      # allow entries again
+      install -m 600 /dev/null $HARD_STOP_FILE   # stop everything
 
-  It will walk you through two private RPCs and a Jupiter key, and then make you
+  Use install -m 600 and not touch: a control file the group or other can
+  write is not a control, and the watchdog refuses to run beside one.
+════════════════════════════════════════════════════════════════
+DONE
+else
+cat <<DONE
+  THIS INSTALL IS NOT ARMED, because you asked for --dry-run. EXECUTE=0:
+  nothing is signed and nothing is sent, so the wallet above needs no SOL.
+
+  Arming it is the SAME command without --dry-run. Not a second install, not
+  a different checkout, and nothing to undo here first:
+
+      bash install.sh --floor $FLOOR --expected-commit <PUBLISHED_COMMIT_SHA>
+
+  It walks you through two private RPCs and a Jupiter key, and then makes you
   retype this address on the terminal before it arms:
 
       $PUBKEY

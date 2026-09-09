@@ -137,6 +137,60 @@ export function noteMarkUnavailable(position, { observedAt, reason, transient = 
   return at - since;
 }
 
+/* ── A DRAINED POOL IS NOT A CUSTODY FACT ───────────────────────────────────────────
+ *
+ * A full-position sell into a pump.fun pool that has bled out routinely quotes well over
+ * 50% price impact, and jupiter.mjs refuses it ("price impact X% exceeds cap"). That
+ * refusal used to set `manualExitRequired` on the FIRST occurrence — which permanently
+ * disabled the automated exit for that position AND, because the flag blocks new
+ * exposure, froze every entry on the book behind one illiquid coin. It is the wrong
+ * response twice over: impact is a market condition that changes minute to minute, and
+ * the cure for it is a smaller clip, not an operator.
+ *
+ * So an impact refusal steps the next attempt down the ladder instead — the whole
+ * position, then half, then a quarter — and stops there rather than chasing dust: a
+ * quarter clip is small enough to clear the cap in every drained pool measured, and the
+ * exit stays LATCHED throughout, so manageOpen retries it ahead of all other work on
+ * every pass until it goes through. Nothing here latches manual review: that is reserved
+ * for custody and identity facts (a balance two RPCs disagree on, a desk row about
+ * another coin), where an operator genuinely is the only next step.
+ */
+export const EXIT_IMPACT_FRACTIONS = Object.freeze([1, 0.5, 0.25]);
+
+/** Does this failure say the ROUTE was too expensive, rather than that custody is wrong? */
+export function isPriceImpactRefusal(message) {
+  return /price impact .* exceeds cap/i.test(String(message ?? ""));
+}
+
+/** The clip the NEXT attempt should sell, given the refusals already recorded. */
+export function exitRetryFraction(position) {
+  const refusals = Number(position?.exitImpactRefusals);
+  const index = Number.isSafeInteger(refusals) && refusals > 0 ? refusals : 0;
+  return EXIT_IMPACT_FRACTIONS[Math.min(index, EXIT_IMPACT_FRACTIONS.length - 1)];
+}
+
+/**
+ * Record one impact refusal against a position and return the fraction the next attempt
+ * will sell. Never a manual latch, never a cancellation — the exit stays latched.
+ */
+export function noteExitImpactRefusal(position, { observedAt = Date.now(), reason = "" } = {}) {
+  if (!position || typeof position !== "object")
+    throw new Error("exit impact refusal needs a position");
+  const at = Number(observedAt);
+  if (!Number.isSafeInteger(at) || at <= 0) throw new Error("impact refusal observation time is invalid");
+  const prior = Number(position.exitImpactRefusals);
+  position.exitImpactRefusals = (Number.isSafeInteger(prior) && prior > 0 ? prior : 0) + 1;
+  position.exitImpactLastReason = String(reason || "price impact exceeds cap");
+  position.exitImpactLastAt = at;
+  return exitRetryFraction(position);
+}
+
+export function clearExitImpactRefusals(position) {
+  if (!position) return;
+  for (const key of ["exitImpactRefusals", "exitImpactLastReason", "exitImpactLastAt"])
+    if (Object.hasOwn(position, key)) delete position[key];
+}
+
 export function clearMarkUnavailable(position) {
   if (!position) return;
   for (const key of ["markUnavailableSince", "markUnavailableAt", "markUnavailableReason",

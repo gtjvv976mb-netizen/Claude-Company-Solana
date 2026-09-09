@@ -1347,7 +1347,18 @@ export class JupiterV2Executor {
     return order;
   }
 
-  async preflightEntry(inputMint, outputMint, amountRaw) {
+  /* MEASURE THE ROUTE, REPORT THE BREACH, DECIDE NOTHING.
+   *
+   * Both cost caps an entry faces are read here at one amount: the round-trip loss and
+   * the entry price impact the order envelope will apply again at signing time
+   * (validateOrderEnvelope, `impact > cfg.maxPriceImpactPct`). Neither is thrown from
+   * this method, because both are functions of SIZE — 0.4 SOL through a thin pool costs
+   * what 0.1 SOL through the same pool does not — and a method that raises cannot be
+   * asked "what would half cost?". The caller (executor/entry-sizing.mjs) asks exactly
+   * that; the caps themselves still refuse, unchanged, at `preflightEntry` below and in
+   * the envelope. Impact is taken from the FORWARD leg only: that is the order that gets
+   * signed, and the reverse quote is never sent. */
+  async preflightEntryProbe(inputMint, outputMint, amountRaw) {
     const forward = await this.quote(inputMint, outputMint, amountRaw);
     const reverse = await this.quote(outputMint, inputMint, String(forward.outAmount));
     const input = BigInt(positiveRaw(amountRaw, "preflight input"));
@@ -1355,6 +1366,20 @@ export class JupiterV2Executor {
     const lossPct = Number(input > returned ? (input - returned) * 1_000_000n / input : 0n) / 10_000;
     const cap = Number(this.cfg.maxEntryRoundTripLossPct);
     if (!Number.isFinite(cap) || cap < 0 || cap > 100) throw new Error("invalid entry round-trip-loss cap");
+    const impactCap = priceImpactCapForIntent("entry", this.cfg);
+    if (!Number.isFinite(impactCap) || impactCap < 0) throw new Error("invalid entry price-impact cap");
+    const impactPct = priceImpactPercent(forward);
+    const refusals = [];
+    if (lossPct > cap) refusals.push(`entry round-trip loss ${lossPct}% exceeds cap ${cap}%`);
+    if (impactPct > impactCap) refusals.push(`price impact ${impactPct}% exceeds cap ${impactCap}%`);
+    return { forward, reverse, lossPct, impactPct, cap, impactCap,
+      ok: refusals.length === 0, refusal: refusals[0] ?? null };
+  }
+
+  /* The gate, unchanged: it refuses over the round-trip cap and says so in the same
+     words it always has. Every existing caller still gets a throw. */
+  async preflightEntry(inputMint, outputMint, amountRaw) {
+    const { forward, reverse, lossPct, cap } = await this.preflightEntryProbe(inputMint, outputMint, amountRaw);
     if (lossPct > cap) throw new Error(`entry round-trip loss ${lossPct}% exceeds cap ${cap}%`);
     return { forward, reverse, lossPct };
   }

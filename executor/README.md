@@ -4,9 +4,12 @@ WALL-ST-E is the autotrading representative for your floor. The central Claude
 Company site publishes authenticated research calls; it does not custody funds,
 receive wallet keys, sign transactions, or know whether your executor is running.
 
-The polling executor runs on a machine you control. It starts in **dry run** unless
-you deliberately install it with `--live`. Browser signing and webhook execution
-remain disabled; the only live-capable path is the local `poller.mjs` service.
+The polling executor runs on a machine you control. **Installing it arms it**: one
+command, and it asks you for what live trading needs. The wallet it creates is empty
+and this installer never funds one, so nothing can move until you send it SOL
+yourself. Pass `--dry-run` if you would rather watch it decide without arming it.
+Browser signing and webhook execution remain disabled; the only live-capable path is
+the local `poller.mjs` service.
 
 Trading is risky, and these controls do not make the calls profitable. Use a new,
 dedicated burner wallet and fund it with no more than you can lose.
@@ -35,11 +38,16 @@ Only the supervisor differs:
 
 Windows has neither, and is covered [under WSL2](#windows-install-under-wsl2) below.
 
-**That is a dry run and it trades nothing.** The executor reads your floor's calls
-and runs the whole local policy without signing or submitting a single transaction.
-Going live is a separate, deliberate command described under
-[Explicit live installation](#explicit-live-installation), and it makes you retype
-the wallet's own public key before it will arm.
+**That one command arms it.** There is no rehearsal install to do first and no second
+command afterwards. On the terminal it asks you for the published release commit it
+must sign with, then walks you through two private RPCs and a Jupiter key, and then
+makes you retype the new wallet's own public key before it will arm — see
+[Explicit live installation](#explicit-live-installation).
+
+**Arming is not funding, and funding is the switch.** The burner it generates starts
+empty, and an empty wallet cannot trade. Nothing happens until you send SOL to the
+printed address from a wallet of your own, which is a step this installer has no part
+in and cannot take for you.
 
 The installer will:
 
@@ -77,16 +85,18 @@ tail -f ~/Library/Logs/ClaudeCompany/wallste.stdout.log            # macOS
 ### Double-click install (macOS download)
 
 `Install WALL-ST-E.command` is the same one-liner in a file a person can
-double-click. It opens Terminal, explains in plain words that nothing will be
-traded, shows the installer's SHA-256, asks for the floor number, and runs it.
+double-click. It opens Terminal, says in plain words that this installs a bot which
+trades real money and that funding the new wallet is the on switch, shows the
+installer's SHA-256, asks for the floor number, and runs it.
 
 macOS quarantines anything downloaded from a browser, so the first launch must be
 **right-click → Open** (or `xattr -d com.apple.quarantine "Install WALL-ST-E.command"`
 in Terminal) — a plain double-click will refuse with "unidentified developer".
 
-The launcher itself can only ever start a dry run: it holds no credentials, no
-wallet and no `--live`. It asks for no administrator password, because nothing on the
-macOS path needs one.
+The launcher passes a floor number and nothing else: it holds no credentials, no
+wallet, no caps and no acknowledgement. Everything that makes the install real is
+asked for by `install.sh` on the terminal, one value at a time. It asks for no
+administrator password, because nothing on the macOS path needs one.
 
 Two Mac-specific things worth knowing before you fund anything. A laptop that is
 asleep is not trading — the runner keeps the machine awake on AC power and
@@ -99,15 +109,24 @@ first, rather than repointing a running executor at a new wallet.
 
 Piping a script into a shell is a reasonable thing to refuse. Install from the exact
 40-character release commit shown by the floor UI instead, and review the checkout
-before running it. This is also the **required** route for live mode, which refuses
-piped or mutable runtime downloads:
+before running it:
 
 ```bash
 git clone https://github.com/gtjvv976mb-netizen/Claude-Company.git
 cd Claude-Company
 git checkout --detach <PUBLISHED_COMMIT_SHA>
-bash executor/install.sh --floor <YOUR_FLOOR_NUMBER>
+bash executor/install.sh --floor <YOUR_FLOOR_NUMBER> \
+  --expected-commit <PUBLISHED_COMMIT_SHA>
 ```
+
+This is no longer a *required* second act for live mode. Live still refuses piped or
+mutable runtime downloads — the modules that sign are read out of that commit's own
+Git blobs — but when this machine has no checkout of the commit you named, the
+installer clones it and detaches at it for you, and then verifies it exactly as it
+verifies one you cloned yourself: HEAD must equal your `--expected-commit`, the head
+must be detached rather than a moving branch, and every runtime file must be clean
+against it. A checkout you supply that is already detached at that commit is used as
+it stands.
 
 ### Windows: install under WSL2
 
@@ -344,7 +363,9 @@ Live mode requires all of the following:
   its own mode-`0600` file — or entered through the guided prompts below, which write
   exactly those files for you;
 - a Jupiter API key, from a mode-`0600` file or the same guided prompts;
-- `--live` on the installer command;
+- the exact 40-character published commit, as `--expected-commit` or typed at the
+  prompt — the installer never looks it up for you, because a commit chosen by
+  whatever answered would be a release verifying itself against its own answer;
 - per-trade, rolling deployment, and rolling-loss caps for a supervised canary; and
 - a terminal acknowledgement made by retyping the displayed burner public key.
 
@@ -365,9 +386,9 @@ Nothing you type is echoed, and no credential is ever passed as a command argume
 not to the installer, and not to `curl`, whose request is fed in through stdin
 precisely so that an RPC URL never appears in `/proc/PID/cmdline`.
 
-The wizard runs **only** in live mode and **only** when a terminal is present. A dry
-run needs no credentials at all, and a scripted live install with all three files
-never sees a prompt.
+The wizard runs **only** in live mode and **only** when a terminal is present. A
+`--dry-run` install needs no credentials at all, and a scripted live install with all
+three files and `--expected-commit` never sees a prompt.
 
 ### Going live on macOS
 
