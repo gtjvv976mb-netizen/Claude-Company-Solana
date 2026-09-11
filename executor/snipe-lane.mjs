@@ -204,6 +204,11 @@ export const SNIPE_LANE_DEFAULTS = Object.freeze({
      answer. src/launch-shadow.js states the discipline; snipe-shadow.mjs scores them. */
   maxCreatorSharePct: undefined,
   maxLaunchSharePct: undefined,
+  /* Consecutive two-endpoint disagreements before blindness is treated as hostility and
+     the position leaves. THREE, matching snipe-policy's confirmWindow, and for the same
+     reason: it is the smallest run in which a single outlier cannot be the whole story.
+     At the default 1s tick that is three seconds of being unable to price a position. */
+  disagreeStreakMax: 3,
 });
 
 /**
@@ -233,6 +238,34 @@ export const SNIPE_LANE_DEFAULTS = Object.freeze({
  */
 export const SNIPE_OPERATOR_MAX = Object.freeze({ maxSolPerTrade: 0.4, dailySolCap: 1000 });
 
+/**
+ * WHICH EXIT SIGNALS ARE ACTUALLY CONNECTED, AS A FACT RATHER THAN AN IMPRESSION.
+ *
+ * snipe-policy.mjs carries a branch that sells the whole position when the creator sells,
+ * and calls it "the one signal a launch has that no later market does". stepOne passes
+ * `creatorSold: false` — a literal. The branch cannot fire. Nothing is wrong with the
+ * policy; the fact simply never arrives, which is the same shape of defect as the hard
+ * stop that was read at entry and never on the management path.
+ *
+ * A dead branch that reads like a protection is worse than an absent one, because it is
+ * counted as covered by whoever reviews the exits. So the gap is declared here, the
+ * armability checklist blocks on it, and wiring it means changing this constant — not
+ * remembering that a comment somewhere said it was pending.
+ */
+export const LANE_SIGNALS = Object.freeze({
+  hardStop: "wired",        // control() is read on the management path, not only at entry
+  rugFlag: "wired",         // a RUN of two-endpoint disagreements; see stepOne
+  liquidityFloor: "wired",  // from the curve's own reserves
+  stop: "wired",
+  trail: "wired",
+  take: "wired",
+  timeStop: "wired",
+  /* UNWIRED. Detecting it needs the creator's token balance for this mint watched across
+     reads (the curve carries `creator`, and the ATA derives from it), which is one more
+     account per tick per position. Until that exists the branch is unreachable. */
+  creatorSold: "unwired",
+});
+
 export const SNIPE_ENV = Object.freeze({
   SNIPE_LANE: Object.freeze({ key: "lane", parse: "mode" }),
   SNIPE_MAX_SOL_PER_TRADE: Object.freeze({ key: "maxSolPerTrade", parse: "number", max: SNIPE_OPERATOR_MAX.maxSolPerTrade }),
@@ -257,6 +290,7 @@ export const SNIPE_ENV = Object.freeze({
   SNIPE_CHARGE_DAILY_CAP: Object.freeze({ key: "chargeDailyCap", parse: "flag" }),
   SNIPE_MAX_CREATOR_SHARE_PCT: Object.freeze({ key: "maxCreatorSharePct", parse: "number" }),
   SNIPE_MAX_LAUNCH_SHARE_PCT: Object.freeze({ key: "maxLaunchSharePct", parse: "number" }),
+  SNIPE_DISAGREE_STREAK_MAX: Object.freeze({ key: "disagreeStreakMax", parse: "number" }),
 });
 
 /* Every env name must carry the prefix that keeps the two config objects apart. Asserted
@@ -415,6 +449,14 @@ export function armabilityReport({ cfg = {}, venue = null, stopExplicit = false 
     add("stop_is_fundable", true,
       `stop ${e.stopFrac}x entry, tightest fundable at this size ${e.tightestFundableStopFrac.toFixed(4)}x`);
   } catch (err) { add("stop_is_fundable", false, err.message); }
+
+  const unwired = Object.entries(LANE_SIGNALS).filter(([, v]) => v !== "wired").map(([k]) => k);
+  add("exit_signals_are_wired", unwired.length === 0,
+    unwired.length === 0
+      ? `all ${Object.keys(LANE_SIGNALS).length} exit signals reach the determiner`
+      : `${unwired.join(", ")} ${unwired.length === 1 ? "is a branch that" : "are branches that"} cannot fire — `
+        + "the policy has the rule, the fact never arrives, and a dead branch reads as a protection to "
+        + "whoever reviews the exits");
 
   const proved = venue?.layoutVerified === true && venue?.layoutProof != null;
   add("venue_layout_is_proved", proved,
@@ -648,6 +690,10 @@ export function createSnipeLane({
   /* The mode's overrides, resolved once. conf stays the operator's stated configuration so
      it can still be reported back verbatim; `effective` is what the lane actually runs on. */
   const effective = effectiveLaneConfig(conf);
+  /* Consecutive two-endpoint disagreements per mint. Cleared by any agreeing read, so it
+     counts a RUN of blindness rather than a lifetime total — a position that recovers has
+     not been blind for long, whatever it went through earlier. */
+  const disagreeStreak = new Map();
 
   const adapter = observeOnlyVenue(venue);
 
@@ -938,10 +984,38 @@ export function createSnipeLane({
        stop an entry gate wearing a kill switch's name. Read here so one file still stops
        both lanes AND reaches what is already open. */
     const sentinels = controlView();
+
+    /* A DISAGREEMENT IS BLINDNESS, NOT HOSTILITY — UNTIL IT PERSISTS.
+     *
+     * Two endpoints returning different bytes for the same account at the same slot is a
+     * decode fault or a lying node. At ENTRY, refusing on it is plainly right: there is
+     * nothing to lose by not acting. This was also wired straight into rugFlag on the EXIT
+     * path, where it means something very different — a full market liquidation of a real
+     * position on a transport hiccup, paying 1.25% of venue fee each way to act on a fact
+     * nobody established. At 0.4 SOL, a flaky endpoint would repeatedly force-sell the book.
+     *
+     * So a single disagreement now makes the MARK unusable, which the policy already
+     * handles as the absence of information: it holds, and the clock decides. What a
+     * disagreement cannot be allowed to do is persist silently — a position nobody can
+     * price is a position nobody is managing — so after disagreeStreakMax consecutive
+     * blind ticks it escalates to the exit it used to take immediately.
+     *
+     * Both directions of the error are covered: a transient fault no longer liquidates,
+     * and sustained blindness still leaves. */
+    if (read.verdict === "disagree") disagreeStreak.set(mint, (disagreeStreak.get(mint) ?? 0) + 1);
+    else disagreeStreak.delete(mint);
+    const blindStreak = disagreeStreak.get(mint) ?? 0;
+    const blindTooLong = blindStreak >= Number(conf.disagreeStreakMax);
+    if (read.verdict === "disagree" && !blindTooLong) markX = null;
+
     const step = determiner.step({
       position: pos, markX, nowMs: now, cfg: conf,
       hardStop: sentinels.hardStop === true,
-      creatorSold: false, rugFlag: read.verdict === "disagree",
+      /* LANE_SIGNALS.creatorSold is "unwired" and this literal is why. Declared there so
+         the armability checklist blocks on it, rather than living as a comment nobody
+         reads next to a branch that silently never fires. */
+      creatorSold: false,
+      rugFlag: blindTooLong,
       sample: { markX, nowMs: now, slot: read.slot, endpoint: read.chosen?.id ?? null },
     });
 

@@ -579,6 +579,11 @@ let S = journal.snapshot();
 S.state = { ...freshState(Date.now()), ...(S.state || {}) };
 Object.assign(S.state, journal.rollingRisk(Date.now()));
 S.positions ||= {};
+/* The sniper's book, restored from its own table. Without this line a lane restarted
+   mid-position forgets it holds anything: no cost basis, no armed flags, no confirmed
+   high, and nothing running that would ever sell it. `save()` passes all of S, so once
+   the key is here it persists on the same cadence as the desk's book. */
+S.snipes ||= {};
 let feedRollback = (() => {
   const value = journal.getMeta("feed_rollback");
   if (value == null) return null;

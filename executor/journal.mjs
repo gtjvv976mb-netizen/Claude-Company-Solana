@@ -165,6 +165,34 @@ export function deskExitDecisionForPosition(position, event) {
   throw new Error(`position ${position.mint} has no durable call identity`);
 }
 
+/**
+ * A SNIPE ROW, VALIDATED AS STORAGE AND NOT AS STRATEGY.
+ *
+ * Deliberately thinner than validatePosition. The sniper's semantic invariant lives in
+ * snipe-book.mjs assertLaneInvariant() and is enforced by the lane on every open and
+ * update; duplicating it here would put the rules in two places and guarantee they drift.
+ * What the journal owns is that a row is keyed by the mint it claims, carries the four
+ * economics the mark cannot be computed without, and is a plain object it can re-serialise.
+ */
+function validateSnipe(mint, value) {
+  if (!record(value)) throw new Error(`snipe ${mint} is not an object`);
+  if (value.mint !== mint) throw new Error(`snipe row ${mint} contains mint ${value.mint ?? "missing"}`);
+  for (const field of ["entry", "openedAt"]) {
+    if (!Number.isFinite(Number(value[field])))
+      throw new Error(`snipe ${mint} has invalid ${field}`);
+  }
+  if (!(Number(value.entry) > 0)) throw new Error(`snipe ${mint} has a non-positive entry`);
+  /* qtyRaw and entryInputLamports are the two operands of the mark. A row without both
+     cannot be priced after a restart, which is the same as having no position at all. */
+  for (const field of ["qtyRaw", "entryInputLamports"]) {
+    if (!/^\d+$/.test(String(value[field] ?? "")))
+      throw new Error(`snipe ${mint} has invalid ${field} — without it the position cannot be marked`);
+  }
+  if (BigInt(value.entryInputLamports) <= 0n)
+    throw new Error(`snipe ${mint} has a non-positive entryInputLamports`);
+  return value;
+}
+
 function validatePosition(mint, value) {
   if (!record(value)) throw new Error(`position ${mint} is not an object`);
   if (value.mint !== mint) throw new Error(`position row ${mint} contains mint ${value.mint ?? "missing"}`);
@@ -245,6 +273,22 @@ export class ExecutionJournal {
         value TEXT NOT NULL
       ) STRICT;
       CREATE TABLE IF NOT EXISTS positions (
+        mint TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      ) STRICT;
+      -- THE SNIPER'S BOOK, IN ITS OWN TABLE -- which is what makes it a second book
+      -- rather than a flag on the first. test-snipe-separation.mjs clause 1 pins that
+      -- openList() is Object.values(S.positions), so a snipe stored in the positions
+      -- table would be visible to all six of its consumers; it is stored where
+      -- openList() cannot reach it.
+      -- Until 2026-09-11 S.snipes was persisted NOWHERE. A lane restarted mid-position
+      -- forgot the position existed: no cost basis, no armed flags, no confirmed high,
+      -- and nothing running that would ever sell it. For an observing lane it also meant
+      -- silently truncated evidence -- which is the evidence a decision to arm rests on.
+      -- (SQL comments, not JS: this is inside a template literal, and the first draft of
+      -- this block used backticks around a table name and closed the string.)
+      CREATE TABLE IF NOT EXISTS snipes (
         mint TEXT PRIMARY KEY,
         data TEXT NOT NULL,
         updated_at INTEGER NOT NULL
@@ -599,20 +643,26 @@ export class ExecutionJournal {
       positions[row.mint] = validatePosition(row.mint,
         parse(row.data, { label: `position ${row.mint}` }));
     }
+    const snipes = {};
+    for (const row of this.db.prepare("SELECT mint,data FROM snipes").all()) {
+      snipes[row.mint] = validateSnipe(row.mint, parse(row.data, { label: `snipe ${row.mint}` }));
+    }
     return {
       cursor: Number(this.getMeta("cursor") || 0),
       primed: Boolean(this.getMeta("primed")),
       state: this.getMeta("risk_state"),
       positions,
+      snipes,
     };
   }
 
-  saveRuntime({ cursor, primed, state, positions }) {
+  saveRuntime({ cursor, primed, state, positions, snipes }) {
     if (cursor != null && (!Number.isSafeInteger(Number(cursor)) || Number(cursor) < 0))
       throw new Error("journal cursor is invalid");
     if (primed != null && typeof primed !== "boolean") throw new Error("journal primed flag is invalid");
     if (state !== undefined) validateRiskState(state, { now: this.now() });
     if (positions) for (const [mint, value] of Object.entries(positions)) validatePosition(mint, value);
+    if (snipes) for (const [mint, value] of Object.entries(snipes)) validateSnipe(mint, value);
     this.immediate(() => {
       if (cursor != null) this.setMeta("cursor", Number(cursor));
       if (primed != null) this.setMeta("primed", Boolean(primed));
@@ -625,6 +675,22 @@ export class ExecutionJournal {
         for (const [mint, value] of Object.entries(positions)) upsert.run(mint, json(value), now);
         for (const row of this.db.prepare("SELECT mint FROM positions").all()) {
           if (!keep.has(row.mint)) this.db.prepare("DELETE FROM positions WHERE mint=?").run(row.mint);
+        }
+      }
+      /* The same upsert-and-reap as positions, into the sniper's own table. Reaping is
+         what makes a closed snipe actually gone: a row left behind would be re-opened as
+         a live position by the next boot, and the lane would try to sell something it no
+         longer holds. Written inside the SAME immediate() transaction as the desk's book,
+         so a crash between the two cannot leave one lane's view of the wallet newer than
+         the other's. */
+      if (snipes) {
+        const now = this.now();
+        const keep = new Set(Object.keys(snipes));
+        const upsert = this.db.prepare(`INSERT INTO snipes(mint,data,updated_at) VALUES(?,?,?)
+          ON CONFLICT(mint) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at`);
+        for (const [mint, value] of Object.entries(snipes)) upsert.run(mint, json(value), now);
+        for (const row of this.db.prepare("SELECT mint FROM snipes").all()) {
+          if (!keep.has(row.mint)) this.db.prepare("DELETE FROM snipes WHERE mint=?").run(row.mint);
         }
       }
     });
