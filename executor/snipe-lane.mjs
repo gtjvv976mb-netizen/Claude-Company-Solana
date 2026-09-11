@@ -334,6 +334,28 @@ export function snipeLaneConfig(env = {}) {
 }
 
 /**
+ * THE OVERRIDES THE MODE DECIDES, NOT THE OPERATOR.
+ *
+ * chargeDailyCap defaults false, and that default is correct: a shadow book that silenced
+ * itself after two notices would measure nothing, which is the whole point of section 6 in
+ * test-snipe-lane.mjs. It is also catastrophic the moment the lane has a wallet —
+ * deployedTodaySol stays 0 for ever and dailySolCap never binds, whatever it is set to.
+ *
+ * The fix is not an item on a pre-flight list for a person to remember. A lane that spends
+ * money MUST charge its daily cap, so the mode decides it and the operator cannot set it
+ * wrong. The one flag whose misconfiguration removes a money cap entirely is exactly the
+ * flag that should not be a flag.
+ */
+export function effectiveLaneConfig(cfg = {}) {
+  const executing = cfg.lane === "execute";
+  return Object.freeze({
+    ...cfg,
+    /* Forced ON for an executing lane; the operator's value stands everywhere else. */
+    chargeDailyCap: executing ? true : cfg.chargeDailyCap === true,
+  });
+}
+
+/**
  * EVERYTHING THAT MUST BE TRUE BEFORE THIS LANE MAY SPEND MONEY, IN ONE FUNCTION.
  *
  * Arming is not a flag, and it should not be a judgement call made by whoever is awake.
@@ -369,11 +391,17 @@ export function armabilityReport({ cfg = {}, venue = null, stopExplicit = false 
     Number.isFinite(size) && size > 0 && size <= SNIPE_OPERATOR_MAX.maxSolPerTrade,
     `maxSolPerTrade ${size} against an operator maximum of ${SNIPE_OPERATOR_MAX.maxSolPerTrade} SOL`);
 
-  add("daily_cap_is_charged", cfg.chargeDailyCap === true,
-    cfg.chargeDailyCap === true
-      ? `dailySolCap ${cfg.dailySolCap} SOL will actually accumulate`
-      : "chargeDailyCap is off, so deployedTodaySol stays 0 and dailySolCap NEVER binds — " +
-        "correct for a shadow book, no daily cap at all for a lane that spends");
+  /* Asked of the config this lane WOULD run under if armed, not of the observe config in
+     hand: the question is whether the daily cap binds when money moves. effectiveLaneConfig
+     forces it on for execute, so this is a check of the mechanism rather than of whether
+     someone remembered a flag — and it fails loudly if that forcing is ever removed. */
+  const armedCfg = effectiveLaneConfig({ ...cfg, lane: "execute" });
+  add("daily_cap_is_charged", armedCfg.chargeDailyCap === true,
+    armedCfg.chargeDailyCap === true
+      ? `dailySolCap ${cfg.dailySolCap} SOL accumulates once armed — the mode forces the charge on, `
+        + "so it cannot be configured off on a lane that spends"
+      : "an executing lane would NOT charge its daily cap: deployedTodaySol stays 0 and "
+        + "dailySolCap never binds, whatever it is set to");
 
   const policyCfg = { ...snipePolicy.SNIPE_DEFAULTS, ...(cfg.policy ?? {}) };
   try {
@@ -617,6 +645,10 @@ export function createSnipeLane({
       + "loaded on it. The shadow book is the deliverable; arming is a separate owner decision.",
       { lane: conf.lane });
 
+  /* The mode's overrides, resolved once. conf stays the operator's stated configuration so
+     it can still be reported back verbatim; `effective` is what the lane actually runs on. */
+  const effective = effectiveLaneConfig(conf);
+
   const adapter = observeOnlyVenue(venue);
 
   /* TWO ENDPOINTS, UNCONDITIONALLY. See the header: the poller has one in observe, and a
@@ -663,7 +695,7 @@ export function createSnipeLane({
     positions: S.positions,
     attempts: book?.attempts ?? Object.freeze({}),
     deployedTodaySol: (Number(book?.deployedTodaySol) || 0)
-      + (conf.chargeDailyCap ? wouldHaveDeployedSol : 0),
+      + (effective.chargeDailyCap ? wouldHaveDeployedSol : 0),
   });
 
   const controlView = () => {
@@ -1015,7 +1047,7 @@ export function createSnipeLane({
         endpoints: Object.freeze([...ids]),
         gates: SNIPE_GATES.length,
         hops: SHADOW_HOPS.length,
-        chargeDailyCap: conf.chargeDailyCap === true,
+        chargeDailyCap: effective.chargeDailyCap === true,
         wouldHaveDeployedSol,
         ...counters,
         /* STAMPED AND ASSERTED. Not a claim in a comment — a field the test reads. */

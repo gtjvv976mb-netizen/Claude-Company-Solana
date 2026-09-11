@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-11 06:46 UTC">
-<script>console.log("Claude Company build 2026-09-11 06:46 UTC")</script>
+<meta name="cc-build" content="2026-09-11 07:08 UTC">
+<script>console.log("Claude Company build 2026-09-11 07:08 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -87648,7 +87648,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · arms on install"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "9c0d5320fbe5769040d567373ed8d934984689f1";
+    const releaseCommit = "68f7c9495619babd460be4f7d6fe1126d1655227";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "f743f5b52c7c03b253ecfd2e52b54adca8ddb845c18f07c74025cdc8941fcefb";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -89763,7 +89763,7 @@ function legacyBurnerRecoveryCard() {
  * somebody believed when they typed it. A new checklist item appears here with no edit.
  */
 const HAWK_STATUS = (() => {
-  try { return JSON.parse("{\"armable\":false,\"blocking\":[\"daily_cap_is_charged\",\"venue_layout_is_proved\"],\"items\":[{\"name\":\"size_within_operator_max\",\"ok\":true,\"detail\":\"maxSolPerTrade 0.005 against an operator maximum of 0.4 SOL\"},{\"name\":\"daily_cap_is_charged\",\"ok\":false,\"detail\":\"chargeDailyCap is off, so deployedTodaySol stays 0 and dailySolCap NEVER binds — correct for a shadow book, no daily cap at all for a lane that spends\"},{\"name\":\"take_is_fundable\",\"ok\":true,\"detail\":\"a 2x take realizes 63.64% at a 1.2222x round trip\"},{\"name\":\"stop_is_fundable\",\"ok\":true,\"detail\":\"stop 0.2x entry, tightest fundable at this size 0.2000x\"},{\"name\":\"venue_layout_is_proved\",\"ok\":false,\"detail\":\"pumpfun has no proved instruction layout — a transposed account in a hand-built buy does not refuse, it signs and lands\"}],\"dials\":{\"takeAtEntryX\":2,\"sizeSol\":0.005,\"operatorMaxSol\":0.4,\"stopFrac\":0.2,\"frictionX\":1.222222222222222,\"takeRealizedFrac\":0.6363636363636365}}"); }
+  try { return JSON.parse("{\"armable\":false,\"blocking\":[\"venue_layout_is_proved\"],\"items\":[{\"name\":\"size_within_operator_max\",\"ok\":true,\"detail\":\"maxSolPerTrade 0.005 against an operator maximum of 0.4 SOL\"},{\"name\":\"daily_cap_is_charged\",\"ok\":true,\"detail\":\"dailySolCap 0.01 SOL accumulates once armed — the mode forces the charge on, so it cannot be configured off on a lane that spends\"},{\"name\":\"take_is_fundable\",\"ok\":true,\"detail\":\"a 2x take realizes 63.64% at a 1.2222x round trip\"},{\"name\":\"stop_is_fundable\",\"ok\":true,\"detail\":\"stop 0.2x entry, tightest fundable at this size 0.2000x\"},{\"name\":\"venue_layout_is_proved\",\"ok\":false,\"detail\":\"pumpfun has no proved instruction layout — a transposed account in a hand-built buy does not refuse, it signs and lands\"}],\"dials\":{\"takeAtEntryX\":2,\"sizeSol\":0.005,\"operatorMaxSol\":0.4,\"stopFrac\":0.2,\"frictionX\":1.222222222222222,\"takeRealizedFrac\":0.6363636363636365}}"); }
   catch { return null; }   // unsubstituted in a raw source preview; rendered as unknown
 })();
 
@@ -90254,7 +90254,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "9c0d5320fbe5769040d567373ed8d934984689f1";
+    const executorReleaseCommit = "68f7c9495619babd460be4f7d6fe1126d1655227";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
