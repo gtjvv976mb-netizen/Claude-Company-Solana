@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-11 03:21 UTC">
-<script>console.log("Claude Company build 2026-09-11 03:21 UTC")</script>
+<meta name="cc-build" content="2026-09-11 04:56 UTC">
+<script>console.log("Claude Company build 2026-09-11 04:56 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -78947,6 +78947,27 @@ function followFigure(seatId) {
     updateHint();
     return true;
   }
+  /* HAWK-AI travels by the same handle, but he is the opposite problem. WALL-ST-E
+     is not on the roster and MOVES; HAWK-AI is not on the roster and never moves
+     at all — holding the stance is the whole characterisation, so there is no
+     position to chase. The frame loop's follow resolver looks a seat up in
+     `workers`, which he is deliberately not in (a Worker would give him an errand
+     routine and a walk cycle, and the first thing he'd do is leave the line).
+     Rather than reach into that resolver, the pivot is parked on him through
+     `glide`, whose target the loop already honours and does NOT clear while
+     followSeat is set. For a figure that does not travel, "glued to him" and
+     "eased to his coordinates once" are the same picture — and this leaves the
+     resolver, which WALL-ST-E depends on, byte for byte as it was. */
+  if (seatId === "__hawk") {
+    if (!window.__hawkGroup) return false;
+    const p = window.__hawkGroup.position;
+    followSeat = seatId;
+    glide = { x: THREE.MathUtils.clamp(p.x, -HALF_W, HALF_W),
+              z: THREE.MathUtils.clamp(p.z, -HALF_D, HALF_D) };
+    if (camWorldWidth > 20) { camWorldWidth = 20; resize(); }
+    updateHint();
+    return true;
+  }
   if (!workers[seatId]) return false;
   followSeat = seatId; glide = null;
   if (camWorldWidth > 20) { camWorldWidth = 20; resize(); }
@@ -80841,6 +80862,13 @@ const DOSSIER = {
     method: "Code only — no model call, no monthly cost. He is the hands, not the brain.",
     known: "Compacting the day's trades into neat little cubes.",
     note: "Liveness shown here is relayed from the bot's own heartbeat \u2014 the site never asserts it on its own.",
+  },
+  __hawk: {  // HAWK-AI
+    brief: "The launch lane's watcher. He ranges every new pump.fun launch the feed carries and looses at almost none of them — the lane is observe-only, and it has never had an order to place.",
+    detail: "HAWK-AI scores each new mint against the lane's gates and records the verdict. Clearing every gate is written down as would-have-entered and nothing more: there is no verified instruction layout for this venue, so there is nothing downstream of him that could be built into an order even if a gate cleared. He holds no key, signs nothing, and has no wallet here or anywhere else — the desk's no-keys wall stands in front of this lane exactly as it stands in front of every seat. The bow is at full draw in his stance because that is the honest picture of the work: ranged, held, and not released.",
+    method: "Code only — no model call, no monthly cost. He reads, ranges and refuses.",
+    known: "Drawn since Tuesday. Still has not loosed.",
+    note: "Observation only. He does not trade, cannot sign, holds no key, and earns nothing. His lamp is never green — green on this floor means live trading, and this lane has none.",
   },
   GrokAD: {  // GROX MULDER
     brief: "The Assistant Director from the other agency. When a floor hires the Grok brain, he moves into the suite beside the boss and works the trades himself.",
@@ -82863,6 +82891,70 @@ const FITOUT = [
   }
 })();
 
+
+/* ═══ HAWK-AI's ARCHER RANGE — the footprints only ═══════════════════════════
+   The range itself is built much further down, beside the pick system it needs,
+   exactly as WALL-ST-E's junk adobe is. What has to happen HERE, before
+   buildNav(), is the nav registration: a fixture that declares its rectangle
+   after the grid is burned is a ghost the whole floor walks straight through,
+   which is the bug the den's own comment was written about.
+
+   WHERE, AND WHY THERE. The range wants LENGTH, and the only clear run left on
+   this floor is the south-west, between the archive shelving and the south wall.
+   The lane runs west→east along z = 10.25, from a shooting line at x = -13.9 to
+   a straw butt at x = -7.3: 6.6 units of range.
+
+   THE CLEARANCES BELOW ARE MESH-MEASURED, NOT DECLARED. An earlier pass wrote
+   them from the fixtures' FITOUT `foot` rectangles and from faces computed by
+   hand, and every one of the five came out wrong by 3–32cm in the same
+   direction — optimistic. The declared foot is a nav rectangle, not a bound: it
+   is drawn where a WALKER must not go, so it neither contains a fixture's
+   overhang nor admits that the butt's own back legs, tilted z by -0.24, throw
+   its true east face 0.32 further out than the bale does (-6.80, not -7.12).
+   These numbers are the minimum XZ separation between every mesh of the station
+   (plus the figure — 207 boxes) and every mesh of the named fixture, read off
+   the world matrices of a running build. The same sweep against all 758
+   individually-addressable meshes in the scene returns ZERO intersections.
+   Station extent, same ruler: x -15.21…-6.80, z 8.78…11.62, top at y 1.20.
+     · filing_cabinet_bank — nearest approach to the bow rack   → 0.77 clear
+     · fern_planter        — nearest approach to the platform   → 0.31 clear
+                             (the tightest gap on the station, and in the room's
+                             default isometric the fern's foliage READS as
+                             standing on the deck corner. It does not touch it.
+                             If that crowding is ever unwanted the fix is to move
+                             HAWK_RANGE, which the whole station follows.)
+     · coat_rack           — nearest approach to the butt       → 0.77 clear
+     · waste_bin           — nearest approach to the butt       → 0.79 clear
+     · the archive shelving is merged into the static room mesh, so it has no
+       mesh of its own to measure and this one is from source: it occupies
+       z 8.55–9.05 across x -12.5…-9.5, the distance stakes' north faces sit at
+       z 9.27, and the platform is west of the shelving entirely
+                                                                → 0.22 clear
+   NO DESK IS ON THE LINE. The nearest is AGENT P's at [-5.5, 8.2]: the firing
+   line passes 2.05 south of it and terminates in the butt 1.8 west of it. That
+   was the constraint that ruled out the two other open runs — the central
+   walkway fires straight into the kitchenette counter, and the east lane fires
+   through MINI-MEH's chair.
+
+   Only TWO rectangles are registered, not six. The platform and the butt are the
+   two things an agent must not walk through; the rack, the quiver, the stakes and
+   the slate are slim props, and registering the rack as well pushed its inflated
+   rectangle into the filing cabinets' and sealed the south-west pocket off the
+   nav graph. Sealing it would not have crashed anything — buildNav's flood fill
+   simply blocks whatever is not in the largest component — but it would have
+   silently taken a walkable corner away from every ambient errand, and nothing
+   about an archery range needs that. */
+/* BESIDE GROX MULDER, at the owner's instruction, and the spot was MEASURED rather than
+   picked: the north-east quadrant is the busiest on the floor (GROX at 7.78,-10.8,
+   MURDOCK at 9.7,-5.6, JAMES BOUND at 15.4,-7.0, and the wall at x=17), and a sweep of
+   every registered solid found NO clear 8.6-unit lane anywhere near him. The longest
+   clear run within reach is 5.5 units from (10,-11) — 2.2 from GROX's desk — so the lane
+   was SHORTENED to suit the room rather than the room bent to suit the lane. The butt
+   moved 6.60 -> 5.00 and the distance stakes closed up with it. */
+const HAWK_RANGE = { x: 10.0, z: -11.0 };      // the shooting line, beside GROX MULDER
+solidRect(HAWK_RANGE.x, HAWK_RANGE.z, 1.22, 2.10);          // the shooting platform
+solidRect(HAWK_RANGE.x + 5.00, HAWK_RANGE.z, 0.44, 1.20);   // the straw butt, downrange
+
 buildNav();   // every fixture has registered its footprint by here
 
 const PICKABLE = [];
@@ -83137,6 +83229,543 @@ function botTick(dt, t) {
   g.position.y = Math.abs(Math.sin(t * 9)) * 0.025;      // the little tread bounce
 }
 
+/* ═══ HAWK-AI — the launch lane's watcher, and his archer station ═══════════════
+   HAWKEYE was an archer, and the name is the specification. An archer DRAWS,
+   HOLDS, RANGES, AND MOSTLY DOES NOT LOOSE, which is precisely what the pump.fun
+   launch lane does: it reads every new mint the feed carries, scores it against
+   the gates, and refuses nearly all of them. So he is built at full draw and
+   never released. That is not a pose chosen because it looks good from the
+   isometric camera — it is the only honest picture of a lane that has an opinion
+   about everything and an order for nothing.
+
+   HE IS WALL-ST-E'S SIBLING, DELIBERATELY, AND IN THE SAME IDIOM: the same local
+   bx()/m() pair over the one shared BOX geometry, no other primitive anywhere in
+   him, his workplace built as a Group positioned once with everything local to
+   it, a hidden pick box carrying a seat id, a nameplate sprite, a status lamp,
+   and a crew tile rendered from the live rig. What differs is the JOB, and the
+   geometry says so before the dossier does:
+
+     · WALL-ST-E is 1.35 tall, wide, on treads, and ROAMS. HAWK-AI is 2.05 to the
+       lamp, half his width at the waist, on two feet, and never leaves the line.
+       The stillness is the characterisation; a walk cycle would undo it.
+     · WALL-ST-E has BINOCULARS — two eyes, because he is looking at the thing in
+       front of him. HAWK-AI has ONE large scope with a small rangefinder offset
+       beside it, because he is looking at something a long way off and measuring
+       how far. The scope sits at x = -0.16, which is the bow's own centreline and
+       the string's plane: the eye is OVER the string, which is what makes the
+       draw read as aimed rather than as a man holding a stick.
+     · WALL-ST-E is rust-yellow. HAWK-AI is gunmetal and steel-blue. One accent
+       only, and it is P.amber — the brass the whole floor already wears — because
+       the brief was a sibling, not a new palette in the room.
+     · WALL-ST-E's den is HOARDED: five colours of compacted cube, jittered by
+       sin() so the stacks read hand-piled, a shelf of trinkets, a dock. The
+       archer station is DISCIPLINED: six items, every one square to the lane, no
+       jitter anywhere, and a tally slate with nothing written on it. One machine
+       keeps what it processes. The other only watches. That contrast is the
+       point, so it is in the geometry and not only in the dossier.
+
+   REJECTED, and worth writing down so it is not re-tried:
+     · A RIFLE. It ranges and it is still, and it would have been half the boxes.
+       It is also the wrong story: a rifle's characterisation is the shot. A bow
+       at full draw is the only weapon whose RESTING state is maximum effort held
+       indefinitely, which is the lane.
+     · A SIDE-ON STANCE, which is what a real archer takes. Squared to the target
+       with one foot advanced reads better from a fixed isometric camera — side-on
+       put his whole silhouette edge-on to the default yaw and the bow disappeared
+       into his body.
+     · AUTHORING HIM AS A WORKER on the roster, so the existing follow resolver
+       and dossier lookup would have picked him up for free. A Worker comes with
+       an errand routine and a walk cycle; the first thing he would have done is
+       leave the shooting line to visit the printer.                              */
+
+const hawkFig = (() => {
+  // Same two helpers as WALL-ST-E, same shared BOX, deliberately duplicated
+  // rather than hoisted: his block is meant to be readable on its own, and
+  // hoisting them would have meant editing his.
+  const m = (c, r = 0.6, e = null, ei = 0) => new THREE.MeshStandardMaterial({
+    color: c, roughness: r, ...(e ? { emissive: new THREE.Color(e), emissiveIntensity: ei } : {}) });
+  const bx = (parent, sx, sy, sz, x, y, z, mat) => {
+    const b = new THREE.Mesh(BOX, mat); b.scale.set(sx, sy, sz); b.position.set(x, y, z);
+    b.castShadow = renderer.shadowMap.enabled; parent.add(b); return b;
+  };
+
+  const GUNMETAL = 0x4b555c, PLATE = 0x39434a, STEELBLUE = 0x5f7d96,
+        METAL = 0x8b8f93, DARKTRIM = 0x2b3136,
+        STRAW = 0xc9ad6a, STRAW2 = 0xb39a5c, CANVAS = 0xe4dcc6,
+        RING = 0x8e9ba3, BRASS = 0xe0ad3d, WOOD = 0x8a6540, WOODDARK = 0x5f3e29;
+
+  /* A BOW OUT OF BOXES. There is no curve primitive in this file and there is not
+     going to be one, so each limb is five short boxes stepped along a circle of
+     radius R and tilted by the angle they sit at — the silhouette curves, every
+     piece is still a scaled BOX. Built in the local X-Y plane: limbs run up and
+     down Y, the belly and the string are toward -x, which is the archer's side.
+     `drawL` is how far back the string is pulled, in local -x. Pass nothing and
+     the string comes out straight tip to tip, which is a BRACED bow — that is the
+     spare on the rack. Pass a number and the string breaks into two segments
+     meeting at the nock, which is a bow AT FULL DRAW — that is the one he holds.
+     The difference between the two shapes is the entire characterisation, and it
+     is one argument. */
+  const makeBow = (parent, len, limbMat, strMat, drawL) => {
+    const b = new THREE.Group(); parent.add(b);
+    bx(b, 0.075, 0.30 * len, 0.05, 0, 0, 0, limbMat);                 // the riser / grip
+    bx(b, 0.055, 0.10, 0.062, 0, 0, 0, m(DARKTRIM, 0.5));             // the grip wrap
+    /* R AND da ARE NOT FREE. The first pass picked R = 0.6·len and stepped the
+       angle by 0.20 with 0.175-long segments, and it rendered as a COG: the
+       spacing between consecutive segments is R·da·cos(a), which at 0.6/0.20 is
+       0.12 at the grip and 0.07 at the tip, against segments 0.175 long — so
+       they overlapped by more than half and fanned out like gear teeth instead of
+       reading as one limb. The fix is to parametrise by ARC LENGTH, not by angle:
+       R·da is the spacing, the segment is that spacing plus a tenth for overlap,
+       and R is then set by the silhouette you want rather than chosen. Here the
+       limb is 0.63·len of arc with its tip pulled 0.16·len back toward the archer,
+       and R = arc/aMax falls out of those two numbers. */
+    const NSEG = 5, da = 0.1024, R = 1.22 * len, aMax = NSEG * da;
+    let tipX = 0, tipY = 0;
+    for (const s of [1, -1]) {
+      for (let i = 0; i < NSEG; i++) {
+        const a = (i + 0.5) * da;                                      // angle along the limb
+        const x = -R * (1 - Math.cos(a)), y = s * R * Math.sin(a);
+        const seg = bx(b, 0.05, R * da * 1.12, 0.046, x, y, 0, limbMat);
+        seg.rotation.z = -s * a;
+      }
+      // the recurve: one short segment at the tip kicked BACK the other way. It is
+      // the single detail that separates a recurve from a bent stick, and it is
+      // also what puts the string's bearing point where the eye expects it.
+      const tx = -R * (1 - Math.cos(aMax)), ty = s * R * Math.sin(aMax);
+      const tip = bx(b, 0.045, R * da * 1.0, 0.042, tx, ty, 0, limbMat);
+      tip.rotation.z = -s * (aMax - 0.30);
+      bx(b, 0.036, 0.05, 0.05, tx, ty + s * R * da * 0.5, 0, m(DARKTRIM, 0.5));  // nock groove
+      if (s === 1) { tipX = tx; tipY = ty + R * da * 0.5; }
+    }
+    if (drawL == null) {
+      bx(b, 0.02, tipY * 2, 0.02, tipX, 0, 0, strMat);                 // braced: one straight run
+    } else {
+      /* Drawn: two segments from each tip to the nock. A box's long axis is its
+         local +Y, so each segment is scaled to the tip→nock distance and turned
+         by atan2(-dx, dy) — the angle that carries +Y onto that direction. */
+      for (const s of [1, -1]) {
+        const dx = -drawL - tipX, dy = -s * tipY;
+        const L = Math.hypot(dx, dy);
+        const seg = bx(b, 0.02, L, 0.02, tipX + dx / 2, (s * tipY) + dy / 2, 0, strMat);
+        seg.rotation.z = Math.atan2(-dx, dy);
+      }
+      bx(b, 0.03, 0.055, 0.03, -drawL, 0, 0, m(BRASS, 0.5));           // the nocking point
+    }
+    return b;
+  };
+
+  /* AN ARROW OUT OF BOXES, built along local +x with the point at the +x end and
+     the fletching at the tail, so "which way is it flying" is the group's own
+     rotation and never a guess at the call site. Three vanes on sub-groups turned
+     120° apart around the shaft, because a flat pair of vanes reads as a lolly
+     stick from the one camera angle this floor ever uses. */
+  const makeArrow = (parent, len, shaftMat, headMat, fletchMat) => {
+    const a = new THREE.Group(); parent.add(a);
+    bx(a, len, 0.016, 0.016, 0, 0, 0, shaftMat);
+    bx(a, 0.075, 0.024, 0.024, len / 2 + 0.035, 0, 0, headMat);        // the point
+    bx(a, 0.03, 0.024, 0.024, -len / 2 - 0.01, 0, 0, headMat);         // the nock
+    for (let v = 0; v < 3; v++) {
+      const vg = new THREE.Group();
+      vg.position.set(-len / 2 + 0.085, 0, 0);
+      vg.rotation.x = v * (Math.PI * 2 / 3);
+      a.add(vg);
+      bx(vg, 0.12, 0.052, 0.012, 0, 0.034, 0, fletchMat);
+    }
+    return a;
+  };
+
+  /* ── THE ARCHER STATION ───────────────────────────────────────────────────
+     One Group, positioned once at the shooting line, everything local to it and
+     the lane running along local +x — the same construction as the den, so the
+     whole station can be moved by editing HAWK_RANGE and nothing else. NOT added
+     to `room`: the static merger would take its materials, and the target's
+     rings and the slate are the two things on this floor most likely to want
+     recolouring later. */
+  const range = new THREE.Group();
+  range.position.set(HAWK_RANGE.x, 0, HAWK_RANGE.z);
+  range.rotation.y = 0;
+  scene.add(range);
+
+  // the shooting platform: a low timber deck with a steel kerb at the back and a
+  // brass toe line at the front. The toe line is the only bright thing on the
+  // whole station, because it is the only thing on the station with a rule
+  // attached to it — you stand behind it.
+  bx(range, 1.22, 0.12, 2.06, 0, 0.06, 0, m(WOODDARK, 0.9));
+  for (let i = 0; i < 4; i++)                                          // deck boards
+    bx(range, 1.14, 0.025, 0.46, 0, 0.132, -0.75 + i * 0.50, m(WOOD, 0.85));
+  bx(range, 0.08, 0.17, 2.06, -0.63, 0.085, 0, m(GUNMETAL, 0.6));      // rear kerb
+  bx(range, 0.05, 0.022, 1.82, 0.47, 0.155, 0, m(BRASS, 0.45, BRASS, 0.35));  // TOE LINE
+
+  // the bow rack, behind and to his left: two uprights, two rails, two SPARE
+  // bows — braced, not drawn. The spares are the quiet half of the joke: the
+  // only bows on this floor at rest are the ones nobody is holding.
+  bx(range, 0.09, 0.07, 1.10, -1.12, 0.035, 0, m(GUNMETAL, 0.7));      // base rail
+  for (const dz of [-0.50, 0.50])
+    bx(range, 0.07, 1.06, 0.07, -1.12, 0.53, dz, m(GUNMETAL, 0.7));    // uprights
+  bx(range, 0.06, 0.05, 1.10, -1.12, 1.03, 0, m(STEELBLUE, 0.55));     // top rail
+  for (const [dz, ry] of [[-0.26, 0.35], [0.26, -0.28]]) {
+    const sb = makeBow(range, 0.86, m(WOOD, 0.7), m(0xf0e8d4, 0.9), null);
+    sb.position.set(-1.12, 0.60, dz);
+    sb.rotation.y = ry; sb.rotation.z = 0.06;
+  }
+
+  // the ground quiver, beside the line: a tilted tube on a plate with six arrows
+  // standing FLETCHINGS UP, which is how a quiver is loaded and the reason the
+  // arrow helper puts the point at +x — rotation.z = -π/2 turns +x into -y and
+  // the vanes come out on top for free.
+  {
+    const q = new THREE.Group();
+    q.position.set(-0.08, 0, -1.32);
+    q.rotation.z = 0.16;
+    range.add(q);
+    bx(q, 0.30, 0.05, 0.30, 0, 0.025, 0, m(GUNMETAL, 0.7));            // the base plate
+    bx(q, 0.17, 0.56, 0.17, 0, 0.33, 0, m(PLATE, 0.8));                // the tube
+    bx(q, 0.19, 0.04, 0.19, 0, 0.60, 0, m(STEELBLUE, 0.55));           // the collar
+    for (const [ax, az] of [[-0.045, -0.045], [0.045, -0.045], [-0.045, 0.045],
+                            [0.045, 0.045], [0, 0], [0.055, 0]]) {
+      const ar = makeArrow(q, 0.66, m(WOOD, 0.7), m(METAL, 0.4), m(BRASS, 0.8));
+      ar.position.set(ax, 0.62, az);
+      ar.rotation.z = -Math.PI / 2;
+      ar.rotation.y = ax * 2.0;                                        // a hair of splay
+    }
+  }
+
+  // the distance stakes, receding downrange along the lane's north edge, banded
+  // brass over steel-blue so they read as measured distance and not as fence
+  // posts. Three of them: 2.0, 3.6 and 5.2 out from the line.
+  for (const dx of [2.0, 3.6, 5.2]) {
+    bx(range, 0.06, 0.44, 0.06, dx, 0.22, -0.95, m(STEELBLUE, 0.7));
+    bx(range, 0.085, 0.07, 0.085, dx, 0.41, -0.95, m(BRASS, 0.5));
+  }
+
+  // the tally slate at the back of the stance — RULED AND EMPTY. The floor's
+  // other boards all carry numbers; this one has never had anything to write.
+  {
+    const sl = new THREE.Group();
+    sl.position.set(-1.12, 0, 1.06);
+    /* The written face is on the slate's +x side and the whole board is turned
+       -0.45, which points that face at +x and +z — the two directions the default
+       camera looks from (yaw π/4 puts -x/-z at the top of the screen). The first
+       pass had it on -x and the board presented its blank back to the entire
+       room, which for a prop whose ONLY content is its emptiness is the one
+       mistake that costs the joke. */
+    sl.rotation.y = -0.45;
+    range.add(sl);
+    for (const dz of [-0.26, 0.26]) bx(sl, 0.05, 0.78, 0.05, 0, 0.39, dz, m(WOODDARK, 0.85));
+    bx(sl, 0.05, 0.52, 0.66, 0, 0.94, 0, m(WOODDARK, 0.85));           // the frame
+    bx(sl, 0.02, 0.44, 0.58, 0.035, 0.94, 0, m(0x2f3a3e, 0.9));        // the slate itself
+    for (let i = 0; i < 4; i++)                                        // ruled lines, no entries
+      bx(sl, 0.008, 0.012, 0.50, 0.047, 1.10 - i * 0.10, 0, m(0x5a6a70, 0.9));
+  }
+
+  /* the straw butt, 6.6 downrange, face square to the shooting line. Three bales
+     with NO jitter — the den's cubes are turned by sin(r*7 + k*3) to read
+     hand-piled, and leaving that out here is deliberate: this thing was set up,
+     not accumulated.
+
+     THE FACE IS CLEAN. Concentric rings, crisp, and exactly ONE arrow in it,
+     low and out in the second ring. That arrow is the entire joke and the entire
+     point of the lane: the rings are there because he ranges everything, the
+     empty face is there because he refuses almost all of it, and the one hit is
+     there because "never" would be a different and less interesting claim than
+     "almost never". A face peppered with holes would have said this lane trades.
+     It does not. */
+  {
+    const butt = new THREE.Group();
+    butt.position.set(5.00, 0, 0);
+    range.add(butt);
+    for (const [dy, c] of [[0.20, STRAW], [0.58, STRAW2], [0.96, STRAW]])
+      bx(butt, 0.36, 0.38, 1.12, 0, dy, 0, m(c, 0.95));
+    for (const dz of [-0.40, 0.40])                                    // the binding straps
+      bx(butt, 0.38, 0.045, 0.07, 0, 0.58, dz, m(WOODDARK, 0.8));
+    for (const dz of [-0.46, 0.46]) {                                  // the back legs
+      const leg = bx(butt, 0.07, 1.16, 0.07, 0.33, 0.58, dz, m(GUNMETAL, 0.7));
+      leg.rotation.z = -0.24;            // leaning AWAY from the line, not into it
+    }
+    /* The face is 0.86 on a 1.12-wide butt, deliberately: at 1.00 it covered the
+       bales edge to edge and the thing stopped reading as STRAW and started
+       reading as a cupboard door. The 13cm of bale showing on each side is what
+       says what it is made of. */
+    bx(butt, 0.03, 0.86, 0.86, -0.19, 0.62, 0, m(CANVAS, 0.9));        // the face
+    for (const h of [0.37, 0.25, 0.13]) {                              // concentric rings
+      bx(butt, 0.012, 0.024, h * 2 + 0.024, -0.208, 0.62 + h, 0, m(RING, 0.85));
+      bx(butt, 0.012, 0.024, h * 2 + 0.024, -0.208, 0.62 - h, 0, m(RING, 0.85));
+      bx(butt, 0.012, h * 2 + 0.024, 0.024, -0.208, 0.62, h, m(RING, 0.85));
+      bx(butt, 0.012, h * 2 + 0.024, 0.024, -0.208, 0.62, -h, m(RING, 0.85));
+    }
+    bx(butt, 0.014, 0.10, 0.10, -0.212, 0.62, 0, m(BRASS, 0.5));       // the gold
+    const lone = makeArrow(butt, 0.52, m(WOOD, 0.7), m(METAL, 0.4), m(BRASS, 0.8));
+    /* x = -0.30, NOT +0.06. makeArrow points at +x and the butt's face is at
+       -0.19, so an arrow placed inside the bales points backwards out of the
+       straw — which is what the first render showed, as a single dot at the edge
+       of the face. At -0.30 the head is 0.22 into the bale past the canvas and
+       0.37 of shaft stands proud of it, which is what an arrow in a target looks
+       like from anywhere but directly down the lane. */
+    lone.position.set(-0.30, 0.42, 0.31);                              // low, second ring
+    lone.rotation.y = 0.12; lone.rotation.z = -0.10;
+  }
+
+  /* ── HAWK-AI HIMSELF ──────────────────────────────────────────────────────
+     Built facing local -z, which is WALL-ST-E's convention (his own tick comment
+     says "his face is on -z"), then the whole group is turned by -π/2 so that
+     face points down the lane at +x. Keeping the convention means his portrait
+     turntable, his pick box and his nameplate all behave exactly like the
+     robot's, and the one line that aims him is the one line to change.
+     Feet sit at y = 0.13, the top of the deck. */
+  const g = new THREE.Group();
+  g.position.set(HAWK_RANGE.x + 0.18, 0, HAWK_RANGE.z);
+  g.rotation.y = -Math.PI / 2;                                          // downrange, at +x
+
+  /* LINCOLN GREEN, and it is a colour the room already owns (0x2f6e3c is in the scene
+     before he is), so dressing him introduces no new paint to the floor. */
+  const lincoln = m(0x2f6e3c, 0.78), lincolnDark = m(0x1d5f4c, 0.82);
+  const gun = m(GUNMETAL, 0.62), plate = m(PLATE, 0.7), blue = m(STEELBLUE, 0.55),
+        joint = m(DARKTRIM, 0.55), metal = m(METAL, 0.45);
+
+  /* THE LEG-TO-TORSO SPLIT WAS MEASURED OFF A RENDER, NOT GUESSED. The first
+     pass gave him 0.64 of leg on a 1.85 frame — 35% — and side-on he read as
+     WALL-ST-E stretched rather than as a different build: a squat body on short
+     legs is the compactor's silhouette, and copying it was the one thing this
+     figure could not do. Legs are 0.74 on a 2.02 frame now, the chest is 2cm
+     narrower and 2cm shallower, and the waist between them is 0.26. He is 1.5×
+     the robot's height at roughly 0.85× his body width, which is the whole
+     "taller and slimmer" brief expressed as two numbers. */
+  bx(g, 0.19, 0.10, 0.36, -0.17, 0.18, -0.09, plate);                   // feet: one advanced,
+  bx(g, 0.19, 0.10, 0.36, 0.17, 0.18, 0.11, plate);                     //  the archer's stance
+  bx(g, 0.13, 0.74, 0.155, -0.16, 0.60, -0.05, gun);                    // legs, slim and long
+  bx(g, 0.13, 0.74, 0.155, 0.16, 0.60, 0.07, gun);
+  bx(g, 0.145, 0.05, 0.17, -0.16, 0.58, -0.05, blue);                   // knee bands
+  bx(g, 0.145, 0.05, 0.17, 0.16, 0.58, 0.07, blue);
+  bx(g, 0.34, 0.16, 0.25, 0, 1.05, 0.01, plate);                        // hips
+  bx(g, 0.26, 0.11, 0.20, 0, 1.16, 0.00, joint);                        // the narrow waist
+  bx(g, 0.38, 0.44, 0.25, 0, 1.40, 0.00, gun);                          // chest
+  bx(g, 0.28, 0.15, 0.03, 0, 1.46, -0.135, blue);                       // the one chevron
+
+  /* ── THE ROBINHOOD COSTUME ──────────────────────────────────────────────────
+     The owner's call, and it earns its place twice over: Robin Hood is THE archer,
+     and Robinhood is the other venue this company already trades — the RH tower,
+     the $CLAUDECO RH edition. A green hood on the launch-lane watcher is the same
+     joke the rest of the floor tells, which is why it is worn rather than painted:
+     every piece here is a LAYER over the machine, slightly proud of the gunmetal,
+     so he still reads as a robot in costume and never as a green robot. */
+  bx(g, 0.41, 0.40, 0.28, 0, 1.39, 0.00, lincoln);                      // the tunic
+  bx(g, 0.30, 0.20, 0.23, 0, 1.13, 0.00, lincoln);                      // its skirt, over the waist
+  bx(g, 0.42, 0.06, 0.29, 0, 1.19, 0.00, m(BRASS, 0.45));               // the belt
+  bx(g, 0.07, 0.09, 0.30, 0, 1.19, -0.16, m(BRASS, 0.4));               // its buckle
+  /* The cape falls from the shoulders and is CUT SHORT at the draw arm's side: a
+     full cloak swallowed the anchor hand and the pose stopped reading. */
+  bx(g, 0.34, 0.46, 0.05, -0.02, 1.36, 0.16, lincolnDark);              // the short cape
+
+  /* folded shoulder plates. Two per side, the lower one shorter and kicked out
+     further, which is what makes a pair of boxes read as a WING AT REST rather
+     than as pauldrons. They are also the only asymmetry he has: the right pair
+     sits under the quiver and is scaled a hair narrower so the two do not
+     interpenetrate at x 0.225. */
+  for (const s of [-1, 1]) {
+    const p1 = bx(g, s > 0 ? 0.085 : 0.095, 0.40, 0.29, s * 0.26, 1.48, 0.06, plate);
+    p1.rotation.z = -s * 0.13;
+    const p2 = bx(g, 0.075, 0.29, 0.23, s * 0.30, 1.33, 0.12, blue);
+    p2.rotation.z = -s * 0.22;
+  }
+
+  // the quiver on his back, tilted across the right shoulder
+  {
+    const q = new THREE.Group();
+    q.position.set(0.13, 1.50, 0.20);
+    q.rotation.set(-0.30, 0, -0.20);
+    g.add(q);
+    bx(q, 0.15, 0.54, 0.15, 0, 0, 0, plate);
+    bx(q, 0.17, 0.04, 0.17, 0, 0.24, 0, blue);
+    for (const [ax, az] of [[-0.035, -0.035], [0.035, -0.035], [-0.035, 0.035], [0.035, 0.035]]) {
+      const ar = makeArrow(q, 0.40, m(WOOD, 0.7), metal, m(BRASS, 0.8));
+      ar.position.set(ax, 0.30, az);
+      ar.rotation.z = -Math.PI / 2;
+    }
+  }
+
+  /* THE BOW ARM AND THE DRAW ARM — the whole reason he exists.
+     The bow hangs off the left hand at (-0.16, 1.50, -0.50) and its plane is
+     turned by +π/2 so the limb tips and the string come out on the ARCHER'S side
+     (+z, toward his chest) and not toward the target. drawL = 0.54 puts the nock
+     at (-0.16, 1.50, 0.02) — under his jaw, on the bow's own centreline. That
+     last part is the bit worth keeping: bow hand, string and anchor all in ONE
+     vertical plane through the aiming eye is what real form looks like, and it is
+     also what makes the silhouette legible. The first pass had the bow out at
+     x = -0.30 with the hand drawn to the cheek at x = +0.10; the string ran
+     diagonally across his chest and he read as a man carrying a harp. */
+  const bowHandX = -0.16, anchorY = 1.64;
+  const bowArm = bx(g, 0.115, 0.115, 0.50, -0.21, 1.62, -0.26, gun);    // bow arm, extended
+  bowArm.rotation.set(-0.08, 0.19, 0);
+  bx(g, 0.11, 0.13, 0.11, bowHandX, anchorY, -0.52, metal);             // the bow hand
+  /* THE LIMBS ARE BRASS, AND THAT IS A READABILITY FIX, NOT A DECORATION.
+     They were DARKTRIM (0x2b3136) — DARKER than his own GUNMETAL body (0x4b555c) — so
+     at the distance the floor is actually viewed from, the bow disappeared into his
+     chest and he read as a robot standing on a platform rather than an archer holding
+     at full draw. Looked at from four angles in a running build before changing it.
+     BRASS is the accent this floor already wears (his own toe line is brass), so the
+     bow separates hard against the gunmetal without introducing a colour the room does
+     not already have. The spare bows on the rack stay WOOD: they are braced and idle,
+     and only the drawn one needs to carry the pose. */
+  const bow = makeBow(g, 0.98, m(BRASS, 0.5), m(0xf0e8d4, 0.85), 0.56);
+  bow.position.set(bowHandX, anchorY, -0.54);
+  bow.rotation.y = Math.PI / 2;   // the bow's plane turned into the shooting plane
+
+  /* THE NOCKED ARROW, and it is not decoration. Without it the first render read
+     as a machine holding a bent frame at arm's length — the string was there, the
+     draw hand was there, and a reader still had to be told what he was doing.
+     One arrow on the string, its point 0.24 proud of the riser, and the pose
+     resolves instantly. It runs from the nock at local z +0.02 to z -0.78, which
+     is the same 0.56 of draw the string is built around, so the two can never
+     drift apart. */
+  const nocked = makeArrow(g, 0.80, m(WOOD, 0.7), metal, m(BRASS, 0.8));
+  nocked.position.set(bowHandX, anchorY, -0.38);
+  nocked.rotation.y = Math.PI / 2;                                      // point downrange, at -z
+
+  const drawUpper = bx(g, 0.115, 0.115, 0.30, 0.28, 1.65, 0.16, gun);   // elbow high and back
+  drawUpper.rotation.set(-0.34, 0.13, 0);
+  const drawFore = bx(g, 0.50, 0.10, 0.10, 0.085, 1.67, 0.16, gun);     // forearm to the anchor
+  drawFore.rotation.set(0, 2.57, 0.115);
+  const drawHand = bx(g, 0.11, 0.13, 0.10, -0.13, anchorY, 0.02, metal);    // AT ANCHOR
+
+  /* the head: a housing with a beak taper, ONE scope and a rangefinder beside it.
+     Its own Group so the scan can turn the head without turning the draw — the
+     draw is the thing that must never move. Origin at (0, 1.62, 0.02), which is
+     the neck joint, so rotation.y sweeps about the neck and not about his hips. */
+  bx(g, 0.11, 0.15, 0.11, 0, 1.70, 0.03, joint);                        // neck
+  const head = new THREE.Group();
+  head.position.set(0, 1.76, 0.02);
+  g.add(head);
+  bx(head, 0.30, 0.26, 0.34, -0.02, 0.10, -0.02, gun);                  // housing
+  bx(head, 0.22, 0.17, 0.12, -0.04, 0.08, -0.22, gun);                  // beak, first taper
+  bx(head, 0.13, 0.10, 0.12, -0.05, 0.06, -0.31, plate);                // beak, second taper
+  bx(head, 0.32, 0.05, 0.22, -0.02, 0.24, 0.00, blue);                  // the brow crest
+  bx(head, 0.175, 0.175, 0.13, -0.16, 0.12, -0.16, metal);              // THE scope housing
+  const eye = bx(head, 0.13, 0.13, 0.02, -0.16, 0.12, -0.235,
+                 m(0x0e1418, 0.3, 0x7fd0e0, 0.45));                     // the scope lens
+  bx(head, 0.095, 0.085, 0.075, 0.07, 0.14, -0.175, plate);             // rangefinder housing
+  const finder = bx(head, 0.05, 0.05, 0.02, 0.07, 0.14, -0.215,
+                    m(0x0e1418, 0.3, 0x7fd0e0, 0.35));                  // rangefinder lens
+
+  /* THE HOOD AND THE CAP, parented to the HEAD so they sweep with the scan — a hat
+     that stayed facing downrange while the head turned under it read as a hat on a
+     shelf. The cowl sits BEHIND and ABOVE the housing and deliberately does not
+     cover the scope or the beak: covering either takes the face off the machine,
+     and the scope is the one part of him that says what he does. The cap is the
+     silhouette that carries the whole joke — a folded point over the crown with a
+     feather raked back off it, which is readable at floor distance when a tunic
+     alone is not. */
+  bx(head, 0.33, 0.20, 0.14, -0.02, 0.20, 0.13, lincoln);               // the hood's cowl
+  bx(head, 0.31, 0.14, 0.10, -0.02, 0.30, 0.09, lincoln);               // its crown
+  bx(head, 0.26, 0.10, 0.24, -0.02, 0.345, 0.01, lincoln);              // the cap body
+  bx(head, 0.16, 0.08, 0.13, -0.02, 0.40, -0.09, lincolnDark);          // its folded point
+  const feather = bx(head, 0.035, 0.26, 0.045, 0.13, 0.45, 0.02,
+                     m(0xdf7655, 0.75));                                // the feather, coral
+  feather.rotation.set(-0.42, 0, -0.28);
+
+  /* the status lamp, on a mast off the body and NOT on the head — a lamp that
+     swings with the scan is a lamp nobody can read at a glance, which is the one
+     job it has. Same mast-and-cube construction as WALL-ST-E's, same 0.09 cube,
+     so the two machines report status in the same visual language. */
+  bx(g, 0.024, 0.28, 0.024, 0.22, 1.76, 0.15, joint);
+  const lamp = bx(g, 0.09, 0.09, 0.09, 0.22, 1.94, 0.15, m(0x70828a, 0.4, 0x70828a, 0.8));
+
+  const plateSprite = makeSprite("HAWK-AI", 0.62, { bg: "#1e2a33", accent: "#5f7d96" });
+  plateSprite.position.set(0, 2.46, 0);
+  g.add(plateSprite);
+
+  const hit = new THREE.Mesh(BOX, new THREE.MeshBasicMaterial({ visible: false }));
+  hit.scale.set(0.9, 2.16, 0.9); hit.position.set(0, 1.10, 0);
+  hit.userData.seat = "__hawk";
+  g.add(hit); PICKABLE.push(hit);
+  scene.add(g);
+  return { g, range, head, eye, finder, lamp, bow, drawHand };
+})();
+window.__hawkGroup = hawkFig.g;
+window.__hawk = () => ({ x: +hawkFig.g.position.x.toFixed(2), z: +hawkFig.g.position.z.toFixed(2),
+                         yaw: +hawkFig.head.rotation.y.toFixed(3), ...window.__hawkStatus() });
+
+/* THE HOOK, DEFINED HERE AND FED FROM NOWHERE YET — which is the correct state.
+ * This mirrors window.__botHeartbeat / __botStatus exactly, including the
+ * three-minute stale rule: a heartbeat older than that is a MEMORY, not a fact,
+ * and it must not colour a lamp. Nothing in this scene fetches — the panels that
+ * already poll set the field, and the scene only reads it — so until a panel
+ * publishes a pulse, exists is false, observing is false, wouldEnter is false and
+ * he stands dark. That is what the floor will show today, and it is accurate:
+ * the launch lane is off.
+ *
+ * HIS LAMP IS NEVER GREEN, AND THERE IS NO BRANCH THAT COULD MAKE IT GREEN.
+ * Green on this floor means live trading — it is what WALL-ST-E's lamp turns when
+ * real orders are going out — and HAWK-AI never trades. The three states are the
+ * three states, and the amber one means WOULD HAVE ENTERED, not entered:
+ *     dark grey       lane off (the default)
+ *     cyan, pulsing   observing
+ *     amber, steady   a candidate cleared every gate
+ * If a fourth state is ever wanted, it is not green. */
+window.__hawkHeartbeat = null;                     // {observing, wouldEnter, seenAt} | null
+window.__hawkStatus = () => {
+  const hb = window.__hawkHeartbeat;
+  const fresh = hb && hb.seenAt && (Date.now() - hb.seenAt) < 3 * 60e3;
+  return { exists: !!hb, observing: !!(fresh && hb.observing), wouldEnter: !!(fresh && hb.wouldEnter) };
+};
+
+/* The scan. [yaw, seconds to reach it, seconds to hold there] — and the HOLDS are
+   longer than the sweeps on purpose. Measured against the reference this file
+   already trusts for motion: WALL-ST-E pauses 1.8–4.4s between legs while walking
+   at 1.35/s, so a watcher whose sweeps are quicker than the robot's pauses would
+   read as agitated rather than patient. He spends 3.4s and 3.8s looking straight
+   down the lane and about 2s at each edge — most of his time is spent on the
+   target he is not going to shoot. */
+const HAWK_SWEEP = [[-0.62, 2.6, 2.1], [0.00, 1.9, 3.4], [0.58, 2.6, 2.0], [0.00, 1.9, 3.8]];
+const hawkState = { i: 0, t: 0, phase: "move", from: 0, observing: false, wouldEnter: false };
+
+function hawkPose(observing) {
+  // The optic is always faintly lit — it is a lens with a reticle in it, not a
+  // status claim — and brightens when the lane is actually reading. The LAMP is
+  // the claim, and it is driven separately in hawkTick.
+  hawkFig.eye.material.emissiveIntensity = observing ? 0.85 : 0.45;
+  hawkFig.finder.material.emissiveIntensity = observing ? 0.70 : 0.30;
+}
+hawkPose(false);
+
+setInterval(() => {
+  const hs = window.__hawkStatus?.();
+  hawkState.observing = !!(hs && hs.exists && hs.observing);
+  hawkState.wouldEnter = !!(hs && hs.wouldEnter);
+  hawkPose(hawkState.observing);
+  const c = hawkState.wouldEnter ? 0xe0ad3d        // amber: cleared every gate
+          : hawkState.observing  ? 0x49b6c9        // cyan: observing
+          : 0x70828a;                              // grey: lane off. NEVER green.
+  hawkFig.lamp.material.color.set(c);
+  hawkFig.lamp.material.emissive.set(hawkState.observing || hawkState.wouldEnter ? c : 0x3a4448);
+}, 3000);
+
+function hawkTick(dt, t) {
+  const S = hawkState, F = hawkFig;
+  // the sweep: ease to a stop, hold, ease to the next. smoothstep rather than a
+  // linear ramp because a scan DECELERATES into what it is looking at — a linear
+  // sweep reads as a turret, which is the wrong machine.
+  const leg = HAWK_SWEEP[S.i];
+  S.t += dt;
+  if (S.phase === "move") {
+    const k = Math.min(1, S.t / leg[1]);
+    F.head.rotation.y = S.from + (leg[0] - S.from) * (k * k * (3 - 2 * k));
+    if (k >= 1) { S.phase = "hold"; S.t = 0; }
+  } else if (S.t >= leg[2]) {
+    S.from = leg[0];
+    S.i = (S.i + 1) % HAWK_SWEEP.length;
+    S.phase = "move"; S.t = 0;
+  }
+  // He does not walk, so there is no tread bounce to borrow. What a body holding
+  // a draw actually does is breathe against it: 4mm at about one cycle every six
+  // seconds. Small enough that the stance still reads as held, large enough that
+  // he is not a statue.
+  F.g.position.y = Math.sin(t * 1.05) * 0.004;
+  const L = F.lamp.material;
+  if (S.wouldEnter) L.emissiveIntensity = 0.95;                          // steady amber
+  else if (S.observing) L.emissiveIntensity = 0.34 + Math.sin(t * 0.85) * 0.26;  // slow cyan pulse
+  else L.emissiveIntensity = 0.10;                                       // dark
+}
+
 window.applyIdentity = (identity) => {
   if (!identity || identity.isHQ) return;
   const spec = STAFF.find((x) => x.id === "CEO");
@@ -83217,6 +83846,55 @@ function openDossier(seatId) {
   dossierEl.dataset.seat = seatId;
 }
 function closeDossier() { dossierEl.classList.remove("on"); delete dossierEl.dataset.seat; }
+
+/* HAWK-AI's personnel file opens through the same card, and he reaches it the
+   same way WALL-ST-E does: a hidden pick box carrying a seat id, straight into
+   openDossier(). But that function resolves its spec through a two-branch
+   ternary — "__bot", else the STAFF roster — and he is deliberately in neither,
+   so a click on him found `undefined` and the card silently refused to open.
+
+   The fix is a WRAPPER, not an edit. The existing function is left exactly as it
+   was, every seat it already knows about is forwarded to it untouched, and only
+   "__hawk" is handled here. That is worth the few extra lines: openDossier is the
+   path WALL-ST-E, all eighteen staff and the crew legend all take, and widening
+   its lookup for a figure that is not on any roster is how a third branch and
+   then a fourth get added to something eighteen callers depend on. A function
+   declaration's binding is mutable, so the reassignment below is all it takes,
+   and every call site resolves it at call time. */
+const openDossierRoster = openDossier;
+openDossier = function (seatId) {
+  if (seatId !== "__hawk") return openDossierRoster(seatId);
+  const d = DOSSIER.__hawk || {};
+  dStampEl.textContent = "Observation post · outside the trading pipeline";
+  dNameEl.textContent = "HAWK-AI";
+  dSeatEl.textContent = "__hawk · Launch-lane watcher · observe-only";
+  dBodyEl.innerHTML =
+    (d.brief ? `<p class="dbrief">${esc(d.brief)}</p>` : "") +
+    `<div class="drow"><span class="dk">Asks</span><p class="dq">` +
+      esc("Does this launch clear every gate — and it still is not an order, so what did we learn?") +
+    `</p></div>` +
+    (d.detail ? `<div class="drow"><span class="dk">Method of work</span><p class="dv">${esc(d.detail)}</p></div>` : "") +
+    `<div class="drow"><span class="dk">Runs as</span><p class="dv">` +
+      `<span class="dkind code">${KIND_LABEL.code}</span>` +
+      (d.method ? ` &nbsp;${esc(d.method)}` : "") + `</p></div>` +
+    (d.known ? `<div class="drow"><span class="dk">Known for</span><p class="dv">${esc(d.known)}</p></div>` : "") +
+    (d.note ? `<p class="dnote">${esc(d.note)}</p>` : "");
+
+  const fBtn = document.createElement("button");
+  fBtn.className = "dp-btn";
+  fBtn.style.marginTop = "10px";
+  const fLabel = () => followSeat === seatId ? "Stop following" : "\u{1F3A5} Follow HAWK-AI";
+  fBtn.textContent = fLabel();
+  fBtn.addEventListener("click", () => {
+    if (followSeat === seatId) { followSeat = null; updateHint(); }
+    else followFigure(seatId);
+    fBtn.textContent = fLabel();
+  });
+  dBodyEl.appendChild(fBtn);
+
+  dossierEl.classList.add("on");
+  dossierEl.dataset.seat = seatId;
+};
 
 document.getElementById("d-close").addEventListener("click", closeDossier);
 addEventListener("keydown", (e) => {
@@ -83394,6 +84072,7 @@ function frame() {
   }
   separateFigures(dt);
   botTick(dt, elapsed);
+  hawkTick(dt, elapsed);
   breatheDeskLights(elapsed);
   if (window.__grokZzz && window.__grokZzz.visible) {
     const z = window.__grokZzz;
@@ -83935,6 +84614,20 @@ for (const s of STAFF) {
   sp.onclick = () => openDossier("__bot");
   legendEl.appendChild(sp);
 }
+{
+  // The watcher is crew too — same tile, same turntable, different job. The
+  // swatch is only a placeholder: paintCrewPortraits() replaces it below with a
+  // strip rendered off his live rig, exactly as it does for the robot.
+  const sp = document.createElement("span");
+  const i = document.createElement("i");
+  i.style.background = "#3a4750";
+  legendTiles["__hawk"] = i;
+  sp.append(i, document.createTextNode("HAWK-AI"));
+  sp.style.cursor = "pointer";
+  sp.title = "The launch-lane watcher — he observes and refuses; he does not trade";
+  sp.onclick = () => openDossier("__hawk");
+  legendEl.appendChild(sp);
+}
 
 /* …and then each tile becomes an actual portrait of that agent's model.
    Rendered from the live rig, so a costume change shows up here for free — no
@@ -83957,9 +84650,13 @@ async function paintCrewPortraits() {
 
   const wasBg = scene.background, wasFog = scene.fog;
 
-  // every agent, then the tenant's own robot
+  // every agent, then the tenant's own robot, then the launch lane's watcher.
+  // HAWK-AI needs no `bot: true`: that flag exists to wake WALL-ST-E out of his
+  // sleep pose for the shot, and HAWK-AI has no sleep pose to wake from — he is
+  // already standing at full draw, which is the frame his tile wants anyway.
   const subjects = STAFF.map((spec) => ({ id: spec.id, g: workers[spec.id]?.g }))
-    .concat([{ id: "__bot", g: botFig.g, bot: true }]);
+    .concat([{ id: "__bot", g: botFig.g, bot: true },
+             { id: "__hawk", g: hawkFig.g, hawk: true }]);
   try {
     for (const sub of subjects) {
       if (!sub.g) continue;
@@ -86933,7 +87630,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · arms on install"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "4b3b9c99be014b9d55639a20c51eb17f4d3f7279";
+    const releaseCommit = "f22d04192b1c82b73ab8a8366d97469bf701af52";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "f743f5b52c7c03b253ecfd2e52b54adca8ddb845c18f07c74025cdc8941fcefb";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -89450,7 +90147,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "4b3b9c99be014b9d55639a20c51eb17f4d3f7279";
+    const executorReleaseCommit = "f22d04192b1c82b73ab8a8366d97469bf701af52";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
