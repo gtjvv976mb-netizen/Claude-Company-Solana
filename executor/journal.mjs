@@ -20,8 +20,16 @@ const INTENT_STATES = new Set([
  * itself while the desk is unreachable — same levels, same ruler, same code. It is an
  * exit in every rule below: a safety exit for the conflict lock, a realized event for the
  * risk ledger, exempt from trigger re-validation like desk_exit. */
-const INTENT_KINDS = new Set(["entry", "risk_exit", "desk_exit", "mirror_exit"]);
-export const EXIT_INTENT_KINDS = Object.freeze(["desk_exit", "risk_exit", "mirror_exit"]);
+/* snipe_entry / snipe_exit are the launch lane's own kinds. They are declared HERE, with
+ * the desk's, rather than in a lane-local list, because the conflict lock and the risk
+ * ledger read this set: a snipe exit that were not a first-class exit kind would not take
+ * the lock against a desk exit on the same mint, and its realized loss would not reach
+ * dailyLossLimitSol. Sharing the ledger is deliberate — a loss is a loss to the same
+ * wallet — and it means two sniper losses at the live cap end BOTH lanes for the day. */
+const INTENT_KINDS = new Set(["entry", "risk_exit", "desk_exit", "mirror_exit",
+  "snipe_entry", "snipe_exit"]);
+export const EXIT_INTENT_KINDS = Object.freeze(["desk_exit", "risk_exit", "mirror_exit",
+  "snipe_exit"]);
 const WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112";
 export const LEGACY_CALL_IDENTITY_POLICY = "liquidate-on-next-valid-same-mint-desk-exit";
 // Bump only when the rules that authorize construction/disclosure of signed bytes

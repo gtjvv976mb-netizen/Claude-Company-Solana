@@ -36,6 +36,12 @@ const RUNTIME_FILES = Object.freeze([
   "package-lock.json",
 ]);
 const ALLOWED_ENV = new Set([
+  /* THE LAUNCH LANE (observe-only). SNIPE_LANE defaults to "off" in poller.mjs, so an
+     install that never sets it is unchanged — but the variable has to be able to REACH
+     the process, or the lane can never be switched on by the owner at all. Allowlisting
+     it does not enable it, and it cannot enable signing: snipeLaneConfig() refuses
+     SNIPE_LANE=execute at parse time, before a lane object exists. */
+  "SNIPE_LANE", "SNIPE_TICK_MS",
   "BLOCK_HEIGHT_WINDOW", "BOOK_HEAT_MAX", "CC_API", "CC_FLOOR", "CC_SECRET",
   "DAILY_LOSS_LIMIT_SOL",
   /* desk-led-v4 (2026-09-05). How long the desk may be consecutively unreachable before

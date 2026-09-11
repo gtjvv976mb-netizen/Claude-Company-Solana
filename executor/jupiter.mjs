@@ -5,6 +5,7 @@
  * transaction, one deterministic signature, and one recovery path. The exact
  * signed bytes are journaled before /execute ever sees them.
  */
+import { assertNetworkFeeBudget, MAX_GROSS_RENT_LAMPORTS } from "./network-fee-budget.mjs";
 import bs58 from "bs58";
 import {
   ComputeBudgetProgram,
@@ -37,7 +38,11 @@ export const EXECUTION_READINESS_AMOUNT_LAMPORTS = 5_000_000;
  * poller's ceiling. (jupiter.mjs cannot import poller.mjs — poller imports jupiter.) */
 export const EXECUTION_READINESS_MAX_AMOUNT_LAMPORTS = 400_000_000;
 export const EXECUTION_READINESS_RESERVE_LAMPORTS = 10_000_000;
-export const MAX_GROSS_RENT_LAMPORTS = 4_200_000;
+/* ONE DEFINITION, RE-EXPORTED. The rent ceiling and the fee gate below now live in
+   network-fee-budget.mjs so the sniper lane and this envelope cannot drift apart on what
+   a fee ceiling means. It is re-exported here because poller.mjs and live-roundtrip-test
+   import it from this module; both paths now resolve to the same value. */
+export { MAX_GROSS_RENT_LAMPORTS };
 export const WRITABLE_SNAPSHOT_ATTEMPTS = 3;
 export const WRITABLE_SNAPSHOT_REQUEST_TIMEOUT_MS = 4_000;
 export const PROCESSED_SLOT_ANCHOR_REQUEST_TIMEOUT_MS = 2_000;
@@ -172,18 +177,18 @@ export function validateOrderEnvelope(order, expected, cfg) {
   const signatureFee = finite(order.signatureFeeLamports ?? 0, "signature fee");
   const priorityFee = finite(order.prioritizationFeeLamports ?? 0, "priority fee");
   const rentFee = finite(order.rentFeeLamports ?? 0, "rent fee");
-  if ([signatureFee, priorityFee, rentFee].some((value) => value < 0))
-    throw new Error("Jupiter returned a negative fee estimate");
-  const networkFees = signatureFee + priorityFee;
-  if (networkFees > cfg.maxNetworkFeeLamports)
-    throw new Error(`non-rent network fees ${networkFees} lamports exceed cap ${cfg.maxNetworkFeeLamports}`);
-  const feeBasis = BigInt(String(expected.feeBasisLamports ?? expected.amountRaw));
-  const maxNetworkFeePct = Number(cfg.maxNetworkFeePct ?? 10);
-  if (feeBasis <= 0n || !Number.isFinite(maxNetworkFeePct) || maxNetworkFeePct < 0 ||
-      BigInt(Math.ceil(networkFees)) * 10_000n > feeBasis * BigInt(Math.floor(maxNetworkFeePct * 100)))
-    throw new Error(`estimated network fees exceed ${maxNetworkFeePct}% of the trade basis`);
-  if (rentFee > (cfg.maxRentLamports ?? MAX_GROSS_RENT_LAMPORTS))
-    throw new Error(`rent ${rentFee} lamports exceeds cap ${cfg.maxRentLamports ?? MAX_GROSS_RENT_LAMPORTS}`);
+  /* THE NETWORK-FEE CEILING, ONE COPY. This block was inline here; it now lives in
+     network-fee-budget.mjs and is called from both this envelope and the sniper lane.
+     Same constants, same integer arithmetic, same message text — test-network-fee-budget
+     pins that it is behaviour-identical. A second copy is how two lanes come to disagree
+     about what a fee cap means, which is the failure this lift exists to prevent. */
+  assertNetworkFeeBudget({
+    signatureFeeLamports: signatureFee,
+    prioritizationFeeLamports: priorityFee,
+    rentFeeLamports: rentFee,
+    feeBasisLamports: expected.feeBasisLamports ?? expected.amountRaw,
+    cfg,
+  });
   return order;
 }
 

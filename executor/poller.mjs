@@ -821,8 +821,14 @@ function clearBalanceBlock(pos) {
  * the latch and the intent it will submit can never disagree about which it is. */
 const exitKindForIntentId = (intentId) => {
   const id = String(intentId || "");
+  /* snipe-exit: MUST be named here and not left to fall through. The final branch is a
+     DEFAULT, not a match — every unrecognised prefix is stamped "risk_exit" — so without
+     this clause a snipe latch would carry the desk's kind, and desk-mirror.mjs
+     mirrorLatchExpiry would reason about it as a risk_exit determination. A lane is not
+     told apart by where the code lives; it is told apart by what the record says. */
   return id.startsWith("desk-exit:") ? "desk_exit"
-    : id.startsWith("mirror-exit:") ? "mirror_exit" : "risk_exit";
+    : id.startsWith("mirror-exit:") ? "mirror_exit"
+    : id.startsWith("snipe-exit:") ? "snipe_exit" : "risk_exit";
 };
 
 function latchExit(pos, why, intentId, trigger = null, meta = {}) {
@@ -3193,3 +3199,91 @@ queueUnreportedFillsFromJournal();
 log(`resuming ${openList().length} position(s) from cursor ${S.cursor}`);
 await tick();
 setInterval(tick, POLL_MS);
+
+/* ── THE LAUNCH LANE, OBSERVE-ONLY AND OFF UNLESS ASKED FOR ──────────────────────────
+ *
+ * A second lane in this process, watching pump.fun launches and recording what it WOULD
+ * have done. It has no desk, so it carries its own exit determiner (snipe-policy.mjs);
+ * it shares no book, no engine and no config namespace with the desk
+ * (test-snipe-separation.mjs holds all six clauses).
+ *
+ * FOUR PROPERTIES, EACH DELIBERATE:
+ *
+ * 1. OFF BY DEFAULT. Absent SNIPE_LANE the block below does nothing at all — not a
+ *    timer, not a socket, not an import side effect. An installed bot that never sets
+ *    the variable behaves exactly as it did before this existed.
+ * 2. NOTHING SIGNS. createSnipeLane REFUSES lane=execute outright: there is no signing
+ *    path in the lane and no keypair is loaded on it. Arming is a separate owner
+ *    decision, not a flag flip, and the lane cannot be talked into it from here.
+ * 3. ITS OWN TWO ENDPOINTS, UNCONDITIONALLY. secondaryConn above is null whenever
+ *    EXECUTE is off — which is exactly the configuration the observe lane ships in — so
+ *    the lane opens its own pair. A shadow book that validated a two-endpoint witness
+ *    rule the live lane could not run would be measuring a rule that does not exist.
+ * 4. IT CANNOT TAKE THE DESK DOWN. Construction and every tick are wrapped: a lane that
+ *    throws is logged and disabled, and the trading loop above continues untouched. An
+ *    observation lane is worth exactly nothing if it can stop the bot that earns.
+ */
+const SNIPE_LANE_MODE = String(process.env.SNIPE_LANE || "off").trim().toLowerCase();
+if (SNIPE_LANE_MODE !== "off") {
+  try {
+    const [{ createSnipeLane, snipeLaneConfig }, { PUMPFUN_VENUE }] = await Promise.all([
+      import("./snipe-lane.mjs"),
+      import("./snipe-venue-pumpfun.mjs"),
+    ]);
+    const laneCfg = snipeLaneConfig(process.env);
+    /* Its own pair, never the desk's — see property 3. The lane reads through a narrow
+       {id, read} port rather than a Connection: it needs the SLOT alongside the accounts
+       (the witness rule compares reads BY SLOT, and a read whose slot is unknown cannot
+       witness anything), and naming each endpoint is what lets a disagreement between
+       them be attributed instead of averaged. */
+    const laneReader = (label, endpoint) => {
+      const c = new Connection(endpoint, solanaRpcConnectionConfig());
+      return {
+        id: label,
+        async read(_mint, addresses) {
+          const keys = (Array.isArray(addresses) ? addresses : [addresses])
+            .filter(Boolean).map((a) => new PublicKey(String(a)));
+          const res = await c.getMultipleAccountsInfoAndContext(keys);
+          return { slot: res?.context?.slot ?? null, accounts: res?.value ?? [] };
+        },
+      };
+    };
+    const laneReaders = [
+      laneReader("primary", RPC),
+      laneReader("secondary", SECONDARY_RPC),
+    ];
+    const lane = createSnipeLane({
+      venue: PUMPFUN_VENUE,
+      readers: laneReaders,
+      cfg: laneCfg,
+      /* THE SAME KILL SWITCHES THE DESK OBEYS, not a second pair. The lane refuses to
+         construct without this and takes no default, on the stated grounds that an
+         UNCHECKED sentinel is not the same fact as an ABSENT one — so it is handed the
+         desk's own readers. An owner who drops the hard-stop file stops both lanes with
+         one action, which is the only behaviour that is safe to remember under pressure.
+         Booleans are coerced here because the lane demands strict booleans and these
+         helpers already return them; a truthy string would be accepted by neither. */
+      control: () => ({ hardStop: hardStop() === true, pauseEntries: pauseEntries() === true }),
+      log: (msg) => log(`[snipe] ${msg}`),
+    });
+    const snipeTickMs = Number(process.env.SNIPE_TICK_MS || 1_000);
+    let laneFaulted = false;
+    setInterval(async () => {
+      if (laneFaulted) return;
+      try {
+        await lane.tick(Date.now());
+      } catch (err) {
+        laneFaulted = true;
+        log(`[snipe] lane disabled after a tick fault — the desk is unaffected: ${err?.message || err}`);
+      }
+    }, snipeTickMs);
+    log(`[snipe] launch lane up in ${laneCfg.lane} mode, ${snipeTickMs}ms tick, ` +
+      `${laneReaders.length} endpoints — nothing is signed on this path`);
+  } catch (err) {
+    /* Deliberately not fatal. The desk was running before the lane existed and must go on
+       running if it cannot start: a missing module, a bad SNIPE_* value or an unreachable
+       secondary endpoint are all reasons to have no shadow book, and none of them is a
+       reason to stop trading. */
+    log(`[snipe] launch lane did not start (${err?.message || err}) — the desk is unaffected`);
+  }
+}

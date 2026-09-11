@@ -10,7 +10,17 @@ const POSITION_FLAGS = ["callIdentityIncomplete", "accountingIncomplete", "balan
   "riskDataUnavailable", "exitExecutionRequired", "manualExitRequired"];
 
 const TRADING_RUNTIME_FILES = Object.freeze([
-  "poller.mjs", "journal.mjs", "jupiter.mjs", "balance-verification.mjs",
+  "poller.mjs", "journal.mjs", "jupiter.mjs", "network-fee-budget.mjs",
+  /* THE LAUNCH LANE. Dynamically imported by poller.mjs behind SNIPE_LANE, so inert on an
+     install that never sets it — but "the trading process can load it" is exactly the test
+     for whether a file belongs in the fingerprint. A module that can execute in this
+     process and is not fingerprinted is a module that can be swapped without the heartbeat
+     noticing. snipe-feed.mjs is deliberately ABSENT: the lane takes a feed as an argument
+     rather than importing one, so the trading process never loads it — and this list must
+     match what is loaded EXACTLY, in both directions. */
+  "snipe-lane.mjs", "snipe-venue.mjs", "snipe-venue-pumpfun.mjs", "snipe-curve.mjs",
+  "snipe-entry.mjs", "snipe-book.mjs", "snipe-shadow.mjs", "snipe-policy.mjs",
+ "balance-verification.mjs",
   "entry-quote-guard.mjs", "exit-trigger.mjs", "feed-drain.mjs", "sol-usd-oracle.mjs",
   "heartbeat-health.mjs", "sleep-assertion.mjs", "strategy.mjs", "trade-policy.mjs",
   // desk-led-v4: both are loaded by the trading process, so both are part of its identity.
