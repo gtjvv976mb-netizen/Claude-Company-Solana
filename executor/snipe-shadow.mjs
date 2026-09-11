@@ -457,6 +457,14 @@ export function addForwardSample(row, sample = {}) {
     endpointVerdict: ENDPOINT_VERDICTS.includes(sample.endpointVerdict) ? sample.endpointVerdict : "single",
     action: isStr(sample.action) ? sample.action : null,
     reason: isStr(sample.reason) ? sample.reason : null,
+    /* THE DEPLOYER'S BALANCE, and the note about it. Added explicitly because this shape is
+       a whitelist on purpose — a row that carried whatever a caller passed is how a P&L
+       figure ends up in a book that refuses to produce one. These two are observations, not
+       outcomes: the balance the exit signal watches, and why it did or did not apply.
+       "The creator holds nothing" must be visible in the record, or silence reads as
+       reassurance when it actually means the signal could never fire. */
+    creatorBaselineRaw: durable(sample.creatorBaselineRaw, "creatorBaselineRaw"),
+    creatorNote: isStr(sample.creatorNote) ? sample.creatorNote : null,
   });
   return Object.freeze({ ...row, forward: Object.freeze([...row.forward, s]) });
 }

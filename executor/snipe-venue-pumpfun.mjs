@@ -180,6 +180,10 @@ import {
   constantProductExactOut,
   constantProductSellExactIn,
 } from "./snipe-curve.mjs";
+/* The two token-program ids, imported rather than re-typed: the associated-token address
+   takes the program as a SEED, so a typo here is a valid-looking pubkey for an account
+   that never exists — and a creator balance that reads as absent rather than as unchanged. */
+import { TOKEN_PROGRAM, TOKEN_2022_PROGRAM } from "./token2022.mjs";
 
 export const PUMPFUN_VENUE_ID = "pumpfun";
 export const PUMPFUN_VENUE_VERSION = "snipe-venue-pumpfun-v1";
@@ -509,6 +513,54 @@ export function globalAddress() {
  *  response without guessing. Exported because a positional contract nobody can read is a
  *  transposition waiting to happen. */
 export const PUMPFUN_ACCOUNT_ROLES = Object.freeze(["bondingCurve", "global", "mint"]);
+
+/**
+ * THE MANAGEMENT READ, which is the entry read plus the deployer's own token accounts.
+ *
+ * snipe-policy.mjs carries a branch that sells the whole position when the creator sells,
+ * and calls it "the one signal a launch has that no later market does". It could not fire,
+ * because nothing ever told it: stepOne passed a literal false. These two extra addresses
+ * are what it takes to tell it.
+ *
+ * TWO ADDRESSES, NOT ONE, because the associated-token address depends on which token
+ * program owns the mint — it is a SEED — and guessing wrong yields a real-looking pubkey
+ * for an account that will never exist. pump.fun mints are Token-2022 today (13 of 13 in
+ * the layout sweep) and that is a fact about today, not about the program. Both candidates
+ * are derived and whichever exists is the answer. The cost is two entries in a
+ * getMultipleAccounts that is already being made.
+ */
+export const PUMPFUN_HELD_ACCOUNT_ROLES = Object.freeze([
+  ...PUMPFUN_ACCOUNT_ROLES, "creatorTokenAccountLegacy", "creatorTokenAccount2022",
+]);
+
+/** The deployer's associated token accounts for this mint, under both token programs. */
+export function creatorTokenAccounts({ mint, creator }) {
+  const owner = need(creator, "creator");
+  const m = need(mint, "mint");
+  return Object.freeze([TOKEN_PROGRAM, TOKEN_2022_PROGRAM].map((tokenProgram) =>
+    pda([b58(owner), b58(tokenProgram), b58(m)], ATA_PROGRAM)));
+}
+
+/**
+ * An SPL token account's balance, or null if these bytes are not that account.
+ *
+ * IT CHECKS THE MINT AND THE OWNER BEFORE IT BELIEVES THE NUMBER. Offset 64 holds a u64 in
+ * every token account and in a good many other things; reading it out of whatever arrived
+ * is how a stray account becomes a balance. Since a fall in this number can trigger a full
+ * market sell, a wrong decode here is not a display bug — it is a liquidation.
+ *
+ * Token and Token-2022 share the first 165 bytes, so one decoder serves both; a Token-2022
+ * account with extensions is longer, and the base fields stay where they are.
+ */
+export function decodeTokenAmount(data, { mint, owner } = {}) {
+  let buf;
+  try { buf = toBytes(data, "token account"); } catch { return null; }
+  if (buf.length < 72) return null;
+  if (mint && base58Encode(buf.subarray(0, 32)) !== mint) return null;
+  if (owner && base58Encode(buf.subarray(32, 64)) !== owner) return null;
+  return buf.readBigUInt64LE(64);
+}
+
 
 /* ── decoding ──────────────────────────────────────────────────────────────────────── */
 
@@ -1367,7 +1419,19 @@ export const PUMPFUN_VENUE = Object.freeze({
        trip instead of costing a second one. */
     return [bondingCurveAddress(mint), globalAddress(), new PublicKey(mint)];
   },
+  /* The same three, plus the deployer's two candidate token accounts. Used only on the
+     management path, where the creator is already known from the fill — the entry path
+     cannot call this, because at entry there is no position and therefore no creator. */
+  accountsForHeld(mint, { creator } = {}) {
+    const base = [bondingCurveAddress(mint), globalAddress(), new PublicKey(mint)];
+    if (!creator) return base;
+    return [...base, ...creatorTokenAccounts({ mint, creator }).map((a) => new PublicKey(a))];
+  },
   curveFromAccount,
+  /* On the adapter as well as exported, because the lane reaches it through the venue
+     facade and a module-level import would bypass the facade the lane is built around. */
+  decodeTokenAmount,
+  creatorTokenAccounts,
   quoteExactIn,
   quoteExactOut,
   sellExactIn,

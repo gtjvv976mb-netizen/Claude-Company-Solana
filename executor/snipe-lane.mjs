@@ -209,6 +209,11 @@ export const SNIPE_LANE_DEFAULTS = Object.freeze({
      reason: it is the smallest run in which a single outlier cannot be the whole story.
      At the default 1s tick that is three seconds of being unable to price a position. */
   disagreeStreakMax: 3,
+  /* How far the deployer's balance must fall before it counts as them getting out. Not
+     zero: a token account can move by dust for reasons that are not a decision, and this
+     signal sells the entire position. Ten percent is a deliberate disposal and not an
+     accident. */
+  creatorExitFrac: 0.10,
 });
 
 /**
@@ -260,10 +265,10 @@ export const LANE_SIGNALS = Object.freeze({
   trail: "wired",
   take: "wired",
   timeStop: "wired",
-  /* UNWIRED. Detecting it needs the creator's token balance for this mint watched across
-     reads (the curve carries `creator`, and the ATA derives from it), which is one more
-     account per tick per position. Until that exists the branch is unreachable. */
-  creatorSold: "unwired",
+  /* WIRED 2026-09-11. stepOne reads the deployer's token accounts alongside the curve and
+     watches the balance against a baseline taken at the first readable tick. Witnessed
+     across every endpoint unanimously, because a fall here sells the whole position. */
+  creatorSold: "wired",
 });
 
 export const SNIPE_ENV = Object.freeze({
@@ -291,6 +296,7 @@ export const SNIPE_ENV = Object.freeze({
   SNIPE_MAX_CREATOR_SHARE_PCT: Object.freeze({ key: "maxCreatorSharePct", parse: "number" }),
   SNIPE_MAX_LAUNCH_SHARE_PCT: Object.freeze({ key: "maxLaunchSharePct", parse: "number" }),
   SNIPE_DISAGREE_STREAK_MAX: Object.freeze({ key: "disagreeStreakMax", parse: "number" }),
+  SNIPE_CREATOR_EXIT_FRAC: Object.freeze({ key: "creatorExitFrac", parse: "number" }),
 });
 
 /* Every env name must carry the prefix that keeps the two config objects apart. Asserted
@@ -414,7 +420,8 @@ export function effectiveLaneConfig(cfg = {}) {
  * when asked to assert. Refusals are never clamps: a dial quietly moved to a safe value is
  * a bot trading a number its owner never chose.
  */
-export function armabilityReport({ cfg = {}, venue = null, stopExplicit = false } = {}) {
+export function armabilityReport({ cfg = {}, venue = null, stopExplicit = false,
+  signals = LANE_SIGNALS } = {}) {
   const items = [];
   const add = (name, okFlag, detail) => items.push({ name, ok: okFlag === true, detail });
 
@@ -450,10 +457,12 @@ export function armabilityReport({ cfg = {}, venue = null, stopExplicit = false 
       `stop ${e.stopFrac}x entry, tightest fundable at this size ${e.tightestFundableStopFrac.toFixed(4)}x`);
   } catch (err) { add("stop_is_fundable", false, err.message); }
 
-  const unwired = Object.entries(LANE_SIGNALS).filter(([, v]) => v !== "wired").map(([k]) => k);
+  /* `signals` is injectable ONLY so a test can knock one out and prove this item can still
+     go red. Nothing in the application passes it; the default is the real table. */
+  const unwired = Object.entries(signals).filter(([, v]) => v !== "wired").map(([k]) => k);
   add("exit_signals_are_wired", unwired.length === 0,
     unwired.length === 0
-      ? `all ${Object.keys(LANE_SIGNALS).length} exit signals reach the determiner`
+      ? `all ${Object.keys(signals).length} exit signals reach the determiner`
       : `${unwired.join(", ")} ${unwired.length === 1 ? "is a branch that" : "are branches that"} cannot fire — `
         + "the policy has the rule, the fact never arrives, and a dead branch reads as a protection to "
         + "whoever reviews the exits");
@@ -558,11 +567,13 @@ export function bindDeterminer(policy = snipePolicy) {
        happened to `hardStop` on its first wiring: stepOne passed it, this forwarded
        nothing, and the kill switch looked connected while reaching nothing. */
     step({ position, markX, nowMs, cfg, creatorSold = false, rugFlag = false,
-      hardStop = false, sample = null }) {
+      hardStop = false, creatorSoldDetail = null, sample = null }) {
       if (hasNew)
-        return policy.snipeStep({ pos: position, sample: sample ?? { markX, nowMs }, cfg, nowMs, hardStop });
+        return policy.snipeStep({ pos: position, sample: sample ?? { markX, nowMs }, cfg, nowMs,
+          hardStop, creatorSold, creatorSoldDetail });
       return policy.snipePolicy({
         position, mark: markX, nowMs, config: cfg?.policy ?? {}, creatorSold, rugFlag, hardStop,
+        creatorSoldDetail,
       });
     },
   });
@@ -653,6 +664,13 @@ export async function readAcrossEndpoints({ readers, addresses, mint }) {
     endpoints: Object.freeze(view.map((v) => Object.freeze({
       id: v.id, slot: v.slot, present: v.present, digest: v.digest, error: v.error,
     }))),
+    /* EVERY ENDPOINT'S FULL ANSWER, so a caller can witness an account this function does
+       not itself judge. `present`, `digest` and the verdict above are computed from
+       accounts[0] — the bonding curve — and nothing else, so an address added to the read
+       list rides along unwitnessed. That is harmless for a read nobody acts on and not
+       harmless for the creator's balance, where a single lying node would otherwise be
+       able to trigger a full market sell. stepOne cross-checks it across this. */
+    all: Object.freeze(view.map((v) => Object.freeze({ id: v.id, slot: v.slot, accounts: v.accounts }))),
   });
 }
 
@@ -960,7 +978,14 @@ export function createSnipeLane({
   async function stepOne(pos) {
     const mint = pos.mint;
     const now = clock();
-    const read = await readAcrossEndpoints({ readers, addresses: adapter.accountsFor(mint), mint });
+    /* The management read carries the deployer's two candidate token accounts when the
+       adapter offers them and the fill recorded a creator. Falls back to the entry list,
+       so an adapter without accountsForHeld simply has no creator signal rather than
+       throwing — and LANE_SIGNALS is what says so out loud. */
+    const heldAddresses = typeof adapter.accountsForHeld === "function"
+      ? adapter.accountsForHeld(mint, { creator: pos.creator ?? null })
+      : adapter.accountsFor(mint);
+    const read = await readAcrossEndpoints({ readers, addresses: heldAddresses, mint });
     let curve = null;
     if (read.verdict === "agree" || read.verdict === "single") {
       try { curve = adapter.curveFromAccount(read.accounts[0], { feeBps: venueFeeBps(), mint }) ?? null; }
@@ -983,6 +1008,66 @@ export function createSnipeLane({
        handleNotice has always consulted control(); stepOne never did, which made the hard
        stop an entry gate wearing a kill switch's name. Read here so one file still stops
        both lanes AND reaches what is already open. */
+    /* ── DID THE DEPLOYER GET OUT? ─────────────────────────────────────────────────
+     *
+     * snipe-policy.mjs calls this "the one signal a launch has that no later market
+     * does", and until now nothing told it: stepOne passed a literal false, so the branch
+     * could not fire. This is what tells it.
+     *
+     * WITNESSED ACROSS EVERY ENDPOINT, UNANIMOUSLY. readAcrossEndpoints judges presence
+     * and digest on accounts[0] — the curve — and nothing else, so these two addresses
+     * ride along unwitnessed by the verdict. A fall here triggers a FULL MARKET SELL, so
+     * one lying node must not be able to cause one: the balance is decoded from every
+     * endpoint's own answer and a fall counts only when they all agree on it.
+     *
+     * A BALANCE THAT FALLS IS THE SIGNAL, not a sale specifically. On chain a sale and a
+     * transfer to a fresh wallet look identical, and on a launch the second is the first
+     * with an extra step. Naming it "sold" would be the narrower claim; the reason string
+     * says what was actually measured.
+     *
+     * AND "THE CREATOR HOLDS NOTHING" IS NOT "THE CREATOR HAS NOT SOLD". Measured on
+     * mainnet: of four sampled deployers, two had no token account for their own mint at
+     * all and two held exactly zero. A baseline of zero can never fall, so the signal is
+     * inapplicable rather than quiet, and the position records which. */
+    let creatorExited = false, creatorNote = null;
+    let creatorBaselineRaw = pos.creatorBaselineRaw ?? null;
+    if (pos.creator && heldAddresses.length > adapter.accountsFor(mint).length) {
+      const first = adapter.accountsFor(mint).length;   // where the creator accounts begin
+      const amountFrom = (accounts) => {
+        let total = null;
+        for (let i = first; i < heldAddresses.length; i++) {
+          const amt = adapter.decodeTokenAmount?.(accounts?.[i], { mint, owner: pos.creator });
+          if (amt === null || amt === undefined) continue;
+          total = (total ?? 0n) + amt;
+        }
+        return total;
+      };
+      const perEndpoint = (read.all ?? []).map((v) => amountFrom(v.accounts));
+      const answered = perEndpoint.filter((v) => v !== null);
+      const unanimous = answered.length === perEndpoint.length && answered.length > 0
+        && answered.every((v) => v === answered[0]);
+      if (unanimous) {
+        const nowRaw = answered[0];
+        if (creatorBaselineRaw === null) {
+          creatorBaselineRaw = String(nowRaw);
+          creatorNote = nowRaw === 0n ? "creator held nothing at the first readable tick" : null;
+        } else {
+          const base = BigInt(creatorBaselineRaw);
+          if (base > 0n) {
+            const fallen = base - nowRaw;
+            const frac = Number(fallen * 10000n / base) / 10000;
+            if (frac >= Number(effective.creatorExitFrac)) {
+              creatorExited = true;
+              creatorNote = `the deployer's balance fell ${(frac * 100).toFixed(1)}% ` +
+                `(${base} -> ${nowRaw}) — sold or moved out, which on a launch is the same signal`;
+            }
+          }
+        }
+      } else if (answered.length) {
+        creatorNote = "endpoints disagree on the deployer's balance — not acting on one node's word";
+      }
+    }
+
     const sentinels = controlView();
 
     /* A DISAGREEMENT IS BLINDNESS, NOT HOSTILITY — UNTIL IT PERSISTS.
@@ -1014,7 +1099,8 @@ export function createSnipeLane({
       /* LANE_SIGNALS.creatorSold is "unwired" and this literal is why. Declared there so
          the armability checklist blocks on it, rather than living as a comment nobody
          reads next to a branch that silently never fires. */
-      creatorSold: false,
+      creatorSold: creatorExited,
+      creatorSoldDetail: creatorExited ? creatorNote : null,
       rugFlag: blindTooLong,
       sample: { markX, nowMs: now, slot: read.slot, endpoint: read.chosen?.id ?? null },
     });
@@ -1031,6 +1117,11 @@ export function createSnipeLane({
       endpointVerdict: read.verdict,
       action: step?.action ?? null,
       reason: step?.reason ?? null,
+      /* What the deployer's balance said this tick, including when it said nothing. A
+         signal that is inapplicable must be visibly inapplicable in the record, or a
+         reader counts silence as reassurance. */
+      creatorBaselineRaw,
+      creatorNote,
     });
 
     const aged = now - Number(pos.openedAt) >= Number(conf.holdMaxMs);
@@ -1041,7 +1132,8 @@ export function createSnipeLane({
       /* The determiner's own updated position is carried back into the book, which is what
          `updateSnipe` exists for: it re-runs the whole shape test and refuses anything that
          rewrites the fill. */
-      updateSnipe(S, { ...pos, ...(isPlainObject(step?.position) ? step.position : {}), mint, samples });
+      updateSnipe(S, { ...pos, ...(isPlainObject(step?.position) ? step.position : {}), mint, samples,
+        creatorBaselineRaw });
       return Object.freeze({ mint, action: step?.action ?? "hold", markX, closed: false });
     }
 

@@ -319,6 +319,7 @@ const hold = (reason, position) =>
  */
 export function snipePolicy({
   position, mark, nowMs, config = {}, creatorSold = false, rugFlag = false, hardStop = false,
+  creatorSoldDetail = null,
 } = {}) {
   const cfg = { ...SNIPE_DEFAULTS, ...config };
   const p = position;
@@ -361,9 +362,16 @@ export function snipePolicy({
   if (rugFlag) {
     return sell(1, "a chain fact turned hostile after entry — leaving on the fact, not the price", next);
   }
-  /* The single most informative event in a launch, and it exists in no later market. */
+  /* The single most informative event in a launch, and it exists in no later market.
+   *
+   * THE REASON CARRIES WHAT WAS MEASURED, not what it is called. The caller detects this
+   * by watching the deployer's token balance, and on chain a sale and a transfer to a
+   * fresh wallet are indistinguishable — on a launch the second is the first with an extra
+   * step. Calling it "sold" in the record would be a narrower claim than the evidence
+   * supports, so the detail the caller measured is appended verbatim when it has one. */
   if (creatorSold) {
-    return sell(1, "the creator sold — the one signal a launch has that no later market does", next);
+    return sell(1, "the creator is out — the one signal a launch has that no later market does" +
+      (creatorSoldDetail ? `: ${creatorSoldDetail}` : ""), next);
   }
   /* THE OWNER'S TAKE, and the only exit on this lane that fires on good news.
    *
