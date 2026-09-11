@@ -1499,6 +1499,24 @@ darwin_activate() {
     # paused and the operator lifts it as a separate, visible act.
     install -m 600 /dev/null "$PAUSE_FILE" 2>/dev/null || : > "$PAUSE_FILE"
     chmod 600 "$PAUSE_FILE"
+    # THE SOURCE CLONE IS PRISTINE SOURCE, AND macos-release.sh HAS TO RUN NODE FROM IT.
+    #
+    # verify_git_release() requires SOURCE_ROOT to be a git checkout whose HEAD equals
+    # --expected-commit, so the script cannot simply be run from the staged release — the
+    # release is not a checkout. But the script then runs launchd-runner.mjs out of that
+    # same clone, and launchd-runner.mjs imports @solana/web3.js at module scope (it needs
+    # Keypair to derive the wallet and prove it matches LIVE_TRADING_ACK). `npm ci` only
+    # ever runs in the STAGE dir, so the clone has no node_modules and the install died
+    # here with a bare ERR_MODULE_NOT_FOUND after every ceremony had already passed.
+    #
+    # Node resolves a bare specifier by walking UP from the importing file, so one symlink
+    # at the clone's executor/ level is enough. It points at the release's own
+    # node_modules — the tree `npm ci --ignore-scripts` just built and the integrity check
+    # already covered — so nothing unverified is introduced: the code is the git-verified
+    # clone, the dependencies are the release's.
+    if [ ! -e "$source_dir/node_modules" ] && [ -d "$release_dir/node_modules" ]; then
+      ln -s "$release_dir/node_modules" "$source_dir/node_modules" 2>/dev/null || true
+    fi
     echo "▶ staging and verifying the pinned release with macos-release.sh…"
     bash "$source_dir/macos-release.sh" stage \
       --expected-commit "$commit" \
