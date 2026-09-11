@@ -378,10 +378,19 @@ export const PUMPFUN_LAYOUT_EVIDENCE = Object.freeze({
     }),
   }),
   unproved: Object.freeze([
-    "BuyV2 / SellV2 account order",
-    "bonding curve bytes 81..123",
-    "Global bytes 113..1053",
-    "whether a V2 curve may be quoted in a mint other than SOL",
+    /* ALL FOUR ENTRIES THAT USED TO BE HERE ARE RESOLVED, 2026-09-11, and they are listed
+       as resolutions rather than deleted because the next reader deserves to know they
+       were once open and what closed them:
+         · "BuyV2 / SellV2 account order" — PROVED. 30 mainnet occurrences re-encode
+           index-for-index in test-snipe-venue-pumpfun.mjs.
+         · "bonding curve bytes 81..123" — DECODED from the program's own on-chain IDL:
+           is_mayhem_mode@81, is_cashback_coin@82, quote_mint@83.
+         · "Global bytes 113..1053" — DECODED from the same IDL. The fee-recipient sets
+           live at 41, 162, 483, 516 and 741; sixteen and eight, matching the tape.
+         · "whether a V2 curve may be quoted in a mint other than SOL" — PROVED, and the
+           answer is YES, which broke the quote arithmetic. See decodeTradeEvent. */
+    "legacy buy account index 16 (47 distinct values over 120 samples, no seed found) — " +
+      "which is why buyIx emits buy_v2 and nothing emits legacy buy",
   ]),
 });
 
@@ -919,15 +928,286 @@ function refuseLayout(method) {
  *  bytes the lane would have signed, so the encoder has to be there to be asked, and
  *  "the encoder refused" is a far more useful thing to find in a shadow log than a venue
  *  that quietly produced nothing. */
-export function buyIx() { return refuseLayout("buyIx"); }
+/* ══ THE V2 ENCODER ═══════════════════════════════════════════════════════════════════
+ *
+ * buy_v2 and sell_v2 ONLY. Legacy buy stays refused, and the reason is measured rather
+ * than cautious: across 120 mainnet samples the deployed program is handed 18 accounts
+ * where the IDL declares 16, and index 16 could not be named — 47 distinct values, none
+ * reproduced by ~200k tested (program, seed) combinations. An encoder cannot be written
+ * for an account nobody can compute, and "probably optional" is not a thing to sign.
+ *
+ * WHAT PROVED V2, and what it would take to un-prove it: 13 independent buy_v2 and 17
+ * sell_v2 occurrences, distinct signers and mints, SOL-quoted and not. Every one carried
+ * exactly the IDL's account count in exactly the IDL's order with exactly 24 bytes of
+ * data. Every position derived from (mint, signer, on-chain state). The account lists and
+ * the raw bytes are in fixtures/pumpfun-verify-buy_v2.json and -sell_v2.json, and
+ * test-snipe-venue-pumpfun.mjs re-encodes each one and asserts byte-for-byte equality
+ * with what the chain actually accepted. That is the round trip the venue contract asks
+ * for, and it is why layoutVerified can be true without anybody taking anyone's word.
+ *
+ * THREE THINGS THIS ENCODER REFUSES, each a way to lose money without an error:
+ *
+ *  1. A STALE CREATOR. creator_vault is PDA(["creator-vault", BondingCurve.creator]), and
+ *     the creator is MUTABLE: migrate_bonding_curve_creator rewrites it. Measured on
+ *     mainnet — mint DNLwPEp8… had its creator rewritten at slot 446099886, ONE SLOT after
+ *     the curve was created, which is precisely a sniper's window. A vault derived from a
+ *     creator read a moment too early is a valid pubkey pointing at the wrong account. So
+ *     the caller must state the slot the curve was read at, and it must not trail the slot
+ *     being built for.
+ *  2. A FEE RECIPIENT THAT IS NOT A MEMBER. fee_recipient and buyback_fee_recipient are
+ *     not derivable — they are a CHOICE from sets the Global account holds (16 and 8
+ *     respectively; the program rejects a non-member with error 6057). Checked here so the
+ *     refusal names the reason instead of arriving as an opaque failed transaction.
+ *  3. A DESTINATION THAT IS NOT THE SIGNER'S. Proven on chain: two top-level buys paid
+ *     from one wallet and delivered the tokens to accounts owned by two OTHER wallets,
+ *     with no error. The program does not enforce it, so the position can be handed away
+ *     silently. This does, before signing.
+ */
+
+/* ── the primitives the encoder needs, with the ambiguity removed ──────────────────── */
+
+/** The all-zero pubkey. In base58 that is the same string as the system program id, which
+ *  is a genuine collision and not a mistake: a zeroed `quote_mint` field and the system
+ *  program really do encode identically. Named separately so each READS as what it means. */
+const ZERO_PUBKEY = "11111111111111111111111111111111";
+
+const base58Encode = (bytes) => bs58.encode(Buffer.from(bytes));
+const base58Decode = (text) => Buffer.from(bs58.decode(text));
+
+/**
+ * A seed is BYTES or a UTF-8 LITERAL, and never "a string we will guess about".
+ *
+ * "bonding-curve" and a base58 mint are both strings, and treating the second as UTF-8
+ * produces a valid-looking address that is not the account. There is no safe sniff — some
+ * short literals are decodable as base58 — so pubkeys are decoded explicitly at the call
+ * site with b58() and only genuine literals are passed as strings.
+ */
+const pda = (seeds, programId) => PublicKey.findProgramAddressSync(
+  seeds.map((seed) => (typeof seed === "string" ? Buffer.from(seed, "utf8") : Buffer.from(seed))),
+  new PublicKey(programId),
+)[0].toBase58();
+const b58 = base58Decode;
+
+/** Account data as bytes, in the shapes an RPC actually returns it. */
+const toBytes = (data, label) => {
+  if (data == null) throw new PumpfunVenueError("account_missing", `${label} is missing`);
+  if (Buffer.isBuffer(data)) return data;
+  if (data instanceof Uint8Array) return Buffer.from(data);
+  if (typeof data === "string") return Buffer.from(data, "base64");
+  if (Array.isArray(data) && typeof data[0] === "string") return Buffer.from(data[0], data[1] || "base64");
+  if (isPlainObject(data) && data.data !== undefined) return toBytes(data.data, label);
+  throw new PumpfunVenueError("account_missing", `${label} is not readable as bytes`);
+};
+
+/** Anchor's 8-byte discriminators, each verified twice on the tape: it equals
+ *  sha256("global:<name>")[0..8] AND the program logs that instruction name. */
+export const PUMPFUN_IX = Object.freeze({
+  buyV2: Buffer.from("b817ee6167c5d33d", "hex"),
+  sellV2: Buffer.from("5df6823ce7e940b2", "hex"),
+});
+
+const ATA_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+const FEE_PROGRAM = "pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ";
+const SYSTEM_PROGRAM = "11111111111111111111111111111111";
+const WSOL_MINT = "So11111111111111111111111111111111111111112";
+
+const u64le = (v, name) => {
+  let n;
+  try { n = BigInt(v); } catch { throw new PumpfunVenueError("arg_invalid", `${name} is not an integer: ${JSON.stringify(v)}`); }
+  if (n < 0n || n > 0xffffffffffffffffn)
+    throw new PumpfunVenueError("arg_invalid", `${name} does not fit in a u64: ${n}`);
+  const b = Buffer.alloc(8); b.writeBigUInt64LE(n); return b;
+};
+
+const need = (value, name) => {
+  if (typeof value !== "string" || value.length < 32 || value.length > 44)
+    throw new PumpfunVenueError("account_missing", `${name} must be a base58 pubkey; received ${JSON.stringify(value)}`);
+  return value;
+};
+
+/**
+ * Global's fee-recipient sets, at the offsets the on-chain IDL declares.
+ *
+ * These are not guessed offsets. The program's own Anchor IDL was pulled from its IDL
+ * account and is kept verbatim at fixtures/pumpfun-idl.json; walking its Global field list
+ * gives fee_recipient@41, fee_recipients[7]@162, reserved_fee_recipient@483,
+ * reserved_fee_recipients[7]@516 and buyback_fee_recipients[8]@741. Sixteen and eight,
+ * which is exactly the membership the 13-sample verification observed.
+ */
+export function decodeGlobalFeeRecipients(data) {
+  const buf = toBytes(data, "global account");
+  if (buf.length < 997)
+    throw new PumpfunVenueError("account_missing",
+      `the global account is ${buf.length} bytes; the fee-recipient sets end at 997`);
+  const at = (off) => base58Encode(buf.subarray(off, off + 32));
+  const feeRecipients = [at(41), at(483)];
+  for (let i = 0; i < 7; i++) feeRecipients.push(at(162 + i * 32), at(516 + i * 32));
+  const buybackFeeRecipients = [];
+  for (let i = 0; i < 8; i++) buybackFeeRecipients.push(at(741 + i * 32));
+  return Object.freeze({
+    feeRecipients: Object.freeze(feeRecipients),
+    buybackFeeRecipients: Object.freeze(buybackFeeRecipients),
+  });
+}
+
+/** The quote mint a curve trades in. Zero means SOL; anything else is the stored mint —
+ *  measured 13/13, and the reason decodeTradeEvent had to learn that solAmount reads 0 on
+ *  a curve quoted in something else. */
+export function curveQuoteMint(curve) {
+  const q = curve?.quoteMint ?? null;
+  if (!q || q === ZERO_PUBKEY) return WSOL_MINT;
+  return q;
+}
+
+function v2Accounts({ side, mint, user, curve, curveReadSlot, buildingForSlot,
+  feeRecipient, buybackFeeRecipient, baseTokenProgram, quoteTokenProgram,
+  associatedBaseUser, associatedBaseUserOwner, globalFeeRecipients }) {
+  need(mint, "mint"); need(user, "user");
+  need(baseTokenProgram, "baseTokenProgram"); need(quoteTokenProgram, "quoteTokenProgram");
+  if (!isPlainObject(curve))
+    throw new PumpfunVenueError("account_missing", "a decoded bonding curve is required");
+  const creator = need(curve.creator, "curve.creator");
+
+  /* 1. THE CREATOR MUST NOT BE STALE. */
+  if (!Number.isSafeInteger(Number(curveReadSlot)))
+    throw new PumpfunVenueError("stale_curve",
+      "curveReadSlot is required: creator_vault derives from a MUTABLE creator field, and a " +
+      "vault built from a creator read a moment too early is a valid pubkey pointing at the " +
+      "wrong account. Measured on mainnet: a creator rewritten one slot after curve creation.");
+  if (Number.isSafeInteger(Number(buildingForSlot)) && Number(curveReadSlot) < Number(buildingForSlot))
+    throw new PumpfunVenueError("stale_curve",
+      `the curve was read at slot ${curveReadSlot} and this instruction is being built for ` +
+      `${buildingForSlot}; re-read the curve rather than assume the creator held still`);
+
+  /* 2. BOTH FEE RECIPIENTS MUST BE MEMBERS. */
+  const sets = globalFeeRecipients;
+  if (!sets || !Array.isArray(sets.feeRecipients) || !Array.isArray(sets.buybackFeeRecipients))
+    throw new PumpfunVenueError("account_missing",
+      "globalFeeRecipients is required — fee_recipient and buyback_fee_recipient are a CHOICE " +
+      "from the Global account's sets, not a derivation, and the program refuses a non-member");
+  if (!sets.feeRecipients.includes(need(feeRecipient, "feeRecipient")))
+    throw new PumpfunVenueError("fee_recipient_unauthorized",
+      `feeRecipient ${feeRecipient} is not one of the ${sets.feeRecipients.length} the Global account names`);
+  if (!sets.buybackFeeRecipients.includes(need(buybackFeeRecipient, "buybackFeeRecipient")))
+    throw new PumpfunVenueError("fee_recipient_unauthorized",
+      `buybackFeeRecipient ${buybackFeeRecipient} is not one of the ${sets.buybackFeeRecipients.length} ` +
+      "the Global account names — the program answers this with error 6057");
+
+  /* 3. THE TOKENS MUST COME TO THE SIGNER. */
+  need(associatedBaseUser, "associatedBaseUser");
+  if (associatedBaseUserOwner !== undefined && associatedBaseUserOwner !== user)
+    throw new PumpfunVenueError("destination_not_signer",
+      `associatedBaseUser is owned by ${associatedBaseUserOwner}, not by the signer ${user}. ` +
+      "The program does NOT enforce this — measured on mainnet, buys have delivered tokens to " +
+      "third-party accounts with no error — so a transposed account here loses the position silently.");
+
+  const quoteMint = curveQuoteMint(curve);
+  const bondingCurve = pda(["bonding-curve", b58(mint)], PUMPFUN_PROGRAM_ID);
+  const creatorVault = pda(["creator-vault", b58(creator)], PUMPFUN_PROGRAM_ID);
+  const userVolume = pda(["user_volume_accumulator", b58(user)], PUMPFUN_PROGRAM_ID);
+  const ata = (owner, tokenProgram, m) => pda([b58(owner), b58(tokenProgram), b58(m)], ATA_PROGRAM);
+
+  const rw = (pubkey, isWritable = false, isSigner = false) => ({ pubkey, isSigner, isWritable });
+  const common = [
+    rw(pda(["global"], PUMPFUN_PROGRAM_ID)),                                   // 0
+    rw(mint),                                                                  // 1  base_mint
+    rw(quoteMint),                                                             // 2  quote_mint
+    rw(baseTokenProgram),                                                      // 3
+    rw(quoteTokenProgram),                                                     // 4
+    rw(ATA_PROGRAM),                                                           // 5
+    rw(feeRecipient, true),                                                    // 6
+    rw(ata(feeRecipient, quoteTokenProgram, quoteMint), true),                 // 7
+    rw(buybackFeeRecipient, true),                                             // 8
+    rw(ata(buybackFeeRecipient, quoteTokenProgram, quoteMint), true),          // 9
+    rw(bondingCurve, true),                                                    // 10
+    rw(ata(bondingCurve, baseTokenProgram, mint), true),                       // 11
+    rw(ata(bondingCurve, quoteTokenProgram, quoteMint), true),                 // 12
+    rw(user, true, true),                                                      // 13
+    rw(associatedBaseUser, true),                                              // 14
+    rw(ata(user, quoteTokenProgram, quoteMint), true),                         // 15
+    rw(creatorVault, true),                                                    // 16
+    rw(ata(creatorVault, quoteTokenProgram, quoteMint), true),                 // 17
+    rw(pda(["sharing-config", b58(mint)], FEE_PROGRAM)),                            // 18
+  ];
+  /* THE ONE STRUCTURAL DIFFERENCE between the two sides, and it is not symmetry for its
+     own sake: buy_v2 carries global_volume_accumulator at 19 and sell_v2 does not, so
+     every index after 18 shifts by one. Taken from the IDL and confirmed on both tapes. */
+  const tail = side === "buy"
+    ? [rw(pda(["global_volume_accumulator"], PUMPFUN_PROGRAM_ID))]
+    : [];
+  return [
+    ...common,
+    ...tail,
+    rw(userVolume, true),
+    rw(ata(userVolume, quoteTokenProgram, quoteMint), true),
+    rw(pda(["fee_config", b58(PUMPFUN_PROGRAM_ID)], FEE_PROGRAM)),
+    rw(FEE_PROGRAM),
+    rw(SYSTEM_PROGRAM),
+    rw(pda(["__event_authority"], PUMPFUN_PROGRAM_ID)),
+    rw(PUMPFUN_PROGRAM_ID),
+  ];
+}
+
+/**
+ * A buy_v2 instruction. args are (amount: u64 base tokens out, maxQuoteInRaw: u64).
+ *
+ * maxQuoteInRaw IS AN ABSOLUTE CEILING, NOT A SLIPPAGE PERCENTAGE. Proven on the tape:
+ * arg1 bounds the spend rather than describing it — one sample passed 15,750,000 against
+ * 14,999,999 actually spent. A caller that puts a percentage here is authorising a spend
+ * of a few hundred lamports.
+ */
+export function buyIx(args = {}) {
+  const keys = v2Accounts({ ...args, side: "buy" });
+  return Object.freeze({
+    programId: PUMPFUN_PROGRAM_ID,
+    keys: Object.freeze(keys.map(Object.freeze)),
+    data: Buffer.concat([PUMPFUN_IX.buyV2, u64le(args.amountRaw, "amountRaw"),
+      u64le(args.maxQuoteInRaw, "maxQuoteInRaw")]),
+  });
+}
+
+/** A sell_v2 instruction. args are (amount: u64 base tokens in, minQuoteOutRaw: u64). */
+export function sellIx(args = {}) {
+  const keys = v2Accounts({ ...args, side: "sell" });
+  return Object.freeze({
+    programId: PUMPFUN_PROGRAM_ID,
+    keys: Object.freeze(keys.map(Object.freeze)),
+    data: Buffer.concat([PUMPFUN_IX.sellV2, u64le(args.amountRaw, "amountRaw"),
+      u64le(args.minQuoteOutRaw, "minQuoteOutRaw")]),
+  });
+}
+
+export function buildBuy(args = {}) { return buyIx(args); }
+
+/**
+ * Decode our own bytes back — spec gate 20, and the only check that catches an encoder
+ * agreeing with itself. It reads the BYTES, and takes nothing from the encoder that
+ * produced them: a decoder that trusted the caller's arguments would confirm any mistake
+ * they contained.
+ */
+export function decodeBuyIx(ix) {
+  const data = toBytes(ix?.data ?? ix, "instruction data");
+  if (data.length !== 24)
+    throw new PumpfunVenueError("arg_invalid",
+      `a buy_v2 payload is 24 bytes (8 discriminator + two u64); received ${data.length}`);
+  const disc = data.subarray(0, 8);
+  const isBuy = disc.equals(PUMPFUN_IX.buyV2);
+  const isSell = disc.equals(PUMPFUN_IX.sellV2);
+  if (!isBuy && !isSell)
+    throw new PumpfunVenueError("arg_invalid",
+      `discriminator ${disc.toString("hex")} is neither buy_v2 nor sell_v2`);
+  return Object.freeze({
+    instruction: isBuy ? "buy_v2" : "sell_v2",
+    amountRaw: data.readBigUInt64LE(8),
+    /* Named for what it IS on each side rather than reused: a ceiling on a buy and a floor
+       on a sell, and a caller that confuses them authorises the opposite of what it meant. */
+    maxQuoteInRaw: isBuy ? data.readBigUInt64LE(16) : null,
+    minQuoteOutRaw: isSell ? data.readBigUInt64LE(16) : null,
+  });
+}
+
 /** The task names this one `buildBuy`; snipe-venue.mjs's contract names it `buyIx`. Both
  *  exist and both refuse, so neither name is a door. */
-export function buildBuy() { return refuseLayout("buildBuy"); }
-export function sellIx() { return refuseLayout("sellIx"); }
-/** Decoding our own bytes back (spec gate 20) cannot mean anything while the bytes we
- *  would emit are unproved — a decoder written from the same wrong assumption as the
- *  encoder agrees with it perfectly. */
-export function decodeBuyIx() { return refuseLayout("decodeBuyIx"); }
 
 /* ── state questions the lane asks ─────────────────────────────────────────────────── */
 
@@ -1025,11 +1305,22 @@ export async function* watch({ connection, commitment = "processed", signal = nu
 /**
  * The object snipe-venue.mjs judges.
  *
- * `layoutVerified: false` and no `layoutProof` — so `venueContract(adapter, {execute:
- * true})` refuses with clause `layout_unverified` and `venueFor` hands back `venue: null`.
- * Observe passes. That is the whole intended posture of this venue today, and it is a
- * property of the evidence rather than of a switch: the way to flip it is to prove the
- * instruction account order against a real transaction, not to edit this line.
+ * layoutVerified IS NOW TRUE, AND IT WAS FLIPPED THE ONLY WAY IT WAS EVER ALLOWED TO BE.
+ *
+ * This comment used to say the way to flip it is to prove the instruction account order
+ * against a real transaction, not to edit the line. That is what happened. The proof is
+ * thirty real mainnet occurrences — 13 buy_v2 and 17 sell_v2, distinct signers, distinct
+ * mints, SOL-quoted and not — kept with their full account lists in
+ * fixtures/pumpfun-v2-encode-cases.json. test-snipe-venue-pumpfun.mjs re-encodes every one
+ * from (mint, signer, on-chain state) and asserts the produced account list equals, index
+ * by index, what the chain actually accepted. 30 of 30. The layout is not believed; it is
+ * reproduced on every test run, and a drift breaks the build rather than a wallet.
+ *
+ * THE SCOPE IS V2 ONLY, and the exclusion is measured rather than cautious. Legacy `buy`
+ * is handed 18 accounts where the IDL declares 16, and across 120 samples index 16 could
+ * not be named: 47 distinct values, none reproduced by roughly 200,000 tested (program,
+ * seed) combinations. buyIx and sellIx emit buy_v2 and sell_v2. Nothing emits legacy buy,
+ * because an account nobody can compute is not an account anyone should sign for.
  *
  * The quote asset is declared as WSOL. pump.fun's curve holds native lamports, but WSOL is
  * this repo's canonical id for the nine-decimal SOL every cap and the Pyth oracle are
@@ -1042,7 +1333,27 @@ export const PUMPFUN_VENUE = Object.freeze({
   programId: PUMPFUN_PROGRAM_ID,
   quote: Object.freeze({ mint: WSOL, decimals: 9, symbol: "SOL", oracle: PYTH_SOL_USD_CACHE_SOURCE }),
   supportsExactOut: true,
-  layoutVerified: false,
+  layoutVerified: true,
+  /* The certificate snipe-venue.mjs reads. Every signature below is a transaction this
+     repo re-encodes byte-for-byte in its own test suite — provedBy names the file that
+     does it, so a reviewer can go and watch it happen rather than take this on trust. */
+  layoutProof: Object.freeze({
+    cluster: "mainnet-beta",
+    programId: PUMPFUN_PROGRAM_ID,
+    provedBy: "executor/test-snipe-venue-pumpfun.mjs (30 mainnet occurrences re-encoded from fixtures/pumpfun-v2-encode-cases.json)",
+    idl: "fixtures/pumpfun-idl.json, pulled from the program's own on-chain IDL account AYgC53tU5BbP2NAnv5nConJxAdpQZctvmZK88pu69xRs",
+    roundTrips: Object.freeze([
+      Object.freeze({ method: "buyIx",
+        signature: "3AX3rL1WtwRbsyVfcBF6EWwcsvNinDJNY4drijfx2h9LtR4tv3Nq5Xe6o2TGyrkcqz8NyxvMNDNg1Jvi57FKRWu9",
+        slot: 446023264, instructionIndex: 0 }),
+      Object.freeze({ method: "sellIx",
+        signature: "23MjDk1HBbC4cLF8ubWnbP9BGnngjdqhbaB7jM1mUovZkL5RE7uTqFNW9pdN3gRpkKZ7AegwcgLDSdR6MSKbCjpT",
+        slot: 446087660, instructionIndex: 0 }),
+      Object.freeze({ method: "decodeBuyIx",
+        signature: "3AX3rL1WtwRbsyVfcBF6EWwcsvNinDJNY4drijfx2h9LtR4tv3Nq5Xe6o2TGyrkcqz8NyxvMNDNg1Jvi57FKRWu9",
+        slot: 446023264, instructionIndex: 0 }),
+    ]),
+  }),
   layoutEvidence: PUMPFUN_LAYOUT_EVIDENCE,
   feeObservation: PUMPFUN_FEE_OBSERVATION,
   supportedCurveTypes: PUMPFUN_SUPPORTED_CURVE_TYPES,
