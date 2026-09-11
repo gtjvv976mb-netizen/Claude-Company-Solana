@@ -136,6 +136,25 @@ export const SNIPE_DEFAULTS = Object.freeze({
   /* A sell quote that has collapsed relative to the buy side is the shape of a honeypot
      or a pulled pool. Expressed as a fraction of the mark the position was entered at. */
   liquidityFloorFrac: 0.10,
+  /* THE OWNER'S UPSIDE EXIT: sell the whole position when the mark reaches N x entry.
+   *
+   * NAMED takeAtEntryX AND NOT takeProfitX ON PURPOSE, for two separate reasons.
+   *
+   * First, strategy.mjs DEFAULTS already owns a key called takeProfitX, and
+   * test-snipe-separation.mjs clause 6 pins that these two namespaces share no key —
+   * because one shared name is one dial that moves both lanes. A near-miss spelling
+   * (takeProfitAtX) would pass that test and still read, to a human scanning two files,
+   * as the same setting. So the name is different in kind, not in punctuation.
+   *
+   * Second, it states its own BASIS. The mark this lane works in is a round-trip
+   * multiple: markX 1.0 already means "the sell returns what the buy paid at the venue".
+   * "2x" against ENTRY is therefore what an owner means by doubling their money, but it
+   * is NOT the realized return, because both legs of NETWORK fee sit outside the mark.
+   * Realized = takeAtEntryX / frictionX - 1. At a 0.4 SOL ticket that is +99.5%; at the
+   * frozen 0.005 SOL canary the SAME dial pays +63.6%, because friction there is 22% of
+   * the position. The dial does not change; what it is worth changes with size, and
+   * takeRealizedFrac() below exists so every surface prints the honest number. */
+  takeAtEntryX: 2,
 });
 
 /**
@@ -168,6 +187,93 @@ export function tightestFundableStopFrac({ sizeSol, feeReserveSol = 0.0005, maxF
   const distance = (2 * feeReserveSol) / (maxFeeShareOfStop * s);
   if (!Number.isFinite(distance) || distance >= 1) return 0;   // nothing is fundable
   return 1 - distance;
+}
+
+/**
+ * WHAT A TAKE ACTUALLY PAYS, which is not what the dial says.
+ *
+ * The mark is a round-trip multiple at the VENUE; both legs of network fee sit outside
+ * it. So a take at N x entry realizes N / frictionX - 1, and the gap between those two
+ * numbers is entirely a function of position size:
+ *
+ *     0.400 SOL   frictionX 1.0025   a 2x take realizes  +99.50%
+ *     0.050 SOL   frictionX 1.0202   a 2x take realizes  +96.04%
+ *     0.005 SOL   frictionX 1.2222   a 2x take realizes  +63.64%
+ *
+ * This is the same class of error as arming a "breakeven" stop at 1.0x, which this file
+ * already carries a scar from: a number that reads like profit and is not. Every surface
+ * that shows the owner their take — the ceremony, the dashboard, the journal reason —
+ * prints through here rather than repeating the dial back at them.
+ */
+export function takeRealizedFrac({ takeAtEntryX, frictionX: fx }) {
+  const t = Number(takeAtEntryX), f = Number(fx);
+  if (!Number.isFinite(t) || !Number.isFinite(f) || t <= 0 || f <= 0) return null;
+  return t / f - 1;
+}
+
+/**
+ * REFUSE A TAKE THAT IS INSIDE FRICTION, at config time, loudly.
+ *
+ * A take at or below frictionX is an instruction to sell at a loss the moment the
+ * position is briefly up — the exact shape of the bug that shipped a "breakeven" at
+ * entry and realized -18.18% on every position it claimed to protect. It is refused
+ * rather than clamped: clamping would move the owner's number silently, and the whole
+ * point of a dial is that the owner knows what it is set to.
+ *
+ * Returns the economics so the caller can PRINT them; throws only on a bad dial.
+ */
+export function assertTakeFundable({ takeAtEntryX, sizeSol, feeSolPerLeg,
+  fallbackFrictionX = SNIPE_DEFAULTS.fallbackFrictionX } = {}) {
+  const t = Number(takeAtEntryX);
+  if (!Number.isFinite(t) || t <= 1)
+    throw new Error(`takeAtEntryX must be a finite multiple above 1; got ${JSON.stringify(takeAtEntryX)}`);
+  const measured = frictionX({ sizeSol, feeSolPerLeg });
+  const fx = Number.isFinite(measured) && measured > 1 ? measured : Number(fallbackFrictionX);
+  if (!(t > fx))
+    throw new Error(
+      `a take at ${t}x entry is INSIDE this fill's round-trip cost of ${fx.toFixed(4)}x — ` +
+      `it would realize ${(takeRealizedFrac({ takeAtEntryX: t, frictionX: fx }) * 100).toFixed(2)}%, ` +
+      "which is an instruction to sell at a loss on the way up. Raise the take or raise the size.");
+  return Object.freeze({ frictionX: fx, realizedFrac: takeRealizedFrac({ takeAtEntryX: t, frictionX: fx }) });
+}
+
+/**
+ * REFUSE A STOP THE POSITION CANNOT FUND, and refuse a FROZEN stop at a raised size.
+ *
+ * stopFrac 0.20 is not a risk appetite — it is the tightest stop a 0.005 SOL ticket can
+ * carry under the desk's own fee rail, derived in the header above. At 0.4 SOL the
+ * tightest FUNDABLE stop is 0.99x entry, so carrying 0.20 to a raised size means an 80%
+ * drawdown before the stop speaks, on a position eighty times larger. That is not a
+ * setting anyone chose; it is a default outliving the arithmetic that produced it.
+ *
+ * So: a size at or below the canary keeps the default silently, and any size above it
+ * must state its stop explicitly. Fail-closed, and it makes the owner look at the number
+ * — the same job LIVE_CAPS_ACK does for the caps.
+ */
+export const SNIPE_CANARY_SIZE_SOL = 0.005;
+
+export function assertStopFundable({ stopFrac, sizeSol, explicit = false,
+  feeReserveSol = 0.0005, maxFeeShareOfStop = 0.25 } = {}) {
+  const s = Number(sizeSol), lvl = Number(stopFrac);
+  if (!Number.isFinite(lvl) || lvl < 0 || lvl >= 1)
+    throw new Error(`stopFrac must be a stop LEVEL in [0,1); got ${JSON.stringify(stopFrac)}`);
+  const tightest = tightestFundableStopFrac({ sizeSol: s, feeReserveSol, maxFeeShareOfStop });
+  if (tightest === null) throw new Error(`stopFrac needs a positive sizeSol; got ${JSON.stringify(sizeSol)}`);
+  /* AN EPSILON, AND THE REASON FOR IT IS NOT TIDINESS. The tightest fundable level at the
+     canary is computed as 1 - (2*0.0005)/(0.25*0.005) = 1 - 0.8, which in binary floating
+     point is 0.19999999999999996. Without a tolerance this guard refuses SNIPE_DEFAULTS
+     .stopFrac 0.20 at the very size it was derived for — the live configuration, rejected
+     by its own fundability check. Caught by running it, not by reading it. */
+  if (lvl > tightest + 1e-9)
+    throw new Error(
+      `a stop at ${lvl}x entry is TIGHTER than a ${s} SOL position can fund — the fee rail ` +
+      `caps it at ${tightest.toFixed(4)}x. A tighter stop needs a larger position, not a smaller one.`);
+  if (s > SNIPE_CANARY_SIZE_SOL && !explicit)
+    throw new Error(
+      `the default stop of ${lvl}x entry was derived for a ${SNIPE_CANARY_SIZE_SOL} SOL ticket; at ` +
+      `${s} SOL it is a ${((1 - lvl) * 100).toFixed(0)}% drawdown before it speaks. Set the stop ` +
+      `explicitly for this size (the tightest fundable here is ${tightest.toFixed(4)}x entry).`);
+  return Object.freeze({ tightestFundableStopFrac: tightest, stopFrac: lvl });
 }
 
 const median = (xs) => {
@@ -212,7 +318,7 @@ const hold = (reason, position) =>
  *                              appeared, pool pulled) — the caller's determination
  */
 export function snipePolicy({
-  position, mark, nowMs, config = {}, creatorSold = false, rugFlag = false,
+  position, mark, nowMs, config = {}, creatorSold = false, rugFlag = false, hardStop = false,
 } = {}) {
   const cfg = { ...SNIPE_DEFAULTS, ...config };
   const p = position;
@@ -234,12 +340,54 @@ export function snipePolicy({
      Being wrong here costs a premature exit at the true market. Being slow here costs
      the position. ─────────────────────────────────────────────────────────────────── */
 
+  /* THE OPERATOR'S HAND, AND IT REACHES THE OPEN POSITION.
+   *
+   * Until 2026-09-11 the hard stop was an ENTRY gate only: snipe-lane.mjs read control()
+   * inside handleNotice and never inside stepOne, so dropping the stop file stopped new
+   * snipes and did precisely nothing to a position already held. That cost nothing while
+   * nothing could be held. With a real bag it is the worst possible reading of a switch
+   * whose whole purpose is to be understood correctly by a worried person at 3am.
+   *
+   * IT SELLS AT THE NEXT USABLE MARK, not blindly. The desk's hard stop freezes automatic
+   * selling because the desk still has a desk behind it to decide; this lane has none, so
+   * freezing it would mean the stop switch CREATES an unmanaged position — the opposite of
+   * what the person dropping the file wants. But an unreadable mark is still not a sell
+   * signal: `usable` is required here exactly as it is everywhere else in the fast half,
+   * so a stop pressed during an RPC outage waits for a real price rather than firing into
+   * the dark. */
+  if (hardStop === true && usable) {
+    return sell(1, "hard stop: the operator's switch is down — leaving at the next usable mark", next);
+  }
   if (rugFlag) {
     return sell(1, "a chain fact turned hostile after entry — leaving on the fact, not the price", next);
   }
   /* The single most informative event in a launch, and it exists in no later market. */
   if (creatorSold) {
     return sell(1, "the creator sold — the one signal a launch has that no later market does", next);
+  }
+  /* THE OWNER'S TAKE, and the only exit on this lane that fires on good news.
+   *
+   * IT READS THE RAW MARK, like every other branch in the fast half, and the asymmetry
+   * justifies it: a take fired on one corrupt print does not REALIZE that print — it
+   * submits a sell, which fills at whatever the curve actually pays. So a false take
+   * costs opportunity. A missed take, on a launch that round-trips 2x to 1x inside a
+   * minute, costs the trade. Slow is the expensive failure here.
+   *
+   * IT SITS ABOVE THE TRAIL, which is also where it would fire chronologically: a
+   * position reaching 2x passes the take on the way UP, before any high is confirmed
+   * high enough for the trail to be following it down through the same level.
+   *
+   * AND IT REFUSES ITSELF rather than throwing when the dial is inside THIS fill's
+   * friction. assertTakeFundable() refuses that at config time, but friction is a
+   * property of the fill and not of the config, so a fill smaller than planned can
+   * arrive under a take that was fundable when it was set. Declining to sell is safe;
+   * a throw here would latch laneFaulted and strand an open position with no determiner. */
+  const takeX = Number(cfg.takeAtEntryX);
+  const takeIsFundable = Number.isFinite(takeX) && takeX > fx;
+  if (takeIsFundable && usable && mark >= p.entry * takeX) {
+    const realized = takeRealizedFrac({ takeAtEntryX: takeX, frictionX: fx });
+    return sell(1, `take: ${takeX}x entry reached — realizes ${(realized * 100).toFixed(2)}% ` +
+      `after a round-trip cost of ${fx.toFixed(4)}x`, next);
   }
   if (usable && mark <= p.entry * cfg.liquidityFloorFrac) {
     return sell(1, `the sell side has collapsed to ${(cfg.liquidityFloorFrac * 100).toFixed(0)}% of entry — pulled or unsellable`, next);
@@ -279,10 +427,15 @@ export function snipePolicy({
   }
 
   const armed = [next.armedBreakeven && "breakeven", next.armedTrail && "trail"].filter(Boolean);
+  /* A take the fill cannot fund must never be silent: it is the difference between "not
+     there yet" and "this dial can never fire", and only one of those is worth waiting on. */
+  const takeNote = takeIsFundable
+    ? ` — take at ${takeX}x`
+    : ` — TAKE DISABLED: ${JSON.stringify(cfg.takeAtEntryX)}x is inside this fill's ${fx.toFixed(4)}x round trip`;
   return hold(
     armed.length
       ? `holding — ${armed.join(" and ")} armed against a confirmed high of ${next.high} ` +
-        `(breakeven is ${fx.toFixed(4)}x)`
-      : `holding — nothing confirmed yet (breakeven is ${fx.toFixed(4)}x)`,
+        `(breakeven is ${fx.toFixed(4)}x)${takeNote}`
+      : `holding — nothing confirmed yet (breakeven is ${fx.toFixed(4)}x)${takeNote}`,
     next);
 }

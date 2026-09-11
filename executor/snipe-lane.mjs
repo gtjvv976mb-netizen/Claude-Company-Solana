@@ -105,6 +105,12 @@ export const SNIPE_LANE_CLAUSES = Object.freeze([
   "single_endpoint",
   "duplicate_endpoint",
   "control_unchecked",
+  /* A money dial above the operator ceiling. Added 2026-09-11 with the ceiling itself —
+     the clause list is frozen precisely so a new refusal cannot ship without being named,
+     and this one refused correctly while reporting the wrong error until it was. */
+  "cap_over_operator_max",
+  /* Arming refused because a precondition in armabilityReport() is unmet. */
+  "not_armable",
   "determiner_unbound",
   "feed_missing",
   "signing_refused",
@@ -207,10 +213,30 @@ export const SNIPE_LANE_DEFAULTS = Object.freeze({
  * desk's CFG builder, and so this file's own test can assert that every name starts with
  * `SNIPE_`.
  */
+/**
+ * THE SNIPER'S MONEY CEILING, AND IT IS THE DESK'S CEILING.
+ *
+ * Until 2026-09-11 SNIPE_MAX_SOL_PER_TRADE was a bare finite number with no bound of any
+ * kind: SNIPE_MAX_SOL_PER_TRADE=50 parsed, froze into the config, and would have been
+ * spent verbatim as one position the instant a signing path existed. That was harmless
+ * only because nothing signed. It is the single most dangerous line in the file once
+ * something does, so the bound lands with the dial rather than after it.
+ *
+ * The numbers are deliberately the SAME numbers as poller.mjs OPERATOR_MAX. A sniper that
+ * could take a larger position than the desk would make the desk's frozen ceiling
+ * decorative — the wallet is one wallet. There is no import, because poller.mjs is the
+ * application and this is a library it loads; instead this is the FIFTH copy, and
+ * test-operator-max-parity.mjs holds all five equal by reading the source. That test
+ * exists because four copies already drifted once and made a raise unarmable.
+ *
+ * Raising these is a code change, reviewed, exactly as it is on the desk side.
+ */
+export const SNIPE_OPERATOR_MAX = Object.freeze({ maxSolPerTrade: 0.4, dailySolCap: 1000 });
+
 export const SNIPE_ENV = Object.freeze({
   SNIPE_LANE: Object.freeze({ key: "lane", parse: "mode" }),
-  SNIPE_MAX_SOL_PER_TRADE: Object.freeze({ key: "maxSolPerTrade", parse: "number" }),
-  SNIPE_DAILY_SOL_CAP: Object.freeze({ key: "dailySolCap", parse: "number" }),
+  SNIPE_MAX_SOL_PER_TRADE: Object.freeze({ key: "maxSolPerTrade", parse: "number", max: SNIPE_OPERATOR_MAX.maxSolPerTrade }),
+  SNIPE_DAILY_SOL_CAP: Object.freeze({ key: "dailySolCap", parse: "number", max: SNIPE_OPERATOR_MAX.dailySolCap }),
   SNIPE_MAX_PRICE_IMPACT_PCT: Object.freeze({ key: "maxPriceImpactPct", parse: "number" }),
   SNIPE_MAX_ROUND_TRIP_LOSS_PCT: Object.freeze({ key: "maxEntryRoundTripLossPct", parse: "number" }),
   SNIPE_MAX_NETWORK_FEE_LAMPORTS: Object.freeze({ key: "maxNetworkFeeLamports", parse: "number" }),
@@ -218,7 +244,7 @@ export const SNIPE_ENV = Object.freeze({
   SNIPE_MAX_RENT_LAMPORTS: Object.freeze({ key: "maxRentLamports", parse: "number" }),
   SNIPE_NETWORK_FEE_RESERVE_SOL: Object.freeze({ key: "networkFeeReserveSol", parse: "number" }),
   SNIPE_MAX_FEE_SHARE_OF_STOP: Object.freeze({ key: "maxFeeShareOfStop", parse: "number" }),
-  SNIPE_MIN_SOL_PER_TRADE: Object.freeze({ key: "minSolPerTrade", parse: "number" }),
+  SNIPE_MIN_SOL_PER_TRADE: Object.freeze({ key: "minSolPerTrade", parse: "number", max: SNIPE_OPERATOR_MAX.maxSolPerTrade }),
   SNIPE_SIGNATURE_FEE_LAMPORTS: Object.freeze({ key: "signatureFeeLamports", parse: "number" }),
   SNIPE_PRIORITY_FEE_LAMPORTS: Object.freeze({ key: "priorityFeeLamports", parse: "number" }),
   SNIPE_RENT_FEE_LAMPORTS: Object.freeze({ key: "rentFeeLamports", parse: "number" }),
@@ -267,6 +293,23 @@ export function snipeLaneConfig(env = {}) {
       const n = Number(text);
       if (!Number.isFinite(n))
         throw new SnipeLaneError("mode_invalid", `${name}=${JSON.stringify(text)} is not a number`, { name, value: text });
+      /* NEGATIVE IS NEVER MEANINGFUL HERE. Every number in this table is a size, a cap, a
+         fee, a percentage or a duration, and no default is negative. A negative size is
+         not a small position; it is a sign error that would reach the sizing arithmetic
+         and produce a number no gate downstream is shaped to refuse. */
+      if (n < 0)
+        throw new SnipeLaneError("mode_invalid",
+          `${name}=${JSON.stringify(text)} is negative; every value in this table is a size, cap, fee or duration`,
+          { name, value: text });
+      /* AND THE MONEY KEYS CARRY THE OPERATOR CEILING. Refused, never clamped: silently
+         lowering an operator's stated size to a different one is how a bot ends up
+         trading a number nobody chose. */
+      if (spec.max !== undefined && n > spec.max)
+        throw new SnipeLaneError("cap_over_operator_max",
+          `${name}=${text} exceeds the operator maximum of ${spec.max} SOL. That ceiling is the ` +
+          "desk's own (poller.mjs OPERATOR_MAX) and the wallet is one wallet; raising it is a " +
+          "reviewed code change in all five copies, not an environment setting.",
+          { name, value: n, max: spec.max });
       out[spec.key] = n;
     } else {
       /* Strictly: 1/true/yes is on, 0/false/no/absent is off, anything else is a refusal
@@ -288,6 +331,86 @@ export function snipeLaneConfig(env = {}) {
       + "signing path that does not exist yet.",
       { lane: out.lane, snipeExecute: env.SNIPE_EXECUTE ?? null });
   return Object.freeze(out);
+}
+
+/**
+ * EVERYTHING THAT MUST BE TRUE BEFORE THIS LANE MAY SPEND MONEY, IN ONE FUNCTION.
+ *
+ * Arming is not a flag, and it should not be a judgement call made by whoever is awake.
+ * The lane is still refused execute at config parse and again at construction; what this
+ * adds is the CHECKLIST those refusals are hiding, written down and executable now rather
+ * than discovered one clause at a time on the day someone unlocks it.
+ *
+ * Every item here is a defect found by auditing the lane against the question "what breaks
+ * the first time this holds a real bag?" — and every one of them costs nothing today:
+ *
+ *   · A DAILY CAP THAT CANNOT SEE THE SPEND. chargeDailyCap defaults false, which is right
+ *     for a shadow book (a book that silenced itself after two notices would measure
+ *     nothing) and catastrophic for a lane with a wallet: deployedTodaySol stays 0 for
+ *     ever and dailySolCap never binds, whatever it is set to.
+ *   · A TAKE INSIDE FRICTION, which is an instruction to sell at a loss on the way up.
+ *   · A STOP THE FILL CANNOT FUND, or the frozen 0.20 canary stop carried unexamined onto
+ *     a position eighty times larger, where it is an 80% drawdown.
+ *   · AN UNPROVED INSTRUCTION LAYOUT. A transposed account in a hand-built buy does not
+ *     refuse: it signs, it lands, and the money goes somewhere nobody planned.
+ *
+ * Returns the checklist with every item's verdict, so a caller can PRINT it. Throws only
+ * when asked to assert. Refusals are never clamps: a dial quietly moved to a safe value is
+ * a bot trading a number its owner never chose.
+ */
+export function armabilityReport({ cfg = {}, venue = null, stopExplicit = false } = {}) {
+  const items = [];
+  const add = (name, okFlag, detail) => items.push({ name, ok: okFlag === true, detail });
+
+  const size = Number(cfg.maxSolPerTrade);
+  const fee = Number(cfg.networkFeeReserveSol ?? SNIPE_LANE_DEFAULTS.networkFeeReserveSol);
+
+  add("size_within_operator_max",
+    Number.isFinite(size) && size > 0 && size <= SNIPE_OPERATOR_MAX.maxSolPerTrade,
+    `maxSolPerTrade ${size} against an operator maximum of ${SNIPE_OPERATOR_MAX.maxSolPerTrade} SOL`);
+
+  add("daily_cap_is_charged", cfg.chargeDailyCap === true,
+    cfg.chargeDailyCap === true
+      ? `dailySolCap ${cfg.dailySolCap} SOL will actually accumulate`
+      : "chargeDailyCap is off, so deployedTodaySol stays 0 and dailySolCap NEVER binds — " +
+        "correct for a shadow book, no daily cap at all for a lane that spends");
+
+  const policyCfg = { ...snipePolicy.SNIPE_DEFAULTS, ...(cfg.policy ?? {}) };
+  try {
+    const e = snipePolicy.assertTakeFundable({ takeAtEntryX: policyCfg.takeAtEntryX, sizeSol: size, feeSolPerLeg: fee });
+    add("take_is_fundable", true,
+      `a ${policyCfg.takeAtEntryX}x take realizes ${(e.realizedFrac * 100).toFixed(2)}% at a ${e.frictionX.toFixed(4)}x round trip`);
+  } catch (err) { add("take_is_fundable", false, err.message); }
+
+  try {
+    const e = snipePolicy.assertStopFundable({ stopFrac: policyCfg.stopFrac, sizeSol: size, explicit: stopExplicit });
+    add("stop_is_fundable", true,
+      `stop ${e.stopFrac}x entry, tightest fundable at this size ${e.tightestFundableStopFrac.toFixed(4)}x`);
+  } catch (err) { add("stop_is_fundable", false, err.message); }
+
+  const proved = venue?.layoutVerified === true && venue?.layoutProof != null;
+  add("venue_layout_is_proved", proved,
+    proved ? `${venue.id} layout proved by ${venue.layoutProof?.provedBy ?? "an unnamed source"}`
+      : `${venue?.id ?? "the venue"} has no proved instruction layout — a transposed account in a ` +
+        "hand-built buy does not refuse, it signs and lands");
+
+  const blocking = items.filter((i) => !i.ok);
+  return Object.freeze({
+    armable: blocking.length === 0,
+    items: Object.freeze(items.map(Object.freeze)),
+    blocking: Object.freeze(blocking.map((i) => i.name)),
+  });
+}
+
+/** armabilityReport(), as a refusal. Throws naming every unmet item, not just the first. */
+export function assertArmable(args) {
+  const report = armabilityReport(args);
+  if (!report.armable)
+    throw new SnipeLaneError("not_armable",
+      "this lane may not spend money yet:\n" +
+      report.items.filter((i) => !i.ok).map((i) => `  · ${i.name}: ${i.detail}`).join("\n"),
+      { blocking: report.blocking });
+  return report;
 }
 
 /* ── the observe-only venue facade ─────────────────────────────────────────────────── */
@@ -359,11 +482,17 @@ export function bindDeterminer(policy = snipePolicy) {
     open(draft) {
       return hasNew ? policy.openSnipe(draft) : policy.freshSnipe(draft);
     },
-    step({ position, markX, nowMs, cfg, creatorSold = false, rugFlag = false, sample = null }) {
+    /* EVERY FACT THE CALLER PASSES MUST BE NAMED HERE OR IT IS SILENTLY DROPPED. This
+       signature destructures, so an argument the binding does not list simply vanishes
+       between the lane and the policy with no error anywhere — which is exactly what
+       happened to `hardStop` on its first wiring: stepOne passed it, this forwarded
+       nothing, and the kill switch looked connected while reaching nothing. */
+    step({ position, markX, nowMs, cfg, creatorSold = false, rugFlag = false,
+      hardStop = false, sample = null }) {
       if (hasNew)
-        return policy.snipeStep({ pos: position, sample: sample ?? { markX, nowMs }, cfg, nowMs });
+        return policy.snipeStep({ pos: position, sample: sample ?? { markX, nowMs }, cfg, nowMs, hardStop });
       return policy.snipePolicy({
-        position, mark: markX, nowMs, config: cfg?.policy ?? {}, creatorSold, rugFlag,
+        position, mark: markX, nowMs, config: cfg?.policy ?? {}, creatorSold, rugFlag, hardStop,
       });
     },
   });
@@ -772,8 +901,14 @@ export function createSnipeLane({
       } catch { markX = null; }
     }
 
+    /* THE SENTINELS, READ FRESH ON THE MANAGEMENT PATH AND NOT ONLY ON THE ENTRY PATH.
+       handleNotice has always consulted control(); stepOne never did, which made the hard
+       stop an entry gate wearing a kill switch's name. Read here so one file still stops
+       both lanes AND reaches what is already open. */
+    const sentinels = controlView();
     const step = determiner.step({
       position: pos, markX, nowMs: now, cfg: conf,
+      hardStop: sentinels.hardStop === true,
       creatorSold: false, rugFlag: read.verdict === "disagree",
       sample: { markX, nowMs: now, slot: read.slot, endpoint: read.chosen?.id ?? null },
     });

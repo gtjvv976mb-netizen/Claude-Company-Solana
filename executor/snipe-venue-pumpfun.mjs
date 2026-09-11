@@ -54,15 +54,46 @@
  *  6. THE INSTRUCTION NAMES ARE NOT WHAT AN IDL READER WOULD GUESS — AND THIS IS THE
  *     WHOLE REASON buyIx REFUSES. The live program no longer executes `buy`/`sell`/
  *     `create` on new launches; it executes CreateV2 / BuyV2 / SellV2. Measured:
- *       sha256("global:buy")    = 66063d1201daebea   ← appears in NO transaction sampled
+ *       sha256("global:buy")    = 66063d1201daebea   ← CORRECTED BELOW; this line said
+ *                                                     "appears in NO transaction sampled"
  *       sha256("global:buy_v2") = b817ee6167c5d33d   ← the real BuyV2 instruction
  *       sha256("global:sell_v2")= 5df6823ce7e940b2   ← the real SellV2 instruction
- *     A confident adapter written from the obvious IDL name would have emitted a
- *     discriminator the program has stopped honouring. And the far worse half is that the
+ *
+ *     CORRECTION, 2026-09-11, measured over 414 mainnet transactions from the public
+ *     endpoint (fixtures/pumpfun-layout.json). The claim that legacy `buy` appears in no
+ *     sampled transaction is FALSE, and backwards: 66063d1201daebea is the MOST COMMON
+ *     pump.fun trade instruction on the tape — 106 samples against BuyV2's 4. Both paths
+ *     are live simultaneously, legacy at 18 accounts and V2 at 27. Two more are also live:
+ *     BuyExactSolIn (38fc74089edfcd5f, 18 accounts) and BuyExactQuoteInV2
+ *     (c2ab1c46684d5b2f, 27), and the second takes (quoteIn, minBaseOut) — the OPPOSITE
+ *     argument order to buy_v2's (amount, maxSolCost). Four encodings, two argument
+ *     orders, and picking the wrong pair is not a refusal, it is a signed transaction.
+ *
+ *     The original point survives the correction and is strengthened by it: an adapter
+ *     written from the obvious IDL name would emit the wrong bytes. And the far worse half
+ *     is that the
  *     ARGUMENT encoding is the easy part: the real BuyV2 carries 27 accounts and SellV2
  *     carries 26, in an order nothing in this repo has verified. A transposed account in
  *     a hand-built buy does not refuse — it signs, it lands, and the money goes somewhere
  *     nobody planned. So: `layoutVerified: false`, and the encoders throw.
+ *
+ *     WHAT A PROVER STILL NEEDS, after the 2026-09-11 measurement. The account ORDER is
+ *     now known and stable across independent transactions on all four instructions, and
+ *     every derivable position was derived and matched: the bonding-curve PDA, global,
+ *     __event_authority, global_volume_accumulator, user_volume_accumulator, creator-vault
+ *     and fee_config all reproduce from seeds, 100%. THREE positions still cannot be
+ *     computed from a mint and a signer, and three is enough to make an encoder
+ *     impossible rather than merely unreviewed:
+ *       · Buy index 16 / Sell index 14 — read-only, roughly 1:1 with the signer, off
+ *         curve, and the two that were fetched DO NOT EXIST on chain. No seed combination
+ *         tried reproduced it.
+ *       · V2 index 18 — read-only, 1:1 with the MINT. Not derivable.
+ *       · the secondary fee vault (Buy 17 / Sell 15 / V2 8) — fee-program-owned, 208
+ *         bytes, takes real lamports, and eight distinct values rotate with no rule found.
+ *     Also unresolved: legacy instruction data is NOT a fixed 24 bytes (24, 25+00, 25+01
+ *     and 26+0101 were all observed), and the 26-byte Sell form carries a SEVENTEENTH
+ *     account — userVolumeAccumulator inserted at index 14, shifting everything after it.
+ *     Full evidence, with signatures and slots, in fixtures/pumpfun-layout.json.
  *
  *  7. THE FEE IS NOT A CONSTANT AND THE GLOBAL ACCOUNT IS NOT THE EXECUTABLE RATE.
  *     Inside a real BuyV2 the program CPIs into a SEPARATE fee program,
@@ -670,6 +701,13 @@ export function decodeTradeEvent(payload) {
   const creatorFeeBps = Number(r.u64("creatorFeeBasisPoints"));
   const creatorFeeRaw = r.u64("creatorFee");
 
+  /* Computed before the record so the refusal and the number are decided together; a
+     field that can be inconsistent with its own validity flag is a field that will be. */
+  const userQuoteRaw = isBuy
+    ? curveQuoteRaw + protocolFeeRaw + creatorFeeRaw
+    : curveQuoteRaw - protocolFeeRaw - creatorFeeRaw;
+  const quoteUsable = userQuoteRaw >= 0n;
+
   return Object.freeze({
     kind: "trade", venue: PUMPFUN_VENUE_ID,
     mint, isBuy, user, timestampSec: timestamp,
@@ -681,9 +719,27 @@ export function decodeTradeEvent(payload) {
     totalFeeRaw: protocolFeeRaw + creatorFeeRaw,
     /* Buy: the curve took curveQuoteRaw and the fees were charged on top. Sell: the curve
        paid curveQuoteRaw and the fees came out of it. §8, both measured. */
-    userQuoteRaw: isBuy
-      ? curveQuoteRaw + protocolFeeRaw + creatorFeeRaw
-      : curveQuoteRaw - protocolFeeRaw - creatorFeeRaw,
+    userQuoteRaw,
+    /* NOT EVERY CURVE IS QUOTED IN SOL, AND THE ARITHMETIC ABOVE ASSUMED THEY ALL WERE.
+     *
+     * §6 listed "whether a V2 curve may be quoted in a mint other than SOL" as unproved.
+     * It is proved, on mainnet: SellV2 3isikUZT5kukyxzR9LcPk9TSpQFks1o8XiyPmKCtEmy8CUcmS91CWxQ7tzQC2ZwDXZCLVDfDQ99ngbh3Si4E3Cy5
+     * at slot 446087660 is quoted in Xsv9hRk1z5ystj9MhnA7Lq4vjSsLwzL2nxrwmwtD3re. On those
+     * trades TradeEvent.solAmount reads 0 while real value moves, so the sell branch above
+     * computes 0 - 48605 - 15349 = -63954: a NEGATIVE quote amount, which then flows into
+     * whatever prices the position. Reproduced with this file's own decoder against the
+     * real bytes, which are kept in fixtures/pumpfun-nonsol-sellv2.json so the case cannot
+     * rot out of the suite.
+     *
+     * The number is not clamped. A negative quote is not a small quote — it is evidence
+     * that solAmount does not mean what this decoder needs it to mean for this curve, and
+     * the honest report is that the event cannot be priced. quoteUsable:false reaches the
+     * determiner as an unreadable mark, which the policy already treats as the ABSENCE of
+     * information rather than as bad news: it holds, and the clock decides. */
+    quoteUsable,
+    quoteRefusal: quoteUsable ? null
+      : `TradeEvent.solAmount is ${curveQuoteRaw} against ${protocolFeeRaw + creatorFeeRaw} of fees, `
+        + "so this curve is not quoted in SOL and its quote amount cannot be read from this event",
     eventCreator,
     eventCreatorIsUnattributed: true,
     consumedBytes: r.offset, bytes: data.length,

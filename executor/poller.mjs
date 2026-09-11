@@ -3256,6 +3256,20 @@ if (SNIPE_LANE_MODE !== "off") {
       venue: PUMPFUN_VENUE,
       readers: laneReaders,
       cfg: laneCfg,
+      /* THE DESK'S STATE OBJECT, SO THE TWO BOOKS CAN SEE EACH OTHER — which is the
+         opposite of mixing them, and the distinction is the whole design.
+         The lane keeps its positions under S.snipes and the desk keeps its under
+         S.positions, so openList() is still Object.values(S.positions) and cannot see a
+         snipe BY CONSTRUCTION (test-snipe-separation.mjs clause 1). What sharing the
+         CONTAINER buys is the one thing the lane genuinely must know: whether the desk
+         already holds this mint. Until now the poller passed no state at all, so
+         snipe-lane.mjs's `state = {}` default applied and the already_holding gate
+         checked an empty object — a collision gate that could not see a collision.
+         Two lanes sizing exits from the same token balance is precisely the failure the
+         second book exists to prevent, and the wiring defeated it. It also means the
+         shadow book has been recording would-have-entries on coins the desk was already
+         holding, so the evidence improves the moment this is passed. */
+      state: S,
       /* THE SAME KILL SWITCHES THE DESK OBEYS, not a second pair. The lane refuses to
          construct without this and takes no default, on the stated grounds that an
          UNCHECKED sentinel is not the same fact as an ABSENT one — so it is handed the
@@ -3267,14 +3281,39 @@ if (SNIPE_LANE_MODE !== "off") {
       log: (msg) => log(`[snipe] ${msg}`),
     });
     const snipeTickMs = Number(process.env.SNIPE_TICK_MS || 1_000);
-    let laneFaulted = false;
+    /* A FAULT MUST NEVER ABANDON AN OPEN POSITION.
+     *
+     * The original latch was right for an observer and wrong for anything that can hold:
+     * any throw set laneFaulted permanently, so a single transient RPC error would leave
+     * a live bag with nothing running to price it, stop it, take it or answer the hard
+     * stop. The lane would sit quietly disabled while the position it opened rode to zero.
+     *
+     * So the latch now asks ONE question — is anything open? With an empty book, giving up
+     * permanently is still correct and still cheap. With a position open, the lane keeps
+     * trying on an exponential backoff, because a retried READ cannot make the position
+     * worse and not retrying certainly can. The backoff is what keeps a genuinely broken
+     * lane from spinning every tick, and the log escalates so a persistent fault with a
+     * bag open is not a line that scrolls past looking like the last one. */
+    let laneFaulted = false, laneFaults = 0, laneRetryAt = 0;
+    const LANE_BACKOFF_MAX_MS = 60_000;
     setInterval(async () => {
       if (laneFaulted) return;
+      if (laneRetryAt && Date.now() < laneRetryAt) return;
       try {
         await lane.tick(Date.now());
+        laneFaults = 0; laneRetryAt = 0;
       } catch (err) {
-        laneFaulted = true;
-        log(`[snipe] lane disabled after a tick fault — the desk is unaffected: ${err?.message || err}`);
+        const open = (() => { try { return lane.openPositions().length; } catch { return 0; } })();
+        if (open === 0) {
+          laneFaulted = true;
+          log(`[snipe] lane disabled after a tick fault with nothing open — the desk is unaffected: ${err?.message || err}`);
+          return;
+        }
+        laneFaults += 1;
+        const wait = Math.min(snipeTickMs * 2 ** Math.min(laneFaults, 6), LANE_BACKOFF_MAX_MS);
+        laneRetryAt = Date.now() + wait;
+        log(`[snipe] TICK FAULT ${laneFaults} WITH ${open} POSITION(S) OPEN — retrying in ${wait}ms rather ` +
+          `than disabling, because a disabled lane cannot exit what it opened. The desk is unaffected: ${err?.message || err}`);
       }
     }, snipeTickMs);
     log(`[snipe] launch lane up in ${laneCfg.lane} mode, ${snipeTickMs}ms tick, ` +

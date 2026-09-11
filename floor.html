@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-11 05:38 UTC">
-<script>console.log("Claude Company build 2026-09-11 05:38 UTC")</script>
+<meta name="cc-build" content="2026-09-11 06:46 UTC">
+<script>console.log("Claude Company build 2026-09-11 06:46 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <style>
 /* Palette lifted from the Markets & Makers art standard (artStandard.ts OFFICIAL_PALETTE),
@@ -87648,7 +87648,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · arms on install"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "49fbbbbf39ca26953c2cde322147cc4e6e8625fd";
+    const releaseCommit = "9c0d5320fbe5769040d567373ed8d934984689f1";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "f743f5b52c7c03b253ecfd2e52b54adca8ddb845c18f07c74025cdc8941fcefb";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -89747,66 +89747,91 @@ function legacyBurnerRecoveryCard() {
   return card;
 }
 
-/* HAWK-AI'S OWN PAGE, AND IT MAKES NO NETWORK CALL ON PURPOSE.
+/* HAWK-AI'S OWN PAGE. IT MAKES NO NETWORK CALL, AND IT WRITES NO CLAIM OF ITS OWN.
  *
- * Every other panel here reads a machine. This one must not: HAWK-AI has never run, and
- * a panel that polls would sooner or later paint a live-looking number beside a bot that
- * has never bought anything. What it states instead are properties of the BUILD, each one
- * asserted by a test in the executor -- the lane defaults off, the environment cannot be
- * turned into an executing config, the buy encoder refuses an unverified layout, and the
- * scorecard reports zero signed, zero sent, zero keypairs as fields rather than as prose.
+ * The first version of this panel stated its facts as sentences: "Bought · 0", "Keys
+ * loaded · 0", "No keypair". Its header argued that a panel which POLLS would eventually
+ * paint a live-looking number beside a bot that had never bought anything. That was true,
+ * and it inverted the moment the lane gained an owner-set take-profit and size: a
+ * hand-written claim does not go stale loudly, it goes stale silently, and this page is
+ * public and ungated.
  *
- * When he has actually run, this page gets a reader and a heartbeat like WALL-ST-E's. Not
- * before. An empty page that is true is worth more than a full one that is not.
+ * So nothing here is typed. scripts/build-viewer.mjs imports the executor's own modules at
+ * build time, runs armabilityReport() against the shipped configuration, and injects the
+ * result. Every row below is a value some executor function returned. The page can be
+ * wrong only by being an old build — which is visible — and never by being a sentence
+ * somebody believed when they typed it. A new checklist item appears here with no edit.
  */
+const HAWK_STATUS = (() => {
+  try { return JSON.parse("{\"armable\":false,\"blocking\":[\"daily_cap_is_charged\",\"venue_layout_is_proved\"],\"items\":[{\"name\":\"size_within_operator_max\",\"ok\":true,\"detail\":\"maxSolPerTrade 0.005 against an operator maximum of 0.4 SOL\"},{\"name\":\"daily_cap_is_charged\",\"ok\":false,\"detail\":\"chargeDailyCap is off, so deployedTodaySol stays 0 and dailySolCap NEVER binds — correct for a shadow book, no daily cap at all for a lane that spends\"},{\"name\":\"take_is_fundable\",\"ok\":true,\"detail\":\"a 2x take realizes 63.64% at a 1.2222x round trip\"},{\"name\":\"stop_is_fundable\",\"ok\":true,\"detail\":\"stop 0.2x entry, tightest fundable at this size 0.2000x\"},{\"name\":\"venue_layout_is_proved\",\"ok\":false,\"detail\":\"pumpfun has no proved instruction layout — a transposed account in a hand-built buy does not refuse, it signs and lands\"}],\"dials\":{\"takeAtEntryX\":2,\"sizeSol\":0.005,\"operatorMaxSol\":0.4,\"stopFrac\":0.2,\"frictionX\":1.222222222222222,\"takeRealizedFrac\":0.6363636363636365}}"); }
+  catch { return null; }   // unsubstituted in a raw source preview; rendered as unknown
+})();
+
 function loadHawkDashboard() {
   const el = document.getElementById("hawkaibody");
   if (!el || document.getElementById("hawkaipanel")?.hidden) return;
   el.innerHTML = "";
   dashReady(el);
 
+  const st = HAWK_STATUS;
+  if (!st || !Array.isArray(st.items)) {
+    el.append(dashLead("Status unavailable",
+      "This page reports HAWK-AI by asking the executor at build time, and this build could not. " +
+      "Rather than show you a reassuring default, it shows you nothing.", "UNKNOWN", "warn"));
+    return;
+  }
+  const d = st.dials;
+  const pct = (f) => (f == null ? "—" : (f * 100).toFixed(2) + "%");
+
   el.appendChild(plainLead(
-    "HAWK-AI watches new launches and refuses almost all of them. He has never bought anything, and he holds no key to buy with.",
+    st.armable
+      ? "HAWK-AI is cleared to trade on his own. Whether he is actually running is set on your machine, not here."
+      : "HAWK-AI buys and sells on his own once armed, and he is not armed. He has never bought anything.",
     {
-      sub: "He ships switched off. Arming the lane is a command you run on your own machine, and nothing on this page can reach it.",
-      infoTitle: "What HAWK-AI is",
-      info: "HAWK-AI is the sniper lane: a second, separate watcher inside the same process as WALL-ST-E, "
-        + "aimed at launchpad coins in their first seconds. He keeps his own book, his own exit rule and his "
-        + "own config, and the desk engine is never handed one of his positions.\n\n"
-        + "He is off unless you set SNIPE_LANE yourself, and the only value that parses is observe. "
-        + "SNIPE_LANE=execute is refused before a config object exists, so there is no moment, however brief, "
-        + "in which the running bot holds an executing sniper configuration.\n\n"
-        + "This machine cannot win a latency race against a bundled buyer \u2014 Solana has no mempool, so the first "
-        + "block belongs to whoever is inside the creator's own bundle. HAWK-AI's job is therefore refusal, not "
-        + "speed: he is there to say no to the launches that look like a race you have already lost."
+      sub: d
+        ? `Your dials: sell at ${d.takeAtEntryX}x entry, ${d.sizeSol} SOL a trade. At that size the round trip `
+          + `costs ${d.frictionX.toFixed(4)}x, so a ${d.takeAtEntryX}x take actually pays ${pct(d.takeRealizedFrac)}.`
+        : "The dials could not be read from this build.",
+      infoTitle: "What HAWK-AI is, and what the two dials do",
+      info: "HAWK-AI is the sniper lane: a second watcher inside the same process as WALL-ST-E, aimed at "
+        + "launchpad coins in their first seconds. He keeps his own book, his own exit rule and his own "
+        + "config, and the desk engine is never handed one of his positions.\n\n"
+        + "YOU SET TWO NUMBERS. Size per trade, and the multiple of your entry at which he sells. Both are "
+        + "refused rather than quietly adjusted if they do not add up: a take inside the round-trip cost is "
+        + "an instruction to sell at a loss on the way up, and a stop tighter than the fee rail can fund is "
+        + "not a stop at all.\n\n"
+        + "THE TWO NUMBERS ARE COUPLED, which is the part that is easy to miss. The round trip is a fixed "
+        + "network fee paid twice, so it is a large share of a small position and a small share of a large "
+        + "one. The same 2x take pays about 64% on a 0.005 SOL ticket and about 99.5% on a 0.4 SOL ticket. "
+        + "The dial does not change; what it is worth does.\n\n"
+        + "HE STOPS WHEN THE DESK STOPS. The file that halts WALL-ST-E halts him, and — unlike the desk, "
+        + "which has a desk behind it to decide — a hard stop makes him LEAVE an open position at the next "
+        + "readable price, because freezing a lane with no desk would mean the stop switch creates an "
+        + "unmanaged bag.\n\n"
+        + "AND HE CANNOT WIN A LATENCY RACE from this machine. Solana has no mempool, so the first block "
+        + "belongs to whoever is inside the creator's own bundle. His job is refusal, not speed."
     }));
 
   el.appendChild(chipRow([
-    { label: "Lane", value: "OFF BY DEFAULT", title: "SNIPE_LANE is unset in every install until you set it" },
-    { label: "Bought", value: "0" },
-    { label: "Keys loaded", value: "0" },
+    { label: "Armed", value: st.armable ? "CLEARED" : "NO", cls: st.armable ? "" : "warn" },
+    d && { label: "Take", value: `${d.takeAtEntryX}x entry`, title: `realizes ${pct(d.takeRealizedFrac)} at this size` },
+    d && { label: "Size", value: `${d.sizeSol} SOL`, title: `operator maximum ${d.operatorMaxSol} SOL a trade` },
   ]));
 
+  /* THE CHECKLIST, VERBATIM. Not a summary of it — the reasons are the useful part, and
+     they are written for someone deciding whether to arm. */
   const grid = dashNode("div", "dashgrid");
-  grid.append(
-    dashMetric("Signing", "No keypair",
-      "the lane loads no wallet, and an executing config cannot be parsed from the environment"),
-    dashMetric("Stop switch", "Shared",
-      "the file that stops WALL-ST-E stops him; there is not a second switch to remember"),
-    dashMetric("Endpoints", "Two required",
-      "he refuses to start on one RPC \u2014 a single endpoint cannot witness a race it is also running in"),
-    dashMetric("pump.fun", "Layout unverified",
-      "the buy encoder refuses to build a transaction until its account layout is checked against a live one"),
-    dashMetric("stonk.fun", "No adapter yet",
-      "watched by hand only; nothing in the build knows how to price or sign there"),
-    dashMetric("otcdesks.cash", "Nothing to snipe",
-      "an OTC desk matches a buyer to a seller \u2014 there is no launch to be first to"),
-  );
+  const label = { size_within_operator_max: "Trade size", daily_cap_is_charged: "Daily cap",
+    take_is_fundable: "Take-profit", stop_is_fundable: "Stop", venue_layout_is_proved: "pump.fun layout" };
+  for (const item of st.items) {
+    grid.append(dashMetric(label[item.name] || item.name, item.ok ? "Ready" : "Blocking", item.detail));
+  }
   el.appendChild(grid);
 
-  const note = dashNode("p", "dp-note",
-    "Every number on this page is a property of the code you can read, not a reading of your machine. "
-    + "The day he takes a shot, this page starts reporting one.");
+  const note = dashNode("p", "dp-note", st.armable
+    ? "Every line above is a value this build's executor returned. Arming and funding remain yours alone."
+    : "Until the blocking rows clear, he cannot spend anything — the refusals are in the code, not in this page. "
+      + "Every line above is a value this build's executor returned, not a sentence typed into the site.");
   note.style.marginTop = "10px";
   el.appendChild(note);
 }
@@ -90229,7 +90254,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "49fbbbbf39ca26953c2cde322147cc4e6e8625fd";
+    const executorReleaseCommit = "9c0d5320fbe5769040d567373ed8d934984689f1";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();

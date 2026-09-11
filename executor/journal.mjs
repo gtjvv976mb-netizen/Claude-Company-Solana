@@ -26,10 +26,34 @@ const INTENT_STATES = new Set([
  * the lock against a desk exit on the same mint, and its realized loss would not reach
  * dailyLossLimitSol. Sharing the ledger is deliberate — a loss is a loss to the same
  * wallet — and it means two sniper losses at the live cap end BOTH lanes for the day. */
-const INTENT_KINDS = new Set(["entry", "risk_exit", "desk_exit", "mirror_exit",
+export const INTENT_KINDS = new Set(["entry", "risk_exit", "desk_exit", "mirror_exit",
   "snipe_entry", "snipe_exit"]);
 export const EXIT_INTENT_KINDS = Object.freeze(["desk_exit", "risk_exit", "mirror_exit",
   "snipe_exit"]);
+/* WHICH KINDS A PROVEN SAFETY EXIT MAY STEP PAST, and the defect that made this a named
+ * constant instead of a literal inside a SQL string.
+ *
+ * hasConflictingIntent() lets a PROVEN safety exit — one whose route and immutable
+ * position snapshot show it reducing the named position into wrapped SOL — ignore
+ * unresolved intents on OTHER mints, because the one thing that must never queue behind
+ * unrelated work is the sell that protects a position. It did that by listing kinds
+ * inline: ('entry','risk_exit','desk_exit','mirror_exit').
+ *
+ * That list was written when those four were all the kinds there were. snipe_entry and
+ * snipe_exit were added later and nobody came back here, so they fell into the "unknown
+ * kind" bucket, which blocks GLOBALLY by design. The result: one unresolved sniper intent
+ * on any coin would block EVERY desk safety exit on EVERY mint, for as long as it stayed
+ * unresolved. It has never bitten because nothing has ever written a snipe intent.
+ *
+ * The unknown-kind default stays global on purpose — an unrecognised kind SHOULD stop the
+ * world rather than be guessed at. What changes is that the sniper's two kinds are no
+ * longer unrecognised. test-journal.mjs now asserts every member of INTENT_KINDS is
+ * classified here deliberately, so a seventh kind is a failing test rather than a silent
+ * global lock discovered during an incident. */
+export const POSITION_SCOPED_KINDS = Object.freeze([
+  "entry", "risk_exit", "desk_exit", "mirror_exit", "snipe_entry", "snipe_exit",
+]);
+
 const WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112";
 export const LEGACY_CALL_IDENTITY_POLICY = "liquidate-on-next-valid-same-mint-desk-exit";
 // Bump only when the rules that authorize construction/disclosure of signed bytes
@@ -729,9 +753,9 @@ export class ExecutionJournal {
     const row = this.db.prepare(`SELECT id FROM intents
       WHERE state IN ('signed','submitted','confirmed','ambiguous')
         AND (? IS NULL OR id<>?)
-        AND (?=0 OR mint=? OR kind NOT IN ('entry','risk_exit','desk_exit','mirror_exit'))
+        AND (?=0 OR mint=? OR kind NOT IN (${POSITION_SCOPED_KINDS.map(() => "?").join(",")}))
       ORDER BY created_at,id LIMIT 1`)
-      .get(exceptId, exceptId, isSafetyExit ? 1 : 0, mint);
+      .get(exceptId, exceptId, isSafetyExit ? 1 : 0, mint, ...POSITION_SCOPED_KINDS);
     return row?.id || null;
   }
 
