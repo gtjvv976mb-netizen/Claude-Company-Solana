@@ -6,9 +6,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-13 13:14 UTC">
-<meta name="cc-commit" content="cf0a3a7a0ae9ed524733a877a7bb89df7857dea8">
-<script>console.log("Claude Company build 2026-09-13 13:14 UTC")</script>
+<meta name="cc-build" content="2026-09-13 14:11 UTC">
+<meta name="cc-commit" content="af46abf7bfe60843fea548c45f64a4a5c137e481">
+<script>console.log("Claude Company build 2026-09-13 14:11 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
 <style>
@@ -81192,6 +81192,42 @@ const bossBoard = (() => {
 })();
 
 let bossData = { name: null, brain: "claude", net: null, wins: 0, losses: 0, settled: 0, rank: null, of: null };
+/* THE TOKEN'S LOGO BEFORE ITS NAME (owner, 2026-09-13). Loaded through the desk's own
+   /api/logo/:mint, which serves the call's recorded art under this origin with a CORS
+   header — an image straight from the CDN would taint this canvas and WebGL would
+   refuse to upload it. One request per mint per page; a load redraws the wall, a
+   failure is remembered so the row draws its initial disc instead of asking again. */
+const bossLogos = new Map();
+function bossLogo(mint) {
+  if (!mint) return null;
+  const have = bossLogos.get(mint);
+  if (have !== undefined) return have || null;
+  bossLogos.set(mint, false);
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => { bossLogos.set(mint, img); try { drawBossBoard(); } catch {} };
+  img.onerror = () => bossLogos.set(mint, false);
+  img.src = (window.__API_BASE__ || "") + "/api/logo/" + encodeURIComponent(mint);
+  return null;
+}
+/* The logo, or a disc with the symbol's first letter, 24px, centred on (cx, cy). */
+function drawTokenMark(x, mint, symbol, cx, cy, r = 12) {
+  const img = bossLogo(mint);
+  x.save();
+  x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.closePath();
+  if (img) {
+    x.clip();
+    x.drawImage(img, cx - r, cy - r, r * 2, r * 2);
+  } else {
+    x.fillStyle = "rgba(244,241,232,.14)"; x.fill();
+    x.font = `700 ${Math.round(r * 1.1)}px Archivo, "Helvetica Neue", Arial, sans-serif`;
+    x.textAlign = "center"; x.textBaseline = "middle"; x.fillStyle = "#f4f1e8";
+    x.fillText(String(symbol || mint || "?").slice(0, 1).toUpperCase(), cx, cy + 1);
+  }
+  x.restore();
+  x.strokeStyle = "rgba(244,241,232,.35)"; x.lineWidth = 1;
+  x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.stroke();
+}
 /* The board is a CHALKBOARD: the boss writes the numbers up by hand. Chalk
    never sits perfectly — every line gets a small tilt and its own pressure,
    with dust and old half-erased strokes in the slate. */
@@ -81269,9 +81305,10 @@ function drawBossBoard() {
       const est = pct == null ? null : (Number(p.sol) || 0) * pct / 100;
       const levels = [p.stop ? `stop ${((p.stop - 1) * 100).toFixed(0)}%` : null, p.target ? `target +${((p.target - 1) * 100).toFixed(0)}%` : null,
         p.openedAt ? `in ${ago(Date.now() - p.openedAt)}` : null].filter(Boolean).join(" · ");
-      text(String(p.symbol || String(p.mint || "").slice(0, 6)).slice(0, 10), 24, py, 22, INK, { weight: 700 });
-      text(`${(Number(p.sol) || 0).toFixed(3)} SOL`, 190, py, 18, INK, { font: MONO, weight: 500 });
-      text(levels, 330, py, 13, DIM, { weight: 500 });
+      drawTokenMark(x, p.mint, p.symbol, 36, py);
+      text(String(p.symbol || String(p.mint || "").slice(0, 6)).slice(0, 10), 56, py, 22, INK, { weight: 700 });
+      text(`${(Number(p.sol) || 0).toFixed(3)} SOL`, 210, py, 18, INK, { font: MONO, weight: 500 });
+      text(levels, 345, py, 13, DIM, { weight: 500 });
       text(pct == null ? "no mark" : (pct >= 0 ? "+" : "−") + Math.abs(pct).toFixed(1) + "%" + (est == null ? "" : "  " + sol(est)),
         W - 24, py, 18, pct == null ? DIM : tone(pct), { align: "right", font: MONO, weight: 500 });
       py += 34;
@@ -81283,7 +81320,8 @@ function drawBossBoard() {
     const last = closed.slice().sort((a, b) => (b.closedAt || 0) - (a.closedAt || 0))[0] || null;
     if (last) {
       text("LAST SALE", 24, 378, 13, DIM, { weight: 500 });
-      text(`${String(last.symbol || String(last.mint || "").slice(0, 6)).slice(0, 10)}  ${sol(last.realizedSol, 4)}`, 120, 378, 18, tone(last.realizedSol), { font: MONO, weight: 500 });
+      drawTokenMark(x, last.mint, last.symbol, 122, 378, 10);
+      text(`${String(last.symbol || String(last.mint || "").slice(0, 6)).slice(0, 10)}  ${sol(last.realizedSol, 4)}`, 140, 378, 18, tone(last.realizedSol), { font: MONO, weight: 500 });
       text(`${String(last.reason || "").slice(0, 34)}${last.closedAt ? " · " + ago(Date.now() - last.closedAt) + " ago" : ""}`, W - 24, 378, 13, DIM, { align: "right", weight: 500 });
     } else {
       text("LAST SALE · none yet", 24, 378, 13, DIM, { weight: 500 });
@@ -87892,7 +87930,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · arms on install"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "cf0a3a7a0ae9ed524733a877a7bb89df7857dea8";
+    const releaseCommit = "af46abf7bfe60843fea548c45f64a4a5c137e481";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "4e9208d5c8a79a2b92a76da787b87d5f8e439614143961827e957b8295cbdeab";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -90667,7 +90705,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "cf0a3a7a0ae9ed524733a877a7bb89df7857dea8";
+    const executorReleaseCommit = "af46abf7bfe60843fea548c45f64a4a5c137e481";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
