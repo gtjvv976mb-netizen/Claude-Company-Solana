@@ -17,6 +17,9 @@ const POSITION_FLAGS = ["callIdentityIncomplete", "accountingIncomplete", "balan
    degraded and declared no caps at all, and the board said so. The parity test now holds
    this copy equal to poller.mjs OPERATOR_MAX, so the heartbeat cannot fall behind the
    ceiling it reports against again. */
+/* How long a readiness proof keeps counting after a later probe misses. The same figure
+   the desk's entry gate uses (src/alerts.js READINESS_PROOF_GRACE_MS): 7.5 probes. */
+export const READINESS_PROOF_GRACE_MS = 15 * 60_000;
 export const HEARTBEAT_CAP_BOUNDS = Object.freeze({ maxSolPerTrade: 1, dailySolCap: 1000, dailyLossLimitSol: 0.4 });
 
 const TRADING_RUNTIME_FILES = Object.freeze([
@@ -84,9 +87,22 @@ export function executorHeartbeatHealth({
   lastTickCompletedAt = 0, lastFeedSuccessAt = 0, consecutiveFeedFailures = 0,
   consecutiveTickFailures = 0, feedRollback = false, executionReadiness = null,
   caps = null, runtimeCommit = null, runtimeFingerprint = null,
-  deskUnreachableSince = null, mirrorActive = false,
+  deskUnreachableSince = null, mirrorActive = false, nowMs = Date.now(),
 } = {}) {
   const list = Array.isArray(positions) ? positions : [];
+  /* A REHEARSAL THAT PROVED MINUTES AGO IS A BOT THAT CAN TRADE. The readiness probe
+     runs every two minutes on whatever route Jupiter returns, and single misses are
+     weather: an RPC that could not give one coherent snapshot, a venue whose program
+     refused the simulation (2026-09-13, 12:27 and 12:44, each proved again two minutes
+     later, with a real buy in between). Reading only the LATEST result here reported
+     the bot DEGRADED for those two minutes every time, so the owner's chip flapped
+     while the bot was buying. This is the desk's own rule (alerts.js
+     READINESS_PROOF_GRACE_MS): a proof inside the grace still counts, and a bot that
+     has genuinely lost the ability ages out of it in a handful of probes. The latest
+     result itself is still reported as it is, below. */
+  const lastProvedAt = Number(executionReadiness?.lastSuccessAt) || 0;
+  const readinessLapsed = executionReadiness?.ready === false &&
+    !(lastProvedAt > 0 && nowMs - lastProvedAt >= 0 && nowMs - lastProvedAt <= READINESS_PROOF_GRACE_MS);
   const blockedPositions = list.filter((position) =>
     POSITION_FLAGS.some((flag) => position?.[flag] === true)).length;
   const manualAction = list.some((position) => position?.manualExitRequired === true);
@@ -101,7 +117,7 @@ export function executorHeartbeatHealth({
   if (hardStop || manualAction) state = "manual-action";
   else if (exitBlocked) state = "exits-blocked";
   else if (blockingIntent || blockedPositions || consecutiveFeedFailures || consecutiveTickFailures ||
-      feedRollback || executionReadiness?.ready === false || mirrorActive === true || unreachableSince)
+      feedRollback || readinessLapsed || mirrorActive === true || unreachableSince)
     state = "degraded";
   else if (entriesPaused) state = "entries-paused";
   const boundedCap = (value, max) => {

@@ -1,0 +1,61 @@
+{
+  "site": "https://solana.claudedotcompany.com",
+  "recordedAt": "2026-09-13T13:08:03.278Z",
+  "duration": 89.1,
+  "chapters": [
+    {
+      "id": "tower",
+      "title": "The tower",
+      "say": "This is Claude Tower on Solana. Fifty floors, one desk each. The house desk sits upstairs on floor fifty and publishes the coins it would trade.",
+      "at": 3.5
+    },
+    {
+      "id": "lease",
+      "title": "Lease a floor",
+      "say": "Pick any vacant floor. Here is what it costs, one floor per wallet. And beside it, the house bot's real record, with the house's own money.",
+      "at": 10.9
+    },
+    {
+      "id": "enter",
+      "title": "Watch HQ live",
+      "say": "Watch H Q live. The house floor is open to everyone, no sign-in needed.",
+      "at": 20.2
+    },
+    {
+      "id": "overview",
+      "title": "The Overview",
+      "say": "The Overview. The bot's profit and loss from its own journal, what it holds right now, and every closed trade, each drawn as a bar from the stop to the target.",
+      "at": 34.4
+    },
+    {
+      "id": "calls",
+      "title": "The calls",
+      "say": "Calls. Everything the desk published, with an entry, a stop and a target. These are the calls your bot takes.",
+      "at": 46.7
+    },
+    {
+      "id": "wallste",
+      "title": "WALL-ST-E",
+      "say": "Wall Street E is the bot. Real money, your own caps, on your own machine.",
+      "at": 54.4
+    },
+    {
+      "id": "team",
+      "title": "Your track",
+      "say": "Team. The sixteen analysts and the boss who work this floor. On a floor you lease, this tab is also where you choose who runs your bot: yourself, with one command on a Mac or a small Linux server, and the key made on your machine.",
+      "at": 61.1
+    },
+    {
+      "id": "board",
+      "title": "Big C's board",
+      "say": "And on the wall, Big C's board keeps the live book, redrawn every ten seconds.",
+      "at": 76.5
+    },
+    {
+      "id": "end",
+      "title": "Plug in",
+      "say": "Lease a floor. Plug in. Let it work.",
+      "at": 84.2
+    }
+  ]
+}

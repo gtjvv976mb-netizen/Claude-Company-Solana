@@ -6,9 +6,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-13 12:27 UTC">
-<meta name="cc-commit" content="976cc0e2eeb9483173e9731184bfac5456bca4e0">
-<script>console.log("Claude Company build 2026-09-13 12:27 UTC")</script>
+<meta name="cc-build" content="2026-09-13 13:11 UTC">
+<meta name="cc-commit" content="8c7507054c146dcd52844ba8ed2fdd194300c5f6">
+<script>console.log("Claude Company build 2026-09-13 13:11 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
 <style>
@@ -360,6 +360,14 @@ body{
 .bot-book .tbar .now.flat{border-color:rgba(128,128,128,.7)}
 .bot-book .tbar .end{position:absolute;top:0;bottom:0;width:3px;border-radius:2px}
 .bot-book .tbar .end.stop{left:0;background:#d05353}.bot-book .tbar .end.target{right:0;background:#2f9e6b}
+/* THE GUIDE: one player, one caption, chapters underneath. */
+.guide-video{display:block;width:100%;aspect-ratio:16/9;border-radius:10px;background:#000;max-height:60vh}
+.guide-cap{min-height:2.6em;margin:8px 0 6px;font-size:13px;line-height:1.45;opacity:.88}
+.guide-chapters{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+.guide-ch{width:100%;display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:7px 9px;border:1px solid rgba(128,128,128,.28);border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:11.5px;cursor:pointer;text-align:left}
+.guide-ch b{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.guide-ch span{opacity:.6;font-variant-numeric:tabular-nums;flex:none}
+.guide-ch.on{border-color:var(--claude,#d97757);box-shadow:inset 0 0 0 1px var(--claude,#d97757)}
 .wallste-grid,.settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .statusline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px}
 .statusdot{width:9px;height:9px;border-radius:50%;background:var(--ink-faint)}
@@ -1714,6 +1722,7 @@ window.CCModals = (function () {
   <div class="sr" id="alert-live" role="status" aria-live="polite"></div>
   <div class="dock" id="primary-nav" role="tablist" aria-label="Floor dashboard destinations">
     <button class="dtab" id="dash-tab-overview" role="tab" aria-controls="overviewpanel" aria-selected="false" tabindex="0" data-destination="overview">Overview</button>
+    <button class="dtab" id="dash-tab-guide" role="tab" aria-controls="guidepanel" aria-selected="false" tabindex="-1" data-destination="guide">Guide</button>
     <button class="dtab" id="dash-tab-calls" role="tab" aria-controls="callsworkspace" aria-selected="false" tabindex="-1" data-destination="calls">Calls<span class="dot" id="live-dot"></span></button>
     <button class="dtab" id="dash-tab-wallste" role="tab" aria-controls="wallstepanel" aria-selected="false" tabindex="-1" data-destination="wallste">WALL-ST-E</button>
     <button class="dtab" id="dash-tab-hawkai" role="tab" aria-controls="hawkaipanel" aria-selected="false" tabindex="-1" data-destination="hawkai">HAWK-AI</button>
@@ -1765,6 +1774,10 @@ window.CCModals = (function () {
 
     <section class="dashpanel" id="hawkaipanel" role="tabpanel" aria-labelledby="dash-tab-hawkai" tabindex="0" hidden>
       <div class="dashbody" id="hawkaibody"></div>
+    </section>
+
+    <section class="dashpanel" id="guidepanel" role="tabpanel" aria-labelledby="dash-tab-guide" tabindex="0" hidden>
+      <div class="dashbody" id="guidebody"></div>
     </section>
 
     <section class="dashpanel" id="teampanel" role="tabpanel" aria-labelledby="dash-tab-team" tabindex="0" hidden>
@@ -85971,10 +85984,10 @@ const tapeEl2 = document.getElementById("tape");
 
 const RAIL = document.getElementById("rail");
 const RAIL_TITLE = document.getElementById("rail-title");
-const DASHBOARD_TITLE = { overview: "Overview", calls: "Calls", wallste: "WALL-ST-E",
+const DASHBOARD_TITLE = { overview: "Overview", guide: "Guide", calls: "Calls", wallste: "WALL-ST-E",
   hawkai: "HAWK-AI", team: "Team", callouts: "Callouts", activity: "Activity",
   performance: "Performance", settings: "Settings" };
-const DASHBOARD_PANEL = { overview: "overviewpanel", calls: "callsworkspace", wallste: "wallstepanel",
+const DASHBOARD_PANEL = { overview: "overviewpanel", guide: "guidepanel", calls: "callsworkspace", wallste: "wallstepanel",
   hawkai: "hawkaipanel", team: "teampanel", callouts: "calloutspanel", activity: "activityworkspace",
   performance: "performanceworkspace", settings: "settingspanel" };
 const primaryTabs = [...document.querySelectorAll("#primary-nav [role=tab][data-destination]")];
@@ -87879,7 +87892,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · arms on install"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "976cc0e2eeb9483173e9731184bfac5456bca4e0";
+    const releaseCommit = "8c7507054c146dcd52844ba8ed2fdd194300c5f6";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "4e9208d5c8a79a2b92a76da787b87d5f8e439614143961827e957b8295cbdeab";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -90654,7 +90667,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "976cc0e2eeb9483173e9731184bfac5456bca4e0";
+    const executorReleaseCommit = "8c7507054c146dcd52844ba8ed2fdd194300c5f6";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
@@ -91315,8 +91328,82 @@ async function loadSettingsDashboard() {
   }
 }
 
+/* ══ THE GUIDE TAB (owner, 2026-09-13): the real site, recorded and narrated. ═══════
+ *
+ * Two minutes of the published pages — the tower, a lease card, the house floor, the
+ * Overview's book, the calls, the bot, the Team tab's two tracks, and BIG C's wall —
+ * recorded as real clicks on the live site by scripts/record-guide.mjs, with the
+ * narration spoken over it and burned into the file. Chapters ride beside it from
+ * assets/guide-chapters.json: click one to jump, and the caption under the player
+ * follows the narration so a reader with the sound off loses nothing. Loaded once;
+ * the video is a few megabytes and a tab that reloads it on every visit is a tab that
+ * costs a reader on a phone. */
+/* Two encodings of the same recording: H.264 for Safari and every phone, VP9 for the
+   Chromium builds that ship without H.264. The player takes the first it can decode. */
+const GUIDE_VIDEO = "assets/guide-walkthrough.mp4";
+const GUIDE_VIDEO_WEBM = "assets/guide-walkthrough.webm";
+const GUIDE_CHAPTERS = "assets/guide-chapters.json";
+let guideLoaded = false;
+async function loadGuideDashboard() {
+  const el = document.getElementById("guidebody");
+  if (!el || guideLoaded) return;
+  guideLoaded = true;
+  el.innerHTML = "";
+  dashReady(el);
+  el.append(plainLead("Two minutes on the real site: the tower, a lease, the house floor, the bot, and how to plug in yourself.",
+    { info: "Recorded on the published site — every step is a real click on the live pages, and the numbers on screen were live when it was recorded. The voice is in the video; the caption under the player follows it.",
+      infoTitle: "About this guide" }));
+  const wrap = dashNode("section", "dashsection guide");
+  const video = document.createElement("video");
+  video.className = "guide-video"; video.controls = true; video.playsInline = true; video.preload = "metadata";
+  for (const [src, type] of [[GUIDE_VIDEO, "video/mp4"], [GUIDE_VIDEO_WEBM, "video/webm"]]) {
+    const source = document.createElement("source"); source.src = src; source.type = type; video.append(source);
+  }
+  video.setAttribute("aria-label", "Guided walkthrough of the tower and the house floor, narrated");
+  wrap.append(video);
+  const cap = dashNode("div", "guide-cap", "");
+  cap.setAttribute("aria-live", "polite");
+  wrap.append(cap);
+  const list = dashNode("ol", "guide-chapters");
+  wrap.append(list);
+  el.append(wrap);
+  let chapters = [];
+  try {
+    const r = await fetch(GUIDE_CHAPTERS, { cache: "no-store" });
+    if (r.ok) chapters = ((await r.json())?.chapters || []).filter((c) => Number.isFinite(Number(c.at)));
+  } catch {}
+  chapters.forEach((c, i) => {
+    const li = dashNode("li", "", "");
+    const b = dashNode("button", "guide-ch", "");
+    b.type = "button";
+    b.append(dashNode("b", "", String(i + 1) + " · " + c.title), dashNode("span", "", Math.round(Number(c.at)) + "s"));
+    b.title = c.say;
+    b.onclick = () => { video.currentTime = Number(c.at); video.play().catch(() => {}); };
+    li.append(b);
+    list.append(li);
+  });
+  const current = () => {
+    let hit = null;
+    for (const c of chapters) if (video.currentTime + 0.05 >= Number(c.at)) hit = c;
+    return hit;
+  };
+  const follow = () => {
+    const c = current();
+    cap.textContent = c ? c.say : "";
+    [...list.querySelectorAll(".guide-ch")].forEach((b, i) => b.classList.toggle("on", chapters[i] === c));
+  };
+  video.addEventListener("timeupdate", follow);
+  video.addEventListener("seeked", follow);
+  video.querySelectorAll("source")[1]?.addEventListener("error", () => {
+    cap.textContent = "The recording is not published on this host yet. It ships with the site build (assets/guide-walkthrough.mp4).";
+  });
+  /* The play button, beside the figures, for a reader who has not found the controls. */
+  el.append(leadButton("Play the guide", () => { video.play().catch(() => {}); video.scrollIntoView({ block: "nearest", behavior: "smooth" }); }));
+}
+
 window.__loadDashboardDestination = (which) => {
   if (which === "overview") loadOverviewDashboard();
+  else if (which === "guide") loadGuideDashboard();
   else if (which === "calls") activateDashboardSubview("calls", dashboardSubview.calls);
   else if (which === "wallste") loadWallsteDashboard();
   else if (which === "hawkai") loadHawkDashboard();
