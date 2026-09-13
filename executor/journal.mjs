@@ -60,6 +60,12 @@ export const LEGACY_CALL_IDENTITY_POLICY = "liquidate-on-next-valid-same-mint-de
 // change. Recovery compares this durable provenance marker; a null value is an
 // explicitly unversioned attempt built before this invariant existed.
 export const CURRENT_TX_ATTEMPT_PROTOCOL = "jupiter-dual-rpc-coherent-snapshot-v3";
+/** The launch lane's own path (snipe-execute.mjs): a raw curve buy/sell, simulated on both
+ *  RPCs and sent to both. Recovery reads this marker to know whose rules an attempt obeys. */
+export const SNIPE_TX_ATTEMPT_PROTOCOL = "pumpfun-v2-dual-rpc-raw-send-v1";
+/** The only markers recordSigned will write. A caller naming anything else gets the desk's
+ *  current marker, so a spoofed string cannot invent a provenance recovery never learned. */
+export const TX_ATTEMPT_PROTOCOLS = Object.freeze([CURRENT_TX_ATTEMPT_PROTOCOL, SNIPE_TX_ATTEMPT_PROTOCOL]);
 
 const json = (value) => JSON.stringify(value ?? null);
 const parse = (value, { fallback = null, label = "journal JSON" } = {}) => {
@@ -632,6 +638,38 @@ export class ExecutionJournal {
     };
   }
 
+  /**
+   * THE WHOLE LEDGER, not the rolling window: every deployment and every realized result
+   * since the journal was created, fees on failed attempts included. rollingRisk() answers
+   * "how much capacity is left today"; this answers the owner's question — "have I lost
+   * or gained SOL?" — and is what the heartbeat carries to the floor board so the board
+   * can say it from the bot's own books rather than from a fill report that may not have
+   * landed. Realized is net of network fees and of the cost basis it closed against.
+   */
+  lifetimeRisk() {
+    let deployed = 0n, realized = 0n, fees = 0n, deployments = 0, exits = 0;
+    let firstAt = null, lastAt = null;
+    for (const row of this.db.prepare(`SELECT kind,deployed_lamports,realized_lamports,network_fee_lamports,occurred_at
+      FROM risk_events`).all()) {
+      deployed += BigInt(row.deployed_lamports);
+      realized += BigInt(row.realized_lamports);
+      fees += BigInt(row.network_fee_lamports);
+      if (row.kind === "deployment") deployments++; else exits++;
+      const at = Number(row.occurred_at);
+      if (Number.isFinite(at)) { firstAt = firstAt == null ? at : Math.min(firstAt, at); lastAt = lastAt == null ? at : Math.max(lastAt, at); }
+    }
+    for (const row of this.db.prepare("SELECT network_fee_lamports FROM attempt_fee_events").all()) {
+      const fee = BigInt(row.network_fee_lamports);
+      deployed += fee; realized -= fee; fees += fee;
+    }
+    return {
+      deployedSol: Number(deployed) / 1_000_000_000,
+      realizedSol: Number(realized) / 1_000_000_000,
+      feesSol: Number(fees) / 1_000_000_000,
+      deployments, exits, firstAt, lastAt,
+    };
+  }
+
   riskHistoryStatus(now = this.now()) {
     const until = Number(this.getMeta("risk_history_incomplete_until") || 0);
     return { complete: !(until > Number(now)), incompleteUntil: until || null };
@@ -973,7 +1011,12 @@ export class ExecutionJournal {
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
           id, n, "signed", attempt.requestId, Buffer.from(attempt.signedTx), attempt.signature,
           attempt.blockhash, Number(attempt.lastValidBlockHeight), String(attempt.quotedOutputRaw),
-          String(attempt.minOutputRaw), json(attempt.order), CURRENT_TX_ATTEMPT_PROTOCOL, now, now,
+          String(attempt.minOutputRaw), json(attempt.order),
+          /* The provenance marker names the PATH that built the bytes. The desk's path is
+             the default; the sniper's raw-send path names itself, so recovery never
+             reconciles a curve buy with rules written for a Jupiter order. */
+          TX_ATTEMPT_PROTOCOLS.includes(attempt.protocol) ? attempt.protocol : CURRENT_TX_ATTEMPT_PROTOCOL,
+          now, now,
         );
       this.db.prepare("UPDATE intents SET state='signed',signature=?,error=NULL,updated_at=? WHERE id=?")
         .run(attempt.signature, now, id);
@@ -1086,7 +1129,12 @@ export class ExecutionJournal {
     const occurredAt = Number(intent.confirmedAt || intent.updatedAt || this.now());
     if (!Number.isSafeInteger(occurredAt) || occurredAt < 0) throw new Error(`intent ${intent.id} has invalid confirmation time`);
     if (fee > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`intent ${intent.id} network fee is too large`);
-    if (intent.kind === "entry") {
+    /* A SNIPE ENTRY IS A DEPLOYMENT. This branch named only "entry", so the first accounted
+       snipe_entry would have fallen through to the exit rule below and thrown "invalid
+       durable exit basis" — an accounting throw on a position that had just been bought
+       with real money. The wallet is one wallet: what the sniper deploys counts against
+       the same rolling risk the desk reads. */
+    if (intent.kind === "entry" || intent.kind === "snipe_entry") {
       const deployed = input + fee;
       if (deployed > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`intent ${intent.id} deployment is too large`);
       return { kind: "deployment", deployedLamports: Number(deployed), realizedLamports: 0,

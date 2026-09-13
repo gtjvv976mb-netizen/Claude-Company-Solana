@@ -32,16 +32,36 @@ const RUNTIME_FILES = Object.freeze([
      desk is unreachable. Validated like every other runtime file. */
   "dexscreener-consensus.mjs",
   "desk-mirror.mjs",
+  /* THE LAUNCH LANE, once it can sign. Its modules were dynamic imports the runner never
+     validated, which was defensible while the lane could only observe. snipe-execute.mjs
+     builds and signs curve transactions with the same key as jupiter.mjs, so it and every
+     module it loads are validated as jupiter.mjs is: regular files, owned by this user,
+     writable by nobody else. A symlinked encoder is a signing path somebody else wrote. */
+  "snipe-execute.mjs",
+  "snipe-lane.mjs",
+  "snipe-venue-pumpfun.mjs",
+  "snipe-venue.mjs",
+  "snipe-curve.mjs",
+  "snipe-entry.mjs",
+  "snipe-feed.mjs",
+  "snipe-book.mjs",
+  "snipe-shadow.mjs",
+  "snipe-policy.mjs",
   "package.json",
   "package-lock.json",
 ]);
 const ALLOWED_ENV = new Set([
-  /* THE LAUNCH LANE (observe-only). SNIPE_LANE defaults to "off" in poller.mjs, so an
-     install that never sets it is unchanged — but the variable has to be able to REACH
-     the process, or the lane can never be switched on by the owner at all. Allowlisting
-     it does not enable it, and it cannot enable signing: snipeLaneConfig() refuses
-     SNIPE_LANE=execute at parse time, before a lane object exists. */
+  /* THE LAUNCH LANE. SNIPE_LANE defaults to "off" in poller.mjs, so an install that never
+     sets it is unchanged — but the variable has to be able to REACH the process, or the
+     lane can never be switched on by the owner at all. Allowlisting a name does not enable
+     anything: SNIPE_LANE=execute constructs only on a live EXECUTE=1 install, with the
+     arming checklist clear and SNIPE_LIVE_ACK equal to the sentence the lane prints for
+     the signing wallet and the two money dials (snipe-lane.mjs snipeArmSentence). The
+     money dials carry the operator ceiling and are refused above it, never clamped. */
   "SNIPE_LANE", "SNIPE_TICK_MS",
+  "SNIPE_MAX_SOL_PER_TRADE", "SNIPE_DAILY_SOL_CAP", "SNIPE_LIVE_ACK",
+  "SNIPE_TAKE_AT_ENTRY_X", "SNIPE_STOP_FRAC", "SNIPE_HOLD_MAX_MS", "SNIPE_PRIORITY_FEE_LAMPORTS",
+  "SNIPE_MAX_PRICE_IMPACT_PCT", "SNIPE_MAX_ROUND_TRIP_LOSS_PCT",
   "BLOCK_HEIGHT_WINDOW", "BOOK_HEAT_MAX", "CC_API", "CC_FLOOR", "CC_SECRET",
   "DAILY_LOSS_LIMIT_SOL",
   /* desk-led-v4 (2026-09-05). How long the desk may be consecutively unreachable before
@@ -69,8 +89,12 @@ const ALLOWED_ENV = new Set([
      exit. Still accepted so an existing env file validates; the poller ignores it. */
   "EXIT_MARK_OUTAGE_LATCH_MS",
   "EXPECTED_NETWORK_FEE_LAMPORTS", "DAILY_SOL_CAP", "EXECUTE", "EXECUTOR_SOURCE_COMMIT",
+  /* The entry mode, its arming sentence, and the per-trade size it buys at. */
+  "ENTRY_MODE", "ENTRY_MODE_ACK", "FIXED_SOL",
   "FEE_RESERVE_SOL", "FINALITY_TIMEOUT_MS", "F_DEFAULT", "F_NAME_MAX", "HARD_STOP_FILE",
-  "INIT_ONLY", "JUPITER_API_BASE", "JUPITER_API_KEY", "KEYPAIR", "LIVE_CAPS_ACK",
+  "INIT_ONLY", "JUPITER_API_BASE", "JUPITER_API_KEY",
+  // Route-plan labels left out of every Jupiter order; default HumidiFi (jupiter.mjs order()).
+  "JUPITER_EXCLUDE_DEXES", "KEYPAIR", "LIVE_CAPS_ACK",
   "LIVE_STATE_INIT_ACK", "LIVE_TRADING_ACK", "LOCK_FILE",
   /* Cadence of the valuation/custody pass (manageOpen) — the feed is read every POLL_MS
      regardless. Live 5 s to 5 min. */
@@ -394,7 +418,7 @@ const OPERATOR_MONEY_MAX = Object.freeze({
      enabled could not actually be armed: arm-caps refused 0.1 as out of range while
      the running process logged "hard maxima 0.1/0.5/0.15". test-operator-max-parity.mjs
      now asserts all four copies agree. */
-  MAX_SOL_PER_TRADE: 0.4,
+  MAX_SOL_PER_TRADE: 1,
   DAILY_SOL_CAP: 1000,
   DAILY_LOSS_LIMIT_SOL: 0.4,
 });

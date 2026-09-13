@@ -87,7 +87,14 @@ const rung = (a) => `${a.sol.toFixed(4)} SOL (round trip ${a.lossPct.toFixed(2)}
 export async function sizeEntryToRoute({
   probe, sol, lamportsPerSol, stopRatio, expectedNetworkFeeLamports, slippageBps,
   minSizeFor, maxHalvings = MAX_ROUTE_HALVINGS,
+  /* "enforce" (default): a route whose costs already sit at or below the authored stop is
+     refused. "advisory" (ENTRY_MODE=take-every-call): the same verdict is returned as
+     `advisory` text on a successful sizing and the call is taken — the owner's choice.
+     The route's own caps (round-trip loss, price impact) are never advisory. */
+  stopFloor = "enforce",
 }) {
+  if (stopFloor !== "enforce" && stopFloor !== "advisory")
+    throw new Error(`stopFloor must be "enforce" or "advisory", got ${JSON.stringify(stopFloor)}`);
   let candidate = Number(sol);
   if (!Number.isFinite(candidate) || candidate <= 0)
     throw new Error("route sizing needs a positive starting size");
@@ -103,16 +110,16 @@ export async function sizeEntryToRoute({
        round trip, and the round trip after the slippage haircut and both fees. */
     const conservativeLossPct = Math.max(preflight.lossPct, (1 - cost.conservativeReturnRatio) * 100);
     const minSize = minSizeFor(conservativeLossPct);
-    const refusal = preflight.refusal ??
-      (cost.conservativeReturnRatio <= stopRatio
-        ? stopFloorRefusal({ cost, lossPct: preflight.lossPct, stopRatio })
-        : null);
+    const stopFloorHit = cost.conservativeReturnRatio <= stopRatio
+      ? stopFloorRefusal({ cost, lossPct: preflight.lossPct, stopRatio }) : null;
+    const refusal = preflight.refusal ?? (stopFloor === "enforce" ? stopFloorHit : null);
+    const advisory = stopFloor === "advisory" && !preflight.refusal ? stopFloorHit : null;
     const attempt = { sol: candidate, amountRaw, halvings, lossPct: preflight.lossPct,
       impactPct: preflight.impactPct, conservativeReturnRatio: cost.conservativeReturnRatio,
-      conservativeLossPct, minSize, refusal };
+      conservativeLossPct, minSize, refusal, advisory };
     attempts.push(attempt);
     if (!refusal)
-      return { ok: true, sol: candidate, amountRaw, preflight, cost, conservativeLossPct,
+      return { ok: true, sol: candidate, amountRaw, preflight, cost, conservativeLossPct, advisory,
         minSize, attempts, halvings, sizedDown: halvings > 0,
         reason: halvings > 0
           ? `sized down by the route: ${attempts.map(rung).join(" → ")}`

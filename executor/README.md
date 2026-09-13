@@ -44,6 +44,11 @@ must sign with, then walks you through two private RPCs and a Jupiter key, and t
 makes you retype the new wallet's own public key before it will arm — see
 [Explicit live installation](#explicit-live-installation).
 
+**A small Linux server you own is the 24/7 option.** The same command on a VPS installs
+a systemd unit that restarts the bot on its own and never sleeps, and the key is
+generated on that server and stays there — you hold it, not the desk. A laptop works
+too, as long as it stays awake and on power.
+
 **Arming is not funding, and funding is the switch.** The burner it generates starts
 empty, and an empty wallet cannot trade. Nothing happens until you send SOL to the
 printed address from a wallet of your own, which is a step this installer has no part
@@ -558,6 +563,11 @@ The installer records explicit paths in the protected environment file:
 
 - If the file named by `PAUSE_ENTRIES_FILE` exists, WALL-ST-E refuses new buys but
   continues monitoring, closing recorded positions, and reconciling pending attempts.
+  **Every install and upgrade creates it**, so a new release comes up not buying until
+  you lift it: `rm -f ~/claudeco-executor/PAUSE_ENTRIES`, or pass `--resume-entries`
+  to the installer and it lifts the pause itself the moment the new release is the
+  running one (never before, so a failed activation still comes up paused). The floor's
+  "New buys" chip reads OFF while the file exists.
 - If the file named by `HARD_STOP_FILE` exists, WALL-ST-E creates no new submissions,
   including automated exits. It still reconciles transactions that were already
   signed or submitted. Existing positions require operator supervision or manual
@@ -650,6 +660,125 @@ rolling 24-hour realized-loss
 limit, available balance, and maximum-open-position rule. These are loss controls,
 not evidence of an edge.
 
+## Taking every published call
+
+By default the bot decides for itself whether a published call is worth buying: Kelly's
+verdicts, the net reward-to-risk of the bracket, the per-name risk cap and book heat may
+refuse a call or shrink it, and the route ladder refuses a coin whose trading costs
+already sit at or below the authored stop. `ENTRY_MODE="take-every-call"` is the owner's
+instruction to buy every call the desk publishes, at one fixed size, and to treat those
+edge rails as advisory: each one still runs and is written to the log as a `WARN` line,
+but none of them refuses.
+
+What still refuses in that mode, because no instruction can spend money that is not
+there or hold a position with no floor: a call with no stop, the rolling 24-hour
+realized-loss entry brake, the open-position count, the daily deploy cap, the spendable
+balance, the minimum viable size, the call-age and mark checks, and every custody, fee,
+rent and price-impact rule on the transaction itself. The route's own caps (round-trip
+loss and price impact) are never advisory.
+
+Arming it is a sentence, like every other raise of risk here. Stop the service, add
+three lines to the protected env file, and load:
+
+```bash
+# in $ENV_FILE
+ENTRY_MODE="take-every-call"
+FIXED_SOL="0.5"
+ENTRY_MODE_ACK="I take every published call on <burner public key> at 0.5 SOL"
+```
+
+`FIXED_SOL` may not exceed `MAX_SOL_PER_TRADE`. The sentence must name the wallet that
+signs and the exact `FIXED_SOL` figure; the bot refuses to start otherwise and prints
+the sentence it expected. The boot log then says `ENTRY MODE take-every-call`, the
+heartbeat reports the mode, and the WALL-ST-E tab's health grid reads `TAKES EVERY
+CALL`. An upgrade carries the three lines forward. Remove `ENTRY_MODE` (or set it to
+`risk`) and load again to return to risk-sized entries.
+
+## Arming HAWK-AI, the launch sniper, with real money
+
+HAWK-AI is the executor's second lane. It listens to pump.fun's own program logs over the
+bot's RPC WebSocket (with the listing poll as corroboration), runs every new launch through
+the entry contract in `snipe-entry.mjs`, and — when armed — buys on the bonding curve with
+the program's own `buy_v2` instruction and sells the whole position with `sell_v2`. It never
+routes through Jupiter: a launch is seconds old and has no route. The signing path is one
+file, `executor/snipe-execute.mjs`, and the decision code in `snipe-lane.mjs` cannot reach
+a key; the lane's own test scans it for one on every run.
+
+What a buy is, end to end: gates (pause, hard stop, the launchd power proof, the journal's
+exposure lock), the intent written to the journal as `planned`, one transaction (compute
+budget, idempotent ATA create, `buy_v2`), simulated unsigned on **both** RPC providers with
+the wallet and the token account returned afterwards — the spend may not exceed the ceiling
+plus the fee and rent caps, the delivery may not fall short of the instruction, and the two
+providers must agree within 1% — then signed, journaled under the sniper's own protocol
+marker, and sent raw to both providers with preflight skipped. The fill is read from the
+confirmed transaction's own balances and handed to the lane the moment the cluster confirms
+it; finality is awaited in the background. A sell is the same path with the floor set from
+the curve's own quote less a 10% tolerance. The position leaves in full at the take, the
+stop, the creator's exit, or the clock (ten minutes by default). A curve that has graduated
+to a pool is refused: that position must be sold by hand.
+
+The wallet is one wallet. A sniper deployment counts in the same rolling 24-hour risk the
+desk reads, and an unresolved intent on either lane freezes new exposure on both until
+recovery resolves it.
+
+### Before arming
+
+- A live install: `EXECUTE=1`, `LIVE_TRADING_ACK` and `LIVE_CAPS_ACK` already armed as
+  described above, two independent private RPC providers, and a release that ships
+  `snipe-execute.mjs` (every release from this change on; `install.sh` validates the file).
+- A stop you chose. The default 0.20x stop was derived for the 0.005 SOL canary and the
+  arming checklist refuses to carry it unexamined onto a larger ticket. `SNIPE_STOP_FRAC`
+  is the fraction of entry at which the whole position leaves; the fee rail also bounds
+  how tight it can be for the size (at 1 SOL anything up to 0.996 is fundable).
+- The sniper's own ceilings: `SNIPE_MAX_SOL_PER_TRADE` at most `1` SOL and
+  `SNIPE_DAILY_SOL_CAP` at most `1000` SOL. The daily cap is charged for real once armed;
+  it cannot be configured off on a lane that spends.
+
+### The arming lines
+
+Stop the service first — `unload` writes the entry pause — then add these to the protected
+env file. The sentence is compared byte for byte against the one the lane prints for the
+wallet that will sign, so type the numbers you set:
+
+```bash
+bash "$RELEASE_DIR/executor/macos-launchagent.sh" unload \
+  --executor-dir "$RELEASE_DIR/executor" --env-file "$ENV_FILE"
+
+# in $ENV_FILE
+SNIPE_LANE="execute"
+SNIPE_MAX_SOL_PER_TRADE="0.05"
+SNIPE_DAILY_SOL_CAP="0.5"
+SNIPE_STOP_FRAC="0.7"
+SNIPE_TAKE_AT_ENTRY_X="2"
+SNIPE_LIVE_ACK="I arm HAWK-AI v1 for <burner public key>: 0.05 SOL per launch, 0.5 SOL per day, sold in full at the take, the stop, the creator's exit or the clock"
+```
+
+Then load the same pinned release and read its log. An armed lane prints
+`HAWK-AI ... EXECUTING for <wallet> through snipe-execute.mjs`; a refused one prints the
+arming checklist item that failed, or the exact sentence it expected, and the launch lane
+stays down while the desk keeps running. Remove `PAUSE_ENTRIES` only when that line has
+been read — the pause blocks the sniper's buys exactly as it blocks the desk's, and
+`HARD_STOP` blocks its sells too.
+
+```bash
+bash "$RELEASE_DIR/executor/macos-launchagent.sh" load \
+  --executor-dir "$RELEASE_DIR/executor" --env-file "$ENV_FILE"
+tail -f ~/claudeco-executor/logs/executor.log | grep -i "hawk\|snipe"
+rm "$PAUSE_ENTRIES_FILE"    # when, and only when, the armed line has been read
+```
+
+`SNIPE_LANE="observe"` keeps the shadow book with no key in reach; `SNIPE_LANE="off"` (the
+default) constructs nothing. The legacy `SNIPE_EXECUTE` flag is refused on sight.
+
+### What has and has not been proved
+
+The instruction encoders are re-encoded byte for byte against 30 mainnet transactions on
+every test run, and the signing path is driven through every outcome the chain can hand
+back (confirmed, failed, expired, silent, a lying provider, a drain) against a scripted
+chain in `test-snipe-execute.mjs`. What no test can prove is the first real fill: start
+at a size you can watch — the 0.005 SOL canary, or a few hundredths — read the first buy
+and the first sell in the journal and on an explorer, and only then raise the ceiling.
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -661,15 +790,16 @@ not evidence of an edge.
 | `LIVE_TRADING_ACK` | unset | Must exactly match the loaded burner public key in live mode |
 | `LIVE_CAPS_ACK` | unset | Required when any live money cap exceeds its canary default; must be the installer’s exact wallet-and-number-bound v2 sentence |
 | `JUPITER_API_KEY` | unset | Required locally for Jupiter Swap API v2 in live mode |
+| `JUPITER_EXCLUDE_DEXES` | `HumidiFi` | Jupiter route-plan labels left out of every order, comma-separated. The default is the venue measured on 2026-09-13 to make the taker fund a 0.013 SOL program account nobody quoted, which the custody rule refuses; the rule is unchanged, the venue is not asked for. Empty excludes nothing; carried across upgrades |
 | `SOLANA_RPC` | public default in dry run | A private HTTPS provider is required in live mode |
 | `SOLANA_RPC_SECONDARY` | required in live mode | Independent private provider for expiry, custody, and Pyth SOL/USD consensus checks; an outage fails closed or uses only the bounded Pyth exit cache |
 | `SOL_USD_CACHE_MAX_AGE_MS` | `1800000` live ceiling | Maximum age of both the local observation and retained Pyth publish time before the exit-price cache fails closed |
 | `STATE_DB` | installer-managed | Durable cursor, positions, transaction journal, and wallet binding |
 | `PAUSE_ENTRIES_FILE` | installer-managed | Presence blocks new entries while allowing managed exits |
 | `HARD_STOP_FILE` | installer-managed | Presence blocks new submissions while reconciliation continues |
-| `MAX_SOL_PER_TRADE` | live `0.005` | Absolute input ceiling for one entry; acknowledged operator hard maximum `0.05` SOL |
-| `DAILY_SOL_CAP` | live `0.01` | Rolling 24-hour deployment cap; acknowledged operator hard maximum `0.5` SOL and never below the per-trade cap |
-| `DAILY_LOSS_LIMIT_SOL` | live `0.01` | Rolling 24-hour realized-loss entry brake, including failed-attempt fees; acknowledged operator hard maximum `0.15` SOL, not a guaranteed loss ceiling |
+| `MAX_SOL_PER_TRADE` | live `0.005` | Absolute input ceiling for one entry; acknowledged operator hard maximum `1` SOL |
+| `DAILY_SOL_CAP` | live `0.01` | Rolling 24-hour deployment cap; acknowledged operator hard maximum `1000` SOL and never below the per-trade cap |
+| `DAILY_LOSS_LIMIT_SOL` | live `0.01` | Rolling 24-hour realized-loss entry brake, including failed-attempt fees; acknowledged operator hard maximum `0.4` SOL, not a guaranteed loss ceiling |
 | `MAX_OPEN_POSITIONS` | policy default | Concurrent recorded-position ceiling |
 | `SLIPPAGE_BPS` | policy default | Maximum requested swap slippage |
 | `MAX_PRICE_IMPACT_PCT` | `5` | Strict maximum impact for a new entry |
@@ -684,6 +814,12 @@ not evidence of an edge.
 | `MAX_EXIT_TRIGGER_AGE_MS` | `60000` live ceiling | Maximum price-exit trigger age before two fresh witnesses are required |
 | `TRAIL_PCT` | `0.25` | Trail distance after the shared 1.5x arm |
 | `MAX_AGE_HOURS` | `12` | Time exit used by snipe-v3 |
+| `SNIPE_LANE` | `off` | `observe` runs the launch shadow book; `execute` arms HAWK-AI on a live install (see above) |
+| `SNIPE_MAX_SOL_PER_TRADE` | `0.005` | The sniper's per-launch ceiling; operator hard maximum `1` SOL |
+| `SNIPE_DAILY_SOL_CAP` | `0.01` | The sniper's rolling 24-hour deployment cap, charged for real once armed; operator hard maximum `1000` SOL |
+| `SNIPE_STOP_FRAC` | policy `0.20` | Fraction of entry at which the whole position leaves; must be set explicitly above the 0.005 SOL canary |
+| `SNIPE_TAKE_AT_ENTRY_X` | policy `2` | Multiple of entry at which the whole position leaves |
+| `SNIPE_LIVE_ACK` | unset | The owner's typed arming sentence; must equal the one the lane prints for the signing wallet and these caps |
 
 Do not hand-edit `LIVE_TRADING_ACK` or `LIVE_CAPS_ACK`. On Linux, re-run the reviewed
 installer to change modes, wallets, credentials, RPCs, or caps. On an adopted macOS

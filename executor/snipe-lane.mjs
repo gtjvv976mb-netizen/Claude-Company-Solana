@@ -82,8 +82,8 @@
  */
 import { createHash } from "node:crypto";
 
-import { snipeContract, SNIPE_GATES } from "./snipe-entry.mjs";
-import { curveExitMarkX, frictionXFor, snipeFloor } from "./snipe-curve.mjs";
+import { snipeContract, planSnipeCeiling, SNIPE_GATES } from "./snipe-entry.mjs";
+import { curveExitMarkX, frictionXFor, snipeCurveState, snipeFloor } from "./snipe-curve.mjs";
 import { venueContract } from "./snipe-venue.mjs";
 import { createSnipeShadow, SHADOW_HOPS } from "./snipe-shadow.mjs";
 import { closeSnipe, ensureSnipeBook, openSnipe, snipeFor, snipeList, updateSnipe } from "./snipe-book.mjs";
@@ -115,6 +115,12 @@ export const SNIPE_LANE_CLAUSES = Object.freeze([
   "feed_missing",
   "signing_refused",
   "already_started",
+  /* Execute mode (2026-09-12). Named refusals for the three things arming can lack: the
+     signing port, the owner's typed sentence, and — at run time — a buy or sell the port
+     could not land. Frozen with the rest so none can ship unnamed. */
+  "executor_missing",
+  "arming_refused",
+  "execution_failed",
 ]);
 
 export class SnipeLaneError extends Error {
@@ -214,6 +220,22 @@ export const SNIPE_LANE_DEFAULTS = Object.freeze({
      signal sells the entire position. Ten percent is a deliberate disposal and not an
      accident. */
   creatorExitFrac: 0.10,
+  /* THE OWNER'S TAKE DIAL, as the policy reads it: the whole position leaves at N x entry.
+     Null means snipe-policy's own default (2x). Named takeAtEntryX and never takeProfitX,
+     because strategy.mjs owns that key and separation clause 6 pins that the two config
+     namespaces share no name. */
+  takeAtEntryX: null,
+  /* THE OWNER'S STOP DIAL, as the policy reads it: the whole position leaves when the mark
+     falls to this fraction of entry. Null means snipe-policy's own 0.20, which was derived
+     for the 0.005 SOL canary and which the arming checklist refuses to carry, unexamined,
+     onto a larger ticket — so an executing lane above the canary size cannot construct
+     until this is typed. The checklist also refuses a level the fee rail cannot fund. */
+  stopFrac: null,
+  /* THE ARMING SENTENCE. Null on every lane that observes. An executing lane refuses to
+     construct unless this equals snipeArmSentence(wallet, maxSolPerTrade, dailySolCap)
+     for the wallet that will sign, so the numbers were typed by a person beside the key
+     they bind. It is a string the lane compares and never otherwise reads. */
+  liveAck: null,
 });
 
 /**
@@ -241,7 +263,7 @@ export const SNIPE_LANE_DEFAULTS = Object.freeze({
  *
  * Raising these is a code change, reviewed, exactly as it is on the desk side.
  */
-export const SNIPE_OPERATOR_MAX = Object.freeze({ maxSolPerTrade: 0.4, dailySolCap: 1000 });
+export const SNIPE_OPERATOR_MAX = Object.freeze({ maxSolPerTrade: 1, dailySolCap: 1000 });
 
 /**
  * WHICH EXIT SIGNALS ARE ACTUALLY CONNECTED, AS A FACT RATHER THAN AN IMPRESSION.
@@ -297,6 +319,9 @@ export const SNIPE_ENV = Object.freeze({
   SNIPE_MAX_LAUNCH_SHARE_PCT: Object.freeze({ key: "maxLaunchSharePct", parse: "number" }),
   SNIPE_DISAGREE_STREAK_MAX: Object.freeze({ key: "disagreeStreakMax", parse: "number" }),
   SNIPE_CREATOR_EXIT_FRAC: Object.freeze({ key: "creatorExitFrac", parse: "number" }),
+  SNIPE_TAKE_AT_ENTRY_X: Object.freeze({ key: "takeAtEntryX", parse: "number" }),
+  SNIPE_STOP_FRAC: Object.freeze({ key: "stopFrac", parse: "number" }),
+  SNIPE_LIVE_ACK: Object.freeze({ key: "liveAck", parse: "string" }),
 });
 
 /* Every env name must carry the prefix that keeps the two config objects apart. Asserted
@@ -351,6 +376,10 @@ export function snipeLaneConfig(env = {}) {
           "reviewed code change in all five copies, not an environment setting.",
           { name, value: n, max: spec.max });
       out[spec.key] = n;
+    } else if (spec.parse === "string") {
+      /* Compared, never interpreted: the arming sentence is matched byte for byte against
+         the one the lane composes for the signing wallet, so it is kept exactly as typed. */
+      out[spec.key] = text;
     } else {
       /* Strictly: 1/true/yes is on, 0/false/no/absent is off, anything else is a refusal
          rather than a guess about what the operator meant. */
@@ -359,18 +388,29 @@ export function snipeLaneConfig(env = {}) {
       else throw new SnipeLaneError("mode_invalid", `${name}=${JSON.stringify(text)} is not a boolean flag`, { name, value: text });
     }
   }
-  /* SNIPE_EXECUTE exists only to be refused. There is no signing path in this file, and a
-     lane that accepted the flag and then quietly observed would be worse than one that
-     says so. */
-  const wantsExecute = out.lane === "execute"
-    || ["1", "true", "yes", "on"].includes(String(env.SNIPE_EXECUTE ?? "").trim().toLowerCase());
-  if (wantsExecute)
+  /* SNIPE_EXECUTE exists only to be refused. The flag predates the signing path and named
+     the wrong thing: execution is a MODE (SNIPE_LANE=execute) that createSnipeLane admits
+     only with a signing port, a clear arming checklist and the owner's typed sentence, and
+     a bare boolean that skipped all three would be a flag that arms. */
+  if (["1", "true", "yes", "on"].includes(String(env.SNIPE_EXECUTE ?? "").trim().toLowerCase()))
     throw new SnipeLaneError("execute_not_implemented",
-      "this lane is observe-only: no keypair is loaded, nothing is signed and nothing is sent. "
-      + "Arming live is a separate owner decision on the shadow book's evidence, and a separate "
-      + "signing path that does not exist yet.",
+      "SNIPE_EXECUTE is not a switch this lane honours. Arming is SNIPE_LANE=execute together with "
+      + "SNIPE_LIVE_ACK, the sentence the lane prints for your wallet and caps, on a live (EXECUTE=1) "
+      + "install; a boolean cannot carry the numbers the acknowledgement exists to make you type.",
       { lane: out.lane, snipeExecute: env.SNIPE_EXECUTE ?? null });
   return Object.freeze(out);
+}
+
+/**
+ * THE SENTENCE THAT ARMS THE SNIPER, bound to the wallet that signs and the two money dials.
+ * Same shape and same reason as the desk's caps sentence (poller.mjs capsAckSentence): a
+ * number typed beside the key it binds is a number somebody looked at. The lane compares
+ * the operator's SNIPE_LIVE_ACK against this byte for byte and refuses to construct on any
+ * difference, so the dials cannot be moved without retyping it.
+ */
+export function snipeArmSentence(wallet, maxSolPerTrade, dailySolCap) {
+  return `I arm HAWK-AI v1 for ${wallet}: ${maxSolPerTrade} SOL per launch, ${dailySolCap} SOL per day, ` +
+    "sold in full at the take, the stop, the creator's exit or the clock";
 }
 
 /**
@@ -388,8 +428,22 @@ export function snipeLaneConfig(env = {}) {
  */
 export function effectiveLaneConfig(cfg = {}) {
   const executing = cfg.lane === "execute";
+  /* THE TAKE DIAL REACHES THE POLICY HERE. bindDeterminer hands snipe-policy `cfg.policy`
+     and nothing else, so a dial parked at the top level of the config would be a dial the
+     determiner never reads — set, printed, and inert. Folded in once, where the mode's own
+     overrides already live, so every consumer of the effective config sees the same take. */
+  const take = Number(cfg.takeAtEntryX);
+  const stop = Number(cfg.stopFrac);
+  const folded = {
+    ...(Number.isFinite(take) && take > 0 ? { takeAtEntryX: take } : {}),
+    ...(Number.isFinite(stop) && stop > 0 ? { stopFrac: stop } : {}),
+  };
+  const policy = Object.keys(folded).length
+    ? Object.freeze({ ...(cfg.policy ?? {}), ...folded })
+    : cfg.policy;
   return Object.freeze({
     ...cfg,
+    ...(policy !== undefined ? { policy } : {}),
     /* Forced ON for an executing lane; the operator's value stands everywhere else. */
     chargeDailyCap: executing ? true : cfg.chargeDailyCap === true,
   });
@@ -444,7 +498,9 @@ export function armabilityReport({ cfg = {}, venue = null, stopExplicit = false,
       : "an executing lane would NOT charge its daily cap: deployedTodaySol stays 0 and "
         + "dailySolCap never binds, whatever it is set to");
 
-  const policyCfg = { ...snipePolicy.SNIPE_DEFAULTS, ...(cfg.policy ?? {}) };
+  /* The take the determiner will actually run under: armedCfg has the owner's dial folded
+     into policy, so a take typed as SNIPE_TAKE_AT_ENTRY_X is the take this item judges. */
+  const policyCfg = { ...snipePolicy.SNIPE_DEFAULTS, ...(armedCfg.policy ?? {}) };
   try {
     const e = snipePolicy.assertTakeFundable({ takeAtEntryX: policyCfg.takeAtEntryX, sizeSol: size, feeSolPerLeg: fee });
     add("take_is_fundable", true,
@@ -522,6 +578,23 @@ export function observeOnlyVenue(adapter) {
       `the observe facade does not satisfy the venue contract: ${verdict.detail.message}`,
       { clause: verdict.clause, venueId: adapter.id ?? null });
   return frozen;
+}
+
+/**
+ * The adapter as an ARMED lane sees it: encoders reachable, and the venue contract run in
+ * execute mode, which is the mode that demands a proved layout. Nothing is wrapped and
+ * nothing is invented — the object is the venue's own, frozen, with observeOnly stated
+ * false so a reader of the lane's state can tell the two postures apart in one field.
+ */
+export function armedVenue(adapter) {
+  if (adapter === null || typeof adapter !== "object")
+    throw new SnipeLaneError("venue_missing", `a venue adapter is required; received ${adapter === null ? "null" : typeof adapter}`);
+  const verdict = venueContract(adapter, { execute: true });
+  if (!verdict.ok)
+    throw new SnipeLaneError("venue_refused",
+      `the venue may not be armed: ${verdict.detail.message}`,
+      { clause: verdict.clause, venueId: adapter.id ?? null });
+  return Object.freeze({ ...adapter, observeOnly: false });
 }
 
 /* ── the determiner binding ────────────────────────────────────────────────────────── */
@@ -617,20 +690,24 @@ function digestOf(account) {
  * where it is actually read.
  */
 export async function readAcrossEndpoints({ readers, addresses, mint }) {
-  const results = [];
-  for (const reader of readers) {
+  /* BOTH ENDPOINTS AT ONCE. This awaited each reader in turn, so the witness read cost
+     the SUM of two round trips at the exact moment a launch is measured in slots. The
+     verdict below compares reads BY SLOT and does not care which answered first, and each
+     reader keeps its own try/catch, so an endpoint that throws still lands in the table as
+     its own error rather than taking the other's answer down with it. */
+  const results = await Promise.all(readers.map(async (reader) => {
     try {
       const answer = await reader.read(mint, addresses);
-      results.push({
+      return {
         id: reader.id,
         slot: Number.isFinite(Number(answer?.slot)) ? Number(answer.slot) : null,
         accounts: Array.isArray(answer?.accounts) ? answer.accounts : [],
         error: null,
-      });
+      };
     } catch (error) {
-      results.push({ id: reader.id, slot: null, accounts: [], error: String(error?.message ?? error) });
+      return { id: reader.id, slot: null, accounts: [], error: String(error?.message ?? error) };
     }
-  }
+  }));
 
   const view = results.map((r) => ({
     id: r.id, slot: r.slot, error: r.error,
@@ -695,15 +772,39 @@ export async function readAcrossEndpoints({ readers, addresses, mint }) {
 export function createSnipeLane({
   venue, feed = null, readers = [], control = null, cfg = {}, clock = () => Date.now(),
   state = {}, shadow = null, policy = snipePolicy, log = () => {}, book = null,
+  executor = null,
 } = {}) {
   const conf = Object.freeze({ ...SNIPE_LANE_DEFAULTS, ...cfg });
   if (!SNIPE_LANE_MODES.includes(conf.lane))
     throw new SnipeLaneError("mode_invalid", `lane ${JSON.stringify(conf.lane)} is not one of ${SNIPE_LANE_MODES.join(", ")}`);
-  if (conf.lane === "execute")
-    throw new SnipeLaneError("execute_not_implemented",
-      "createSnipeLane refuses lane=execute: there is no signing path in this file and no keypair is "
-      + "loaded on it. The shadow book is the deliverable; arming is a separate owner decision.",
-      { lane: conf.lane });
+  const executing = conf.lane === "execute";
+  /* ARMING, IN THREE REFUSALS. This constructor refused lane=execute outright while there
+     was no signing path. There is one now (snipe-execute.mjs), and it is reached ONLY as a
+     port handed in here — this file still constructs no connection, loads no key and
+     sends nothing, exactly as its own test scans it. Execute mode therefore needs, in
+     order: a signing port with a wallet; a clear arming checklist, every item printed;
+     and the owner's sentence, typed for that wallet and these two dials. A lane that
+     could be armed by a flag alone would be a lane a typo arms. */
+  if (executing) {
+    const portOk = executor !== null && typeof executor === "object"
+      && typeof executor.wallet === "string" && executor.wallet.length > 0
+      && typeof executor.prepareBuy === "function" && typeof executor.buy === "function"
+      && typeof executor.sell === "function";
+    if (!portOk)
+      throw new SnipeLaneError("executor_missing",
+        "lane=execute needs a signing port {wallet, prepareBuy, buy, sell} from snipe-execute.mjs; "
+        + "there is no signing code in this file and it will not run armed without one",
+        { lane: conf.lane });
+    /* The stop is "explicit" only when the owner typed SNIPE_STOP_FRAC; the checklist then
+       still refuses a level the fee rail cannot fund at this size. */
+    assertArmable({ cfg: conf, venue, stopExplicit: Number.isFinite(Number(conf.stopFrac)) && Number(conf.stopFrac) > 0 });
+    const expected = snipeArmSentence(executor.wallet, conf.maxSolPerTrade, conf.dailySolCap);
+    if (conf.liveAck !== expected)
+      throw new SnipeLaneError("arming_refused",
+        "arming HAWK-AI needs the owner's typed acknowledgement for this wallet and these caps. "
+        + `Set SNIPE_LIVE_ACK to exactly:\n\n    ${expected}\n`,
+        { wallet: executor.wallet, maxSolPerTrade: conf.maxSolPerTrade, dailySolCap: conf.dailySolCap });
+  }
 
   /* The mode's overrides, resolved once. conf stays the operator's stated configuration so
      it can still be reported back verbatim; `effective` is what the lane actually runs on. */
@@ -713,7 +814,7 @@ export function createSnipeLane({
      not been blind for long, whatever it went through earlier. */
   const disagreeStreak = new Map();
 
-  const adapter = observeOnlyVenue(venue);
+  const adapter = executing ? armedVenue(venue) : observeOnlyVenue(venue);
 
   /* TWO ENDPOINTS, UNCONDITIONALLY. See the header: the poller has one in observe, and a
      book that validates a witness rule the live lane cannot run is worse than no book. */
@@ -745,6 +846,10 @@ export function createSnipeLane({
   const counters = {
     notices: 0, recorded: 0, cleared: 0, refused: 0, wouldHaveOpened: 0,
     wouldHaveExited: 0, forwardSamples: 0, readErrors: 0, ticks: 0, deterministErrors: 0,
+    /* Execute mode. `entered`/`exited` count fills the port confirmed; the two failure
+       counters count buys and sells the port refused or could not land, which in observe
+       mode stay at zero for the life of the process. */
+    entered: 0, exited: 0, entryFailures: 0, exitFailures: 0,
   };
   /* The would-have-deployed total. It charges the real daily cap only when the operator
      asks; either way it is REPORTED, so "how many would this lane have taken today" is a
@@ -811,6 +916,28 @@ export function createSnipeLane({
     }
     hops.push({ hop: "decode", atMs: clock() });
 
+    /* THE BYTES BEFORE THE VERDICT, when armed. Gate 20 (instruction_mismatch) decodes the
+       instruction that would be signed and refuses an execute lane that supplies none, so
+       the port builds it here from the same plan the contract is about to recompute —
+       same curve, same ticket, same cfg, deterministic — and the contract then proves the
+       bytes match the plan it reaches on its own. The instruction the gate passed is the
+       instruction the port signs; nothing is rebuilt between the check and the send. */
+    let prepared = null;
+    let prepareError = null;
+    if (executing && curve) {
+      try {
+        const plan = planSnipeCeiling({
+          curve: curve.k !== undefined ? curve : snipeCurveState(curve), adapter,
+          solLamports: BigInt(Math.round(Number(conf.maxSolPerTrade) * LAMPORTS)), cfg: conf,
+        });
+        if (plan?.deliverable && plan.baseOutRaw > 0n && plan.maxQuoteInRaw > 0n)
+          prepared = await executor.prepareBuy({
+            mint, curve, read, baseOutRaw: plan.baseOutRaw, maxQuoteInRaw: plan.maxQuoteInRaw,
+          });
+      } catch (error) { prepared = null; prepareError = String(error?.message ?? error); }
+    }
+    hops.push({ hop: "prepare", atMs: clock() });
+
     const verdict = snipeContract({
       notice: {
         mint,
@@ -818,6 +945,7 @@ export function createSnipeLane({
         slot: record?.firstSlot ?? null,
         noticeAt: noticeAtMs,
         source: record?.firstSource ?? null,
+        wallet: executing ? executor.wallet : null,
       },
       curve,
       adapter,
@@ -828,7 +956,7 @@ export function createSnipeLane({
       mint: read.accounts[2] ?? null,
       creator: creatorFacts(record, curve),
       fees: feeModel(),
-      instruction: null,
+      instruction: prepared?.instruction ?? null,
     });
     hops.push({ hop: "gate", atMs: clock() });
 
@@ -868,10 +996,14 @@ export function createSnipeLane({
 
     if (verdict.ok) {
       counters.cleared++;
-      openWouldBePosition({ row, mint, curve, verdict, frictionX, record, slot: read.slot });
+      if (executing) await enterForReal({ row, mint, curve, verdict, frictionX, record, read, prepared });
+      else openWouldBePosition({ row, mint, curve, verdict, frictionX, record, slot: read.slot });
     } else {
       counters.refused++;
-      log(`snipe shadow ${mint}: refused at ${verdict.gate} — ${verdict.detail.message}`);
+      const why = prepareError && verdict.gate === "instruction_mismatch"
+        ? `${verdict.detail.message} (the port could not build the instruction: ${prepareError})`
+        : verdict.detail.message;
+      log(`snipe ${executing ? "live" : "shadow"} ${mint}: refused at ${verdict.gate} — ${why}`);
     }
     return Object.freeze({ row, verdict });
   }
@@ -947,6 +1079,75 @@ export function createSnipeLane({
       /* A book refusal here is a finding, not a crash: it means the fill this lane would
          have taken is one the book could not price, which is exactly what the book is for. */
       log(`snipe shadow ${mint}: the book refused the would-have-fill (${error.clause ?? error.name}): ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * THE REAL ENTRY, through the port. The verdict's numbers are the contract's own plan —
+   * the quantity the instruction encodes and the ceiling it may spend — and the port has
+   * already proved those bytes decode back to them (gate 20). What comes back is the
+   * FILL: what the chain actually charged and delivered, read from the confirmed
+   * transaction, never from the plan. The book is opened on the fill, so every mark this
+   * position is ever judged against is a multiple of the SOL that actually left.
+   *
+   * A port refusal is a finding on the log, not a crash: the notice was refused at the
+   * last gate there is. A fill the book then refuses is the one case that must shout —
+   * the money has moved and the lane cannot hold the position — so it names the
+   * signature and says to sell by hand; the journal has the intent either way.
+   */
+  async function enterForReal({ row, mint, curve, verdict, frictionX, record, read, prepared }) {
+    const creator = record?.creator ?? curve?.creator ?? null;
+    let fill = null;
+    try {
+      fill = await executor.buy({
+        mint, curve, curveReadSlot: read.slot, prepared, creator,
+        baseOutRaw: verdict.detail.baseOutRaw, maxQuoteInRaw: verdict.detail.maxQuoteInRaw,
+      });
+    } catch (error) {
+      counters.entryFailures++;
+      log(`snipe live ${mint}: ENTRY FAILED (${error?.clause ?? error?.name ?? "error"}): ${error?.message ?? error}`);
+      return null;
+    }
+    const isRaw = (v) => /^\d+$/.test(String(v ?? "")) && BigInt(String(v)) > 0n;
+    if (!fill || !isRaw(fill.qtyRaw) || !isRaw(fill.quoteInRaw)) {
+      counters.entryFailures++;
+      log(`snipe live ${mint}: ENTRY UNACCOUNTED — the port returned no usable fill; the journal holds the intent`);
+      return null;
+    }
+    const openedAt = Number(fill.confirmedAtMs) > 0 ? Number(fill.confirmedAtMs) : clock();
+    const entryInputLamports = BigInt(String(fill.quoteInRaw));
+    const qtyRaw = BigInt(String(fill.qtyRaw));
+    const paidFee = /^\d+$/.test(String(fill.feeLamports ?? "")) ? BigInt(String(fill.feeLamports)) : feeReserveLamports();
+    const sizeSol = Number(entryInputLamports) / LAMPORTS;
+    const feeSolPerLeg = Number(paidFee) / LAMPORTS;
+    try {
+      const position = determiner.open({ mint, entry: 1, openedAt, creator, sizeSol, feeSolPerLeg });
+      const filed = openSnipe(S, {
+        ...position,
+        mint, venue: adapter.id, entry: 1, openedAt, sizeSol, feeSolPerLeg,
+        qtyRaw, entryInputLamports, entryFeeLamports: paidFee, creator,
+        openedAtSlot: Number.isFinite(Number(fill.slot)) ? Number(fill.slot) : read.slot,
+        frictionXAtOpen: frictionX, samples: 0,
+        /* The fields that make this a position and not a would-have: the signature the
+           chain accepted, the intent the journal holds, and the basis every exit realizes
+           against. costBasisLamports is input plus the entry fee, as the desk defines it. */
+        live: true,
+        entrySignature: fill.signature ?? null,
+        entryIntentId: fill.intentId ?? null,
+        costBasisLamports: String(entryInputLamports + paidFee),
+      });
+      counters.entered++;
+      wouldHaveDeployedSol += sizeSol;   // charged for real: effective.chargeDailyCap is forced on
+      const floor = safeFloor();
+      log(`snipe live ${mint}: ENTERED — ${qtyRaw} base for ${entryInputLamports} lamports plus ${paidFee} fee, `
+        + `sig ${fill.signature ?? "?"}, frictionX ${frictionX === null ? "?" : frictionX.toFixed(4)}, `
+        + `floorMarkX ${floor.floorMarkX.toFixed(4)}`);
+      return filed;
+    } catch (error) {
+      counters.entryFailures++;
+      log(`snipe live ${mint}: BOUGHT BUT THE BOOK REFUSED THE FILL (${error?.clause ?? error?.name}): ${error?.message} `
+        + `— sig ${fill.signature ?? "?"}; the journal holds the intent; this position must be sold by hand`);
       return null;
     }
   }
@@ -1093,8 +1294,12 @@ export function createSnipeLane({
     const blindTooLong = blindStreak >= Number(conf.disagreeStreakMax);
     if (read.verdict === "disagree" && !blindTooLong) markX = null;
 
+    /* `effective`, not `conf`: the owner's take and stop dials are folded into policy by
+       effectiveLaneConfig, and until 2026-09-12 this handed the determiner the stated
+       config instead — SNIPE_TAKE_AT_ENTRY_X was parsed, printed, checked by the arming
+       checklist, and never once read by the code that sells. */
     const step = determiner.step({
-      position: pos, markX, nowMs: now, cfg: conf,
+      position: pos, markX, nowMs: now, cfg: effective,
       hardStop: sentinels.hardStop === true,
       /* LANE_SIGNALS.creatorSold is "unwired" and this literal is why. Declared there so
          the armability checklist blocks on it, rather than living as a comment nobody
@@ -1126,7 +1331,12 @@ export function createSnipeLane({
 
     const aged = now - Number(pos.openedAt) >= Number(conf.holdMaxMs);
     const samples = Number(pos.samples ?? 0) + 1;
-    const done = step?.action === "sell" || aged || samples >= Number(conf.forwardSamples);
+    /* AN ARMED LANE CLOSES ONLY ON A SELL — the determiner's or the clock's. The forward
+       window is a property of the shadow book (a would-have-position needs no exit, so the
+       row is closed once its evidence is complete); a real position that has been sampled
+       forwardSamples times has simply been held that long, and is sold when a rule fires. */
+    const wantsSell = step?.action === "sell" || aged;
+    const done = executing ? wantsSell : (wantsSell || samples >= Number(conf.forwardSamples));
 
     if (!done) {
       /* The determiner's own updated position is carried back into the book, which is what
@@ -1138,13 +1348,60 @@ export function createSnipeLane({
     }
 
     const reason = step?.action === "sell" ? step.reason
-      : aged ? `clock: the forward window closed at ${conf.holdMaxMs}ms`
+      : aged ? (executing
+        ? `clock: the position reached its ${conf.holdMaxMs}ms hold — leaving on the clock`
+        : `clock: the forward window closed at ${conf.holdMaxMs}ms`)
         : `the forward path is complete at ${samples} samples`;
+    if (executing)
+      return exitForReal({ pos, mint, curve, read, reason, now, markX, samples, creatorBaselineRaw, step });
     closeSnipe(S, mint, { reason, closedAt: now });
     recorder.close(mint, { action: step?.action === "sell" ? "would_have_exited" : "window_closed", reason, atMs: now, slot: read.slot });
     if (step?.action === "sell") counters.wouldHaveExited++;
     log(`snipe shadow ${mint}: would-have-exit (${step?.action ?? "window"}) — ${reason}`);
     return Object.freeze({ mint, action: step?.action ?? "window_closed", markX, closed: true });
+  }
+
+  /**
+   * THE REAL EXIT, through the port, always the WHOLE position. A sell the port cannot
+   * land keeps the book entry exactly as it was, latched with the reason and the error, and
+   * is retried on the next tick: a position the lane could not sell is not a position the
+   * lane may forget. The book closes only on a fill, and the realized figure is what the
+   * chain paid back less the fee and the basis the entry recorded — never a mark.
+   */
+  async function exitForReal({ pos, mint, curve, read, reason, now, markX, samples, creatorBaselineRaw, step }) {
+    let fill = null;
+    try {
+      fill = await executor.sell({ mint, curve, curveReadSlot: read.slot, qtyRaw: pos.qtyRaw, position: pos, reason });
+    } catch (error) {
+      counters.exitFailures++;
+      const detail = `${error?.clause ?? error?.name ?? "error"}: ${error?.message ?? error}`;
+      log(`snipe live ${mint}: EXIT FAILED — ${detail}; the position is kept and the sell is retried next tick`);
+      try {
+        updateSnipe(S, { ...pos, ...(isPlainObject(step?.position) ? step.position : {}), mint, samples,
+          creatorBaselineRaw, exitLatched: true, exitLatchedAt: now, exitLatchReason: reason,
+          exitError: detail.slice(0, 240) });
+      } catch (bookError) {
+        log(`snipe live ${mint}: could not record the exit latch (${bookError?.message ?? bookError})`);
+      }
+      return Object.freeze({ mint, action: "sell", markX, closed: false, latched: true });
+    }
+    const raw = (v) => (/^\d+$/.test(String(v ?? "")) ? BigInt(String(v)) : null);
+    const quoteOut = raw(fill?.quoteOutRaw);
+    const fee = raw(fill?.feeLamports) ?? 0n;
+    const basis = raw(pos.costBasisLamports)
+      ?? (raw(pos.entryInputLamports) ?? 0n) + (raw(pos.entryFeeLamports) ?? 0n);
+    const realized = quoteOut === null ? null : quoteOut - fee - basis;
+    closeSnipe(S, mint, {
+      reason, closedAt: now,
+      exitSignature: fill?.signature ?? null,
+      quoteOutRaw: quoteOut === null ? null : String(quoteOut),
+      realizedLamports: realized === null ? null : String(realized),
+    });
+    recorder.close(mint, { action: "exited", reason, atMs: now, slot: read.slot });
+    counters.exited++;
+    log(`snipe live ${mint}: EXITED — ${reason}; ${quoteOut ?? "?"} lamports back for ${pos.qtyRaw} base, `
+      + `fee ${fee}, realized ${realized === null ? "?" : realized} lamports, sig ${fill?.signature ?? "?"}`);
+    return Object.freeze({ mint, action: "sell", markX, closed: true });
   }
 
   /** Consume the feed until it closes. One notice at a time, deliberately: the gate stack
@@ -1160,6 +1417,9 @@ export function createSnipeLane({
   return {
     laneVersion: SNIPE_LANE_VERSION,
     cfg: conf,
+    /* What the lane actually runs on: the stated config with the mode's overrides and the
+       owner's dials folded into policy. Exposed so a test can prove a typed dial arrived. */
+    effective,
     mode: conf.lane,
     adapter,
     determiner: Object.freeze({ shape: determiner.shape, version: determiner.version }),
@@ -1170,7 +1430,7 @@ export function createSnipeLane({
      *  opened one, and nothing anywhere in this file signs. */
     async start() {
       if (started) throw new SnipeLaneError("already_started", "the snipe lane is already running");
-      if (conf.lane !== "observe")
+      if (conf.lane !== "observe" && conf.lane !== "execute")
         throw new SnipeLaneError("mode_invalid",
           `SNIPE_LANE is "${conf.lane}" — gate 0 (lane_off) would refuse every notice; the lane is not armed`,
           { lane: conf.lane });
@@ -1178,11 +1438,17 @@ export function createSnipeLane({
         throw new SnipeLaneError("feed_missing", "the lane needs a feed with start() and notices()");
       started = true;
       const floor = safeFloor();
-      log(`snipe lane ${SNIPE_LANE_VERSION}: OBSERVE ONLY on ${adapter.id} over ${readers.length} endpoints `
+      const posture = executing
+        ? `EXECUTING for ${executor.wallet} on ${adapter.id}`
+        : `OBSERVE ONLY on ${adapter.id}`;
+      const tail = executing
+        ? `signing through the port; ${conf.dailySolCap} SOL per day; sold in full at the take, the stop, the creator's exit or the clock`
+        : "no keypair is loaded, nothing is signed, nothing is sent";
+      log(`snipe lane ${SNIPE_LANE_VERSION}: ${posture} over ${readers.length} endpoints `
         + `[${ids.join(", ")}]; ticket ${conf.maxSolPerTrade} SOL, derived stop ${floor.stopFrac.toFixed(4)} `
         + `(floorMarkX ${floor.floorMarkX.toFixed(4)}, minViable ${floor.minViableSol.toFixed(6)} SOL); `
         + `determiner ${determiner.shape}${determiner.version ? ` ${determiner.version}` : ""}; `
-        + "no keypair is loaded, nothing is signed, nothing is sent");
+        + tail);
       const summary = await feed.start();
       consumed = consume();
       return summary;
@@ -1216,10 +1482,14 @@ export function createSnipeLane({
         chargeDailyCap: effective.chargeDailyCap === true,
         wouldHaveDeployedSol,
         ...counters,
-        /* STAMPED AND ASSERTED. Not a claim in a comment — a field the test reads. */
-        signed: 0,
-        sent: 0,
-        keypairsLoaded: 0,
+        /* STAMPED AND ASSERTED. Not a claim in a comment — a field the test reads. An
+           observing lane reports zero for all three by construction; an armed lane reports
+           what its port counted, which is the only party that can count it. */
+        ...(executing && typeof executor.stats === "function"
+          ? (() => { const s = executor.stats() ?? {};
+              return { signed: Number(s.signed) || 0, sent: Number(s.sent) || 0,
+                keypairsLoaded: Number(s.keypairsLoaded) || 0 }; })()
+          : { signed: 0, sent: 0, keypairsLoaded: 0 }),
       });
     },
   };

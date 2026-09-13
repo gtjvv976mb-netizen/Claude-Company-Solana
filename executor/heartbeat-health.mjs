@@ -9,17 +9,29 @@ const MAX_OPEN_POSITION_SENTINEL = 24;
 const POSITION_FLAGS = ["callIdentityIncomplete", "accountingIncomplete", "balanceReconciliationRequired",
   "riskDataUnavailable", "exitExecutionRequired", "manualExitRequired"];
 
+/* THE CAP BOUNDS THE HEARTBEAT WILL VOUCH FOR — the operator maxima, and nothing lower.
+   These were the 0.05 / 0.5 / 0.15 canary ceilings from the first live install, left
+   behind when the operator maxima were raised everywhere else. Any bot armed above the
+   canary (0.4 SOL per trade, as the owner's was) had its caps NULLED here and its state
+   forced to "degraded" on every pulse: a healthy, trading bot told the desk it was
+   degraded and declared no caps at all, and the board said so. The parity test now holds
+   this copy equal to poller.mjs OPERATOR_MAX, so the heartbeat cannot fall behind the
+   ceiling it reports against again. */
+export const HEARTBEAT_CAP_BOUNDS = Object.freeze({ maxSolPerTrade: 1, dailySolCap: 1000, dailyLossLimitSol: 0.4 });
+
 const TRADING_RUNTIME_FILES = Object.freeze([
   "poller.mjs", "journal.mjs", "jupiter.mjs", "network-fee-budget.mjs",
   /* THE LAUNCH LANE. Dynamically imported by poller.mjs behind SNIPE_LANE, so inert on an
      install that never sets it — but "the trading process can load it" is exactly the test
      for whether a file belongs in the fingerprint. A module that can execute in this
      process and is not fingerprinted is a module that can be swapped without the heartbeat
-     noticing. snipe-feed.mjs is deliberately ABSENT: the lane takes a feed as an argument
-     rather than importing one, so the trading process never loads it — and this list must
-     match what is loaded EXACTLY, in both directions. */
+     noticing. Since 2026-09-12 the poller builds the lane's feed (snipe-feed.mjs) and, on
+     an armed install, its signing path (snipe-execute.mjs) — the one sniper file that
+     holds a key, which is the last file whose bytes may change unnoticed — so both are
+     here. This list must match what is loaded EXACTLY, in both directions. */
   "snipe-lane.mjs", "snipe-venue.mjs", "snipe-venue-pumpfun.mjs", "snipe-curve.mjs",
   "snipe-entry.mjs", "snipe-book.mjs", "snipe-shadow.mjs", "snipe-policy.mjs",
+  "snipe-feed.mjs", "snipe-execute.mjs",
  "balance-verification.mjs",
   "entry-quote-guard.mjs", "exit-trigger.mjs", "feed-drain.mjs", "sol-usd-oracle.mjs",
   "heartbeat-health.mjs", "sleep-assertion.mjs", "strategy.mjs", "trade-policy.mjs",
@@ -65,6 +77,10 @@ export function executorHeartbeatHealth({
      echoed rather than obeyed silently: the page shows what the BOT says, never what the
      server asked for, because a bot that is asleep has agreed to nothing. */
   deskEntriesEnabled = null,
+  /* How the bot decides whether to buy: "risk" (the rails decide) or "take-every-call"
+     (the owner's instruction; the edge rails are advisory). Reported so the board says
+     which bot it is looking at. */
+  entryMode = "risk",
   lastTickCompletedAt = 0, lastFeedSuccessAt = 0, consecutiveFeedFailures = 0,
   consecutiveTickFailures = 0, feedRollback = false, executionReadiness = null,
   caps = null, runtimeCommit = null, runtimeFingerprint = null,
@@ -93,9 +109,9 @@ export function executorHeartbeatHealth({
     return Number.isFinite(number) && number >= 0.000001 && number <= max ? number : null;
   };
   const publicCaps = caps && typeof caps === "object" ? {
-    maxSolPerTrade: boundedCap(caps.maxSolPerTrade, 0.05),
-    dailySolCap: boundedCap(caps.dailySolCap, 0.5),
-    dailyLossLimitSol: boundedCap(caps.dailyLossLimitSol, 0.15),
+    maxSolPerTrade: boundedCap(caps.maxSolPerTrade, HEARTBEAT_CAP_BOUNDS.maxSolPerTrade),
+    dailySolCap: boundedCap(caps.dailySolCap, HEARTBEAT_CAP_BOUNDS.dailySolCap),
+    dailyLossLimitSol: boundedCap(caps.dailyLossLimitSol, HEARTBEAT_CAP_BOUNDS.dailyLossLimitSol),
     /* The open-position figure is a SENTINEL, not an exposure cap: risk decides how many
        memecoins run at once (book heat, the per-name cap, the daily deploy cap and the
        wallet all bind before it). This bound was 4 and the sentinel moved to 24, so a
@@ -131,6 +147,7 @@ export function executorHeartbeatHealth({
     // bot, no reins: the server learns it is being mirrored, it cannot switch it on or off.
     deskUnreachableSince: unreachableSince,
     mirrorActive: mirrorActive === true,
+    entryMode: entryMode === "take-every-call" ? "take-every-call" : "risk",
     markUnavailable,
     executionReadiness: executionReadiness && typeof executionReadiness === "object" ? {
       ready: executionReadiness.ready === true,

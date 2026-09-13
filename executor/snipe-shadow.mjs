@@ -151,6 +151,7 @@ export const SHADOW_HOPS = Object.freeze([
   "notice",     // the feed's first arrival for this mint
   "accounts",   // both endpoints answered the one getMultipleAccounts
   "decode",     // the curve decoded (or refused to)
+  "prepare",    // an armed lane built the instruction the gate stack decodes back (0ms when observing)
   "gate",       // the ordered gate stack ran to a verdict
   "ceiling",    // the exact baseOutRaw / maxQuoteInRaw that would have been signed
   "record",     // the row was closed and handed to the sink
