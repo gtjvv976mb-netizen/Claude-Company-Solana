@@ -6,9 +6,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-13 12:07 UTC">
-<meta name="cc-commit" content="4be60dc38724c9175121265ebcf015d952701b1d">
-<script>console.log("Claude Company build 2026-09-13 12:07 UTC")</script>
+<meta name="cc-build" content="2026-09-13 12:27 UTC">
+<meta name="cc-commit" content="976cc0e2eeb9483173e9731184bfac5456bca4e0">
+<script>console.log("Claude Company build 2026-09-13 12:27 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
 <style>
@@ -344,13 +344,22 @@ body{
 .candidate-why{margin:7px 0 0;color:var(--ink-soft);font-size:10.5px;line-height:1.4}
 .candidate-link{font-size:10px;color:var(--teal);text-decoration:none}
 .candidate-link:hover{text-decoration:underline}
-.bot-book .datarow{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,2fr) auto auto;gap:.5rem .9rem;align-items:baseline;padding:.4rem 0;border-top:1px solid rgba(128,128,128,.18)}
-.bot-book .datarow small{opacity:.75}
-.bot-book .datarow em{font-style:normal;font-weight:600}
-.bot-book .datarow em.good,.bot-book .datarow .good{color:#2f9e6b}
-.bot-book .datarow em.bad,.bot-book .datarow .bad{color:#d05353}
-.bot-book .datarow.unreported{opacity:.85}
-@media (max-width:640px){.bot-book .datarow{grid-template-columns:1fr auto}.bot-book .datarow small{grid-column:1/-1}}
+/* THE BOOK, COMPACT (owner, 2026-09-13): the token and one bar per trade, nothing else.
+   The bar runs from the stop (left, red end) to the target (right, green end); the tick
+   is where the bot went in, the dot is where the coin stands now, and the fill between
+   them is the trade's colour. Numbers ride the tooltip only. */
+.bot-book .trow{display:grid;grid-template-columns:minmax(64px,7.5rem) 1fr;gap:.7rem;align-items:center;padding:.32rem 0;border-top:1px solid rgba(128,128,128,.18)}
+.bot-book .trow b{font-weight:700;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bot-book .trow.unreported b{opacity:.75}
+.bot-book .tbar{position:relative;height:12px;border-radius:6px;background:linear-gradient(90deg,rgba(208,83,83,.28),rgba(128,128,128,.10) 50%,rgba(47,158,107,.28))}
+.bot-book .tbar .fill{position:absolute;top:0;bottom:0;background:rgba(47,158,107,.55)}
+.bot-book .tbar .fill.bad{background:rgba(208,83,83,.55)}
+.bot-book .tbar .in{position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:currentColor;opacity:.7}
+.bot-book .tbar .now{position:absolute;top:-3px;width:18px;height:18px;margin-left:-9px;border-radius:50%;background:var(--panel,#fff);border:3px solid #2f9e6b;box-sizing:border-box}
+.bot-book .tbar .now.bad{border-color:#d05353}
+.bot-book .tbar .now.flat{border-color:rgba(128,128,128,.7)}
+.bot-book .tbar .end{position:absolute;top:0;bottom:0;width:3px;border-radius:2px}
+.bot-book .tbar .end.stop{left:0;background:#d05353}.bot-book .tbar .end.target{right:0;background:#2f9e6b}
 .wallste-grid,.settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .statusline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px}
 .statusdot{width:9px;height:9px;border-radius:50%;background:var(--ink-faint)}
@@ -87870,7 +87879,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · arms on install"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "4be60dc38724c9175121265ebcf015d952701b1d";
+    const releaseCommit = "976cc0e2eeb9483173e9731184bfac5456bca4e0";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "4e9208d5c8a79a2b92a76da787b87d5f8e439614143961827e957b8295cbdeab";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -90138,64 +90147,74 @@ let wallsteFiltersDirty = false;
    SHOWN". Rendered on the Overview and the WALL-ST-E tab alike; `compact` trims the
    closes to the last five for the Overview. */
 function renderBotBook(el, heartbeat, feedRows, { compact = false } = {}) {
+  /* THE BOOK, COMPACT (owner, 2026-09-13: "just show the token, and the bar"). One row
+     per trade: the symbol and a bar from the stop to the target, with a tick where the
+     bot went in and a dot where the coin stands now. Every number — the levels, the
+     size, the estimate, the reason a sale happened — lives in the row's tooltip and
+     nowhere on the screen. A closed trade draws its exit on a ±50% scale around its
+     entry, so a reader sees at a glance how far it ran, and which way. */
   if (!heartbeat) return;
   const held = Array.isArray(heartbeat.held) ? heartbeat.held : [];
   const closed = Array.isArray(heartbeat.closed) ? heartbeat.closed : [];
   const feed = Array.isArray(feedRows) ? feedRows : [];
-  const signedSol = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(4) + " SOL";
   const pct = (x) => (x >= 0 ? "+" : "−") + Math.abs(x * 100).toFixed(1) + "%";
-  const short = (mint) => mint ? mint.slice(0, 4) + "…" + mint.slice(-4) : "?";
-  const card = (title, sub) => {
+  const card = (title) => {
     const c = dashNode("section", "dashsection bot-book");
     c.append(dashNode("h3", "", title));
-    if (sub) c.append(dashNode("p", "dp-note", sub));
     return c;
   };
-  const row = (cells, cls) => {
-    const r = dashNode("div", "datarow" + (cls ? " " + cls : ""));
-    for (const c of cells) r.append(c);
+  const clamp = (v) => Math.max(0, Math.min(1, v));
+  /* One bar. `lo` and `hi` are price ratios to the entry (stop 0.96, target 1.24); `now`
+     is the current ratio or null. The entry is always at ratio 1. */
+  const bar = (lo, hi, now, title, { flat = false } = {}) => {
+    const b = dashNode("div", "tbar");
+    if (title) b.title = title;
+    const span = hi > lo ? hi - lo : 1;
+    const x = (r) => clamp((r - lo) / span) * 100;
+    const stop = dashNode("i", "end stop"); const target = dashNode("i", "end target");
+    b.append(stop, target);
+    const entryX = x(1);
+    if (now != null) {
+      const nowX = x(now);
+      const fill = dashNode("i", "fill" + (now < 1 ? " bad" : ""));
+      fill.style.left = Math.min(entryX, nowX) + "%"; fill.style.width = Math.abs(nowX - entryX) + "%";
+      b.append(fill);
+    }
+    const tick = dashNode("i", "in"); tick.style.left = entryX + "%"; b.append(tick);
+    const dot = dashNode("i", "now" + (now == null || flat ? " flat" : now < 1 ? " bad" : ""));
+    dot.style.left = (now == null ? entryX : x(now)) + "%"; b.append(dot);
+    return b;
+  };
+  const row = (symbol, mint, barNode, cls) => {
+    const r = dashNode("div", "trow" + (cls ? " " + cls : ""));
+    const name = dashNode("b", "", symbol || (mint ? mint.slice(0, 4) + "…" + mint.slice(-4) : "?"));
+    name.title = mint || "";
+    r.append(name, barNode);
     return r;
   };
 
-  const open = card("Open positions · " + (held.length ? held.length : "none"),
-    held.length ? "What your bot holds right now, from its own journal. “Now” is the desk’s latest mark against the desk’s entry price for the same call — an estimate until the bot sells."
-      : "Your bot is not in a trade. It reported an empty book.");
+  const open = card("Open positions · " + (held.length ? held.length : "none"));
   for (const p of held) {
     const call = feed.find((c) => (p.callId && Number(c.call_id ?? c.id) === p.callId) || c.mint === p.mint) || null;
+    const entry = p.deskEntryRef > 0 ? p.deskEntryRef : (call?.entry_ref > 0 ? call.entry_ref : null);
     const mark = call?.last_mark ?? null;
-    const est = mark != null && p.deskEntryRef > 0 ? mark / p.deskEntryRef - 1 : null;
-    const estSol = est != null ? p.sol * est : null;
-    const levels = [];
-    if (p.stop) levels.push("stop " + pct(p.stop - 1));
-    if (p.target) levels.push("target " + pct(p.target - 1));
-    if (p.high && p.high > 1) levels.push("high " + pct(p.high - 1));
-    if (p.holdMaxMs && p.openedAt) levels.push("clock ends " + dashWhen(p.openedAt + p.holdMaxMs));
-    const name = dashNode("span", "", (p.symbol ? p.symbol + " · " : "") + short(p.mint));
-    name.title = p.mint + (p.callId ? " · call " + p.callId : "");
-    open.append(row([
-      name,
-      dashNode("small", "", (p.openedAt ? "bought " + dashWhen(p.openedAt) + " · " : "") + levels.join(" · ")),
-      dashNode("strong", "", p.sol.toFixed(4) + " SOL in"),
-      est == null
-        ? dashNode("em", "", mark == null ? "no desk mark yet" : "no entry reference")
-        : dashNode("em", est > 0 ? "good" : est < 0 ? "bad" : "", "now " + pct(est) + " ≈ " + signedSol(estSol)),
-    ]));
+    const now = mark != null && entry ? mark / entry : null;
+    const lo = p.stop > 0 ? p.stop : (p.deskStop > 0 && entry ? p.deskStop / entry : 0.8);
+    const hi = p.target > 0 ? p.target : (p.deskTarget > 0 && entry ? p.deskTarget / entry : 1.5);
+    const title = [p.sol != null ? p.sol.toFixed(4) + " SOL in" : null,
+      "stop " + pct(lo - 1), "target " + pct(hi - 1),
+      now == null ? "no mark yet" : "now " + pct(now - 1)].filter(Boolean).join(" · ");
+    open.append(row(p.symbol, p.mint, bar(lo, hi, now, title)));
   }
   el.appendChild(open);
 
   const shown = compact ? closed.slice(0, 5) : closed;
-  const closes = card("Closed trades · " + (closed.length ? (compact && closed.length > 5 ? "last 5 of " + closed.length : closed.length) : "none"),
-    closed.length ? "Each sale your bot made in the last 7 days, net of fees and of what the coin cost. “Not on the desk” means the desk has not accepted the bot’s report of it yet; the number here is still the journal’s."
-      : "No sales in the last 7 days.");
+  const closes = card("Closed trades · " + (closed.length ? (compact && closed.length > 5 ? "last 5 of " + closed.length : closed.length) : "none"));
   for (const c of shown) {
-    const name = dashNode("span", "", (c.symbol ? c.symbol + " · " : "") + short(c.mint));
-    name.title = c.mint + (c.callId ? " · call " + c.callId : "");
-    closes.append(row([
-      name,
-      dashNode("small", "", "sold " + dashWhen(c.closedAt) + (c.reason ? " · " + c.reason : "") + (c.reported ? "" : " · not on the desk")),
-      dashNode("strong", "", c.solIn.toFixed(4) + " → " + c.solOut.toFixed(4) + " SOL"),
-      dashNode("em", c.realizedSol > 0 ? "good" : c.realizedSol < 0 ? "bad" : "", signedSol(c.realizedSol)),
-    ], c.reported ? "" : "unreported"));
+    const exit = c.solIn > 0 ? c.solOut / c.solIn : null;
+    const title = ["sold " + dashWhen(c.closedAt), exit == null ? null : pct(exit - 1), c.reason || null,
+      c.reported ? null : "not on the desk"].filter(Boolean).join(" · ");
+    closes.append(row(c.symbol, c.mint, bar(0.5, 1.5, exit, title), c.reported ? "" : "unreported"));
   }
   el.appendChild(closes);
 }
@@ -90310,8 +90329,8 @@ async function loadWallsteDashboard({ background = false } = {}) {
           ". The call cards cannot show them until one lands.",
       }] : []),
     ]));
-    /* THE BOOK, ALWAYS: positions and closes are the point of the page, not detail. */
-    renderBotBook(el, heartbeat, feedR.status === 200 ? feedR.body?.feed : null);
+    /* THE BOOK LIVES ON THE OVERVIEW (owner, 2026-09-13): removed from this tab, which
+       keeps the bot's status, switch and set-up path. */
     /* NO DROPDOWN BARS (owner, 2026-09-08). Both of these were collapsible sections.
        They are now plain containers, built either way and ATTACHED only when they are
        worth a reader's screen: the set-up path while the bot is not yet running, the
@@ -90635,7 +90654,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "4be60dc38724c9175121265ebcf015d952701b1d";
+    const executorReleaseCommit = "976cc0e2eeb9483173e9731184bfac5456bca4e0";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
