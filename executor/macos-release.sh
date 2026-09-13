@@ -101,6 +101,10 @@ RUNTIME_PATHS=(
   executor/heartbeat-health.mjs executor/sleep-assertion.mjs
   executor/strategy.mjs executor/trade-policy.mjs
   executor/dexscreener-consensus.mjs executor/desk-mirror.mjs
+  executor/snipe-execute.mjs executor/snipe-lane.mjs executor/snipe-venue-pumpfun.mjs
+  executor/snipe-venue.mjs executor/snipe-curve.mjs executor/snipe-entry.mjs
+  executor/snipe-feed.mjs executor/snipe-book.mjs executor/snipe-shadow.mjs
+  executor/snipe-policy.mjs
   executor/monitor.mjs executor/launchd-runner.mjs executor/macos-launchagent.sh
   executor/macos-release.sh executor/package.json executor/package-lock.json
 )

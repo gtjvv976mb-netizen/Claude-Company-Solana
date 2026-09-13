@@ -46,7 +46,7 @@ import {
   independentSolUsdPrice, PYTH_SOL_USD_CACHE_SOURCE, solanaRpcConnectionConfig,
   usableSolUsdCache,
 } from "./sol-usd-oracle.mjs";
-import { DEFAULTS, POLICY_VERSION, planEntry, minViableSolPerTrade, openPosition, stepPosition,
+import { DEFAULTS, ENTRY_MODES, POLICY_VERSION, planEntry, minViableSolPerTrade, openPosition, stepPosition,
   freshState } from "./strategy.mjs";
 import { sizeEntryToRoute } from "./entry-sizing.mjs";
 import { policyConfigForPosition, resolveTakeProfitRule, validateEntryReference } from "./trade-policy.mjs";
@@ -414,7 +414,7 @@ if (EXECUTE) {
  * number and stopped the day after roughly two stop-outs on a 0.4 position. At 0.4 the
  * percentage becomes the binding one (0.399 on this balance), which is the owner's
  * original "stop after losing 20% of the SOL" rule actually taking effect. */
-const OPERATOR_MAX = Object.freeze({ maxSolPerTrade: 0.4, dailySolCap: 1000, dailyLossLimitSol: 0.4 });
+const OPERATOR_MAX = Object.freeze({ maxSolPerTrade: 1, dailySolCap: 1000, dailyLossLimitSol: 0.4 });
 const capsAckSentence = (wallet, trade, daily, loss) =>
   `I acknowledge WALL-ST-E caps v2 for ${wallet}: ${trade} SOL per trade, ${daily} SOL per day, ${loss} SOL rolling realized-loss entry brake`;
 
@@ -484,10 +484,34 @@ const CFG = {
    * 0 (the default) means conviction changes nothing in this process at all. */
   minConviction: number("MIN_CONVICTION", process.env.MIN_CONVICTION || DEFAULTS.minConviction,
     { min: 0, max: 100 }),
+  /* The operator's per-trade size. strategy.mjs carried it as a default only; there was
+     no way to set it from the environment. Bounded to the per-trade ceiling below. */
+  fixedSol: number("FIXED_SOL", process.env.FIXED_SOL || DEFAULTS.fixedSol, { min: 0, max: 100 }),
+  entryMode: (() => {
+    const raw = String(process.env.ENTRY_MODE || DEFAULTS.entryMode).trim();
+    if (!ENTRY_MODES.includes(raw)) fatal(`ENTRY_MODE must be one of ${ENTRY_MODES.join(", ")}`);
+    return raw;
+  })(),
   scaleOutPct: 0,
 };
 if (EXECUTE && configuredDailyCap.units < configuredTradeCap.units)
   fatal(`DAILY_SOL_CAP (${CFG.dailySolCap}) is below MAX_SOL_PER_TRADE (${CFG.maxSolPerTrade}) — the day would refuse the first trade`);
+/* The default 0.4 is a ceiling the per-trade cap clamps (planEntry takes the min); only a
+   FIXED_SOL the operator typed above the cap is a contradiction worth refusing to start on. */
+if (process.env.FIXED_SOL !== undefined && CFG.fixedSol > CFG.maxSolPerTrade)
+  fatal(`FIXED_SOL (${CFG.fixedSol}) is above MAX_SOL_PER_TRADE (${CFG.maxSolPerTrade})`);
+/* TAKE-EVERY-CALL IS ARMED BY A SENTENCE, LIKE EVERY OTHER RAISE OF RISK HERE. The mode
+   makes the edge rails advisory, so the person arming it types the wallet and the size it
+   will buy every call at. A stale or copied env line cannot switch it on. */
+export const takeEveryCallSentence = (wallet, fixedSol) =>
+  `I take every published call on ${wallet} at ${fixedSol} SOL`;
+if (CFG.entryMode === "take-every-call") {
+  if (!(Number(process.env.FIXED_SOL) > 0))
+    fatal("ENTRY_MODE=take-every-call needs FIXED_SOL set explicitly: the size every call is bought at");
+  const expected = takeEveryCallSentence(WALLET, CFG.fixedSol);
+  if (String(process.env.ENTRY_MODE_ACK || "") !== expected)
+    fatal(`ENTRY_MODE=take-every-call needs ENTRY_MODE_ACK set to exactly:\n\n    ${expected}\n`);
+}
 
 // Parse every transaction rail before INIT_ONLY can exit. This makes the
 // installer validate the exact persistent environment that systemd will use.
@@ -541,6 +565,17 @@ const JUPITER_CFG = {
     { min: 1, max: EXECUTE ? LIVE_LIMITS.maxQuoteShortfallPct : 100 }),
   finalityTimeoutMs: number("FINALITY_TIMEOUT_MS", process.env.FINALITY_TIMEOUT_MS || 30_000,
     { min: 1_000, max: 120_000 }),
+  /* Route-plan labels Jupiter must leave out of every order. The default names the one
+     venue measured to make the taker fund an unquoted account (jupiter.mjs order()).
+     Comma-separated labels; set it to an empty string to exclude nothing. Letters,
+     digits, spaces, dots, underscores and hyphens only — a label is a query value. */
+  excludeDexes: (() => {
+    const raw = process.env.JUPITER_EXCLUDE_DEXES === undefined ? "HumidiFi" : String(process.env.JUPITER_EXCLUDE_DEXES);
+    const labels = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    if (labels.some((label) => !/^[A-Za-z0-9 ._-]{1,40}$/.test(label)) || labels.length > 20)
+      fatal("JUPITER_EXCLUDE_DEXES must be up to 20 comma-separated Jupiter route labels (letters, digits, spaces, . _ -)");
+    return labels.join(",");
+  })(),
 };
 
 // Parse this once at startup. Live operators may shorten the outage bridge, but
@@ -1246,6 +1281,13 @@ function accountConfirmedIntents() {
   let count = 0;
   for (const intent of journal.pendingIntents()) {
     if (intent.state !== "confirmed") continue;
+    /* The sniper accounts its own fills (snipe-execute.mjs): its position lives under
+       S.snipes, which this file's entry and exit accounting cannot see by construction
+       (test-snipe-separation.mjs clause 1). Left to fall through, a confirmed snipe_entry
+       would have been quarantined as "unsupported kind" on every tick, and a snipe_exit
+       would have been handed to applyConfirmedExit to look for a desk position that does
+       not exist. Neither is this loop's row. */
+    if (String(intent.kind).startsWith("snipe_")) continue;
     try {
       if (intent.kind === "entry") applyConfirmedEntry(intent);
       else if (EXIT_INTENT_KINDS.includes(intent.kind)) applyConfirmedExit(intent);
@@ -1420,6 +1462,7 @@ async function onEntry(ev) {
     target: entryReference.targetRatio };
   let plan = planEntry({ call: normalizedCall, cfg: perCall, state: S.state });
   if (plan.action !== "buy") return log(`SKIP ${ev.symbol}: ${plan.reason}`);
+  for (const note of plan.advisories ?? []) log(`WARN ${ev.symbol}: ${note}`);
 
   if (!EXECUTE) {
     log(`ENTRY ${ev.symbol} — ${plan.sol} SOL | stop ${ev.stop} target ${ev.target}`);
@@ -1453,6 +1496,7 @@ async function onEntry(ev) {
   const routeStopFrac = Math.max(1e-9, 1 - entryReference.stopRatio);
   const [sizing, tokenDecimals, solUsdOracle] = await Promise.all([
     sizeEntryToRoute({
+      stopFloor: CFG.entryMode === "take-every-call" ? "advisory" : "enforce",
       probe: (amountRaw) => jupiter.preflightEntryProbe(WSOL, ev.mint, amountRaw),
       sol: plan.sol, lamportsPerSol: LAMPORTS, stopRatio: entryReference.stopRatio,
       expectedNetworkFeeLamports: jupiter.cfg.expectedNetworkFeeLamports,
@@ -1465,6 +1509,8 @@ async function onEntry(ev) {
   ]);
   entryEventSubmissionGate({ kind: "entry", context: { event: ev } });
   if (!sizing.ok) throw new Error(sizing.refusal);
+  if (sizing.advisory)
+    log(`WARN ${ev.symbol}: ${sizing.advisory} — buying anyway (ENTRY_MODE=take-every-call)`);
   const preflight = sizing.preflight;
   const preliminaryAmountRaw = sizing.amountRaw;
   const conservativeLossPct = sizing.conservativeLossPct;
@@ -1905,6 +1951,64 @@ let ticking = false;
  * secret and opens no control channel — the server learns the bot's pulse, not its
  * reins. Throttled to once a minute. */
 let lastHeartbeatAt = 0;
+/* A SILENT FAILURE IS AN OFFLINE BADGE. The pulse used to be `.catch(() => {})` with no
+   look at the status either, so a desk that answered 500, slept, or was unreachable
+   left no trace here — while the floor board, which reads only what the desk heard,
+   said OFFLINE about a bot that was buying. The send stays fire-and-forget (nothing in
+   the trade path awaits it); what changes is that a run of misses is logged, throttled,
+   naming the reason and what the board will show because of it. */
+let heartbeatMisses = 0;
+let lastHeartbeatMissLogAt = 0;
+let lastHeartbeatAckAt = 0;
+const HEARTBEAT_MISS_LOG_MS = 5 * 60_000;
+const heartbeatCloses = () => {
+  try {
+    const rows = [];
+    for (const intent of journal.accountedIntentsWithCallId({ sinceMs: Date.now() - FILL_REPORT_WINDOW_MS })) {
+      if (!EXIT_INTENT_KINDS.includes(intent.kind)) continue;
+      const body = fillReportBody(intent);
+      if (!body || body.side !== "sell") continue;
+      const before = intent.context?.position || {};
+      rows.push({
+        mint: intent.mint, symbol: String(before.symbol || "").slice(0, 24), callId: body.callId,
+        closedAt: body.at, openedAt: Number(before.openedAtMs) || null,
+        solIn: Number((Number(before.costBasisLamports || 0) / LAMPORTS).toFixed(6)),
+        solOut: Number(body.sol.toFixed(6)), realizedSol: Number(body.realizedSol.toFixed(6)),
+        fraction: body.fraction, reason: String(body.reason || "").slice(0, 120), kind: body.kind,
+        reported: journal.getMeta(fillReportedKey(intent.id)) != null,
+      });
+    }
+    return rows.sort((a, b) => b.closedAt - a.closedAt).slice(0, 20);
+  } catch (error) {
+    log(`heartbeat closes unavailable — ${error?.message ?? error}`);
+    return [];
+  }
+};
+const heartbeatLedger = () => {
+  try {
+    const all = journal.lifetimeRisk();
+    const day = journal.rollingRisk(Date.now());
+    return {
+      realizedSol: all.realizedSol, deployedSol: all.deployedSol, feesSol: all.feesSol,
+      deployments: all.deployments, exits: all.exits, firstAt: all.firstAt, lastAt: all.lastAt,
+      realized24hSol: day.realizedTodaySol, deployed24hSol: day.deployedTodaySol,
+      openSol: openList().reduce((sum, p) => sum + Number(p.entryInputLamports || 0) / LAMPORTS, 0),
+      asOf: Date.now(),
+    };
+  } catch (error) {
+    log(`heartbeat ledger unavailable — ${error?.message ?? error}`);
+    return null;
+  }
+};
+const noteHeartbeatMiss = (reason) => {
+  heartbeatMisses++;
+  const now = Date.now();
+  if (now - lastHeartbeatMissLogAt < HEARTBEAT_MISS_LOG_MS) return;
+  lastHeartbeatMissLogAt = now;
+  const since = lastHeartbeatAckAt ? `${Math.round((now - lastHeartbeatAckAt) / 60_000)}m since the desk last acknowledged one` : "no pulse has been acknowledged since boot";
+  log(`heartbeat to the desk failed (${reason}) — ${heartbeatMisses} miss(es), ${since}; ` +
+    "the floor board shows this bot OFFLINE until a pulse lands. Trading is unaffected.");
+};
 const runtimeHealth = {
   lastTickStartedAt: 0, lastTickCompletedAt: 0, lastFeedSuccessAt: 0,
   consecutiveFeedFailures: 0, consecutiveTickFailures: 0,
@@ -2011,9 +2115,14 @@ function maybeProbeExecutionReadiness() {
       const need = Math.floor(CFG.maxSolPerTrade * LAMPORTS) +
         Number(jupiter.cfg.maxNetworkFeeLamports ?? 500_000) +
         Number(jupiter.cfg.maxRentLamports ?? 4_200_000) + 10_000_000;
-      log(`READINESS not proved (${EXECUTION_READINESS_ROUTE} at ${CFG.maxSolPerTrade} SOL): ${reason}` +
-        ` — this no-sign rehearsal needs about ${(need / LAMPORTS).toFixed(4)} SOL in the wallet ` +
-        "(the trade size, the network-fee ceiling, two ATAs of rent and an untouched reserve)");
+      /* The balance hint only when the balance is the reason. It used to ride every
+         refusal, so a custody refusal on a 3 SOL wallet read as "needs about 1.02 SOL"
+         and sent the operator to fund a wallet that was already funded. */
+      const balanceHint = /wallet reserve/i.test(reason)
+        ? ` — this no-sign rehearsal needs about ${(need / LAMPORTS).toFixed(4)} SOL in the wallet ` +
+          "(the trade size, the network-fee ceiling, two ATAs of rent and an untouched reserve)"
+        : "";
+      log(`READINESS not proved (${EXECUTION_READINESS_ROUTE} at ${CFG.maxSolPerTrade} SOL): ${reason}${balanceHint}`);
     }
     runtimeHealth.executionReadiness = {
       ready: false,
@@ -2206,6 +2315,7 @@ function sendHeartbeat() {
       feedRollback: feedRollbackActive(),
       deskUnreachableSince, mirrorActive: mirrorActive(),
       executionReadiness: runtimeHealth.executionReadiness,
+      entryMode: CFG.entryMode,
       caps: {
         maxSolPerTrade: CFG.maxSolPerTrade,
         dailySolCap: CFG.dailySolCap,
@@ -2226,6 +2336,7 @@ function sendHeartbeat() {
       feedRollback: feedRollbackActive(),
       deskUnreachableSince, mirrorActive: mirrorActive(),
       executionReadiness: runtimeHealth.executionReadiness,
+      entryMode: CFG.entryMode,
       caps: {
         maxSolPerTrade: CFG.maxSolPerTrade,
         dailySolCap: CFG.dailySolCap,
@@ -2252,11 +2363,45 @@ function sendHeartbeat() {
         mint: p.mint,
         sol: Number((Number(p.entryInputLamports || 0) / LAMPORTS).toFixed(4)),
         openedAt: Number(p.openedAtMs) || 0,
+        /* THE REST OF THE POSITION, so the board can show it as a position and not as a
+           mint. The owner asked (2026-09-13) for every open position, its levels and its
+           result on the floor. Levels are the bot's own, as multiples of its fill (entry
+           is 1); the desk's absolute levels ride beside them so the board can put the
+           desk's current mark against the price the bot actually paid. No live mark is
+           carried because the bot stores none — it reads one fresh each tick. */
+        symbol: String(p.symbol || "").slice(0, 24),
+        callId: Number.isSafeInteger(Number(p.callId)) && Number(p.callId) > 0 ? Number(p.callId) : null,
+        costSol: Number((Number(p.costBasisLamports || 0) / LAMPORTS).toFixed(6)),
+        stop: Number(p.stop) > 0 ? Number(p.stop) : null,
+        target: Number(p.target) > 0 ? Number(p.target) : null,
+        high: Number(p.high) > 0 ? Number(p.high) : null,
+        holdMaxMs: Number(p.holdMaxMs) > 0 ? Number(p.holdMaxMs) : null,
+        deskEntryRef: Number(p.deskEntryRef) > 0 ? Number(p.deskEntryRef) : null,
+        deskStop: Number(p.deskStop) > 0 ? Number(p.deskStop) : null,
+        deskTarget: Number(p.deskTarget) > 0 ? Number(p.deskTarget) : null,
       })),
+      /* THE LAST TWENTY CLOSES, from the journal's accounted exits — the same rows the fill
+         reports are built from, so a close the desk refused to record still shows on the
+         board as what it was. */
+      closed: heartbeatCloses(),
       health,
+      /* THE BOT'S OWN BOOKS, so the board can answer "have I lost or gained SOL" from the
+         journal rather than from the desk's paper record (which is a chain scan of the
+         floor OWNER's wallet — never the burner — and so never saw a bot trade). Totals
+         only: no per-trade prices, nothing the desk can act on. */
+      ledger: heartbeatLedger(),
+      reporting: {
+        fillsOwed: unreportedFillDetails.size,
+        lastReportedAt: fillReporting.lastReportedAt || null,
+        lastError: fillReporting.lastError,
+        lastErrorAt: fillReporting.lastErrorAt || null,
+      },
       ts: Date.now(),
     }),
-  }).catch(() => {});
+  }).then((r) => {
+    if (r.ok) { heartbeatMisses = 0; lastHeartbeatAckAt = Date.now(); return; }
+    noteHeartbeatMiss(`HTTP ${r.status}`);
+  }).catch((error) => noteHeartbeatMiss(error?.name === "TimeoutError" ? "timed out after 5s" : String(error?.message ?? error)));
 }
 
 /* TELLING THE DESK WHAT THE TRADE WAS — every fill AND every exit, with real numbers.
@@ -2277,6 +2422,11 @@ function sendHeartbeat() {
  * the last seven days and re-queues those without the key. */
 const unreportedFillDetails = new Set();
 let reportingFillDetails = false;
+/* What the board is told about this queue. A fill report that keeps failing used to be
+   a log line on the Mac and nothing anywhere else — the board simply never showed the
+   trade, and read as "not updating". The heartbeat now carries how many reports are
+   owed and the last refusal, so the board can say WHY a trade is missing from it. */
+const fillReporting = { lastReportedAt: 0, lastError: null, lastErrorAt: 0 };
 const FILL_REPORT_WINDOW_MS = 7 * 24 * 3600e3;
 const fillReportedKey = (intentId) => `fill_reported:${intentId}`;
 
@@ -2359,12 +2509,14 @@ async function flushFillReports() {
       try {
         const result = await reportFillDetail(intentId);
         unreportedFillDetails.delete(intentId);
+        fillReporting.lastReportedAt = Date.now(); fillReporting.lastError = null;
         if (result.unreportable)
           log(`fill detail ${intentId} has no attributable call id or fill totals — not reported`);
         else
           log(`reported ${result.body.side} fill of call ${result.body.callId} (${intentId}) to the desk`);
       } catch (error) {
         // Left in the queue on purpose; the next tick tries again.
+        fillReporting.lastError = String(error?.message ?? error).slice(0, 200); fillReporting.lastErrorAt = Date.now();
         log(`could not report fill detail ${intentId} (${error.message}) — will retry`);
       }
     }
@@ -3181,6 +3333,10 @@ async function tick() {
 }
 
 log(`up — floor ${FLOOR} — wallet ${WALLET} — ${EXECUTE ? "LIVE MAINNET" : "PAPER"}`);
+if (CFG.entryMode === "take-every-call")
+  log(`ENTRY MODE take-every-call: every published call is bought at ${CFG.fixedSol} SOL; the R_net, per-name risk and book-heat rails ` +
+    "and the route's stop-floor cost check are ADVISORY (logged as WARN); the loss brake, the deploy cap, the wallet, the open-position count, " +
+    "and every custody, fee, rent and impact rule still refuse");
 log(`caps: ${CFG.maxSolPerTrade} SOL/trade, ${CFG.dailySolCap} SOL/rolling 24h deploy, ` +
   `realized-loss entry brake = the TIGHTER of ${CFG.dailyLossLimitSol} SOL and ` +
   `${(DEFAULTS.dailyLossPctOfEquity * 100).toFixed(0)}% of the bankroll, ` +
@@ -3208,18 +3364,21 @@ setInterval(tick, POLL_MS);
 /* ── THE LAUNCH LANE, OBSERVE-ONLY AND OFF UNLESS ASKED FOR ──────────────────────────
  *
  * A second lane in this process, watching pump.fun launches and recording what it WOULD
- * have done. It has no desk, so it carries its own exit determiner (snipe-policy.mjs);
- * it shares no book, no engine and no config namespace with the desk
- * (test-snipe-separation.mjs holds all six clauses).
+ * have done — or, once the owner arms it, doing it. It has no desk, so it carries its own
+ * exit determiner (snipe-policy.mjs); it shares no book, no engine and no config
+ * namespace with the desk (test-snipe-separation.mjs holds all six clauses).
  *
  * FOUR PROPERTIES, EACH DELIBERATE:
  *
  * 1. OFF BY DEFAULT. Absent SNIPE_LANE the block below does nothing at all — not a
  *    timer, not a socket, not an import side effect. An installed bot that never sets
  *    the variable behaves exactly as it did before this existed.
- * 2. NOTHING SIGNS. createSnipeLane REFUSES lane=execute outright: there is no signing
- *    path in the lane and no keypair is loaded on it. Arming is a separate owner
- *    decision, not a flag flip, and the lane cannot be talked into it from here.
+ * 2. THE LANE CANNOT SIGN; ONLY THE PORT CAN. createSnipeLane refuses lane=execute unless
+ *    it is handed a signing port (snipe-execute.mjs), its arming checklist is clear, and
+ *    SNIPE_LIVE_ACK is the owner's typed sentence for THIS wallet and THESE caps. The port
+ *    is built here only on a live install — EXECUTE=1, two private RPCs, the wallet
+ *    acknowledgement — and it runs the desk's own entry boundary (pause, hard stop, the
+ *    launchd power proof) before every buy. A flag alone still arms nothing.
  * 3. ITS OWN TWO ENDPOINTS, UNCONDITIONALLY. secondaryConn above is null whenever
  *    EXECUTE is off — which is exactly the configuration the observe lane ships in — so
  *    the lane opens its own pair. A shadow book that validated a two-endpoint witness
@@ -3227,15 +3386,53 @@ setInterval(tick, POLL_MS);
  * 4. IT CANNOT TAKE THE DESK DOWN. Construction and every tick are wrapped: a lane that
  *    throws is logged and disabled, and the trading loop above continues untouched. An
  *    observation lane is worth exactly nothing if it can stop the bot that earns.
+ *
+ * AND IT IS FED. Until 2026-09-12 this block constructed the lane and never built a feed
+ * or called start(): the lane ticked an empty book and heard no launch, in either mode.
+ * The feed is the venue's own logsSubscribe over this bot's RPC WebSocket, with the
+ * pump.fun listing poll as corroboration, exactly as snipe-feed.mjs composes them.
  */
 const SNIPE_LANE_MODE = String(process.env.SNIPE_LANE || "off").trim().toLowerCase();
 if (SNIPE_LANE_MODE !== "off") {
   try {
-    const [{ createSnipeLane, snipeLaneConfig }, { PUMPFUN_VENUE }] = await Promise.all([
+    const [{ createSnipeLane, snipeLaneConfig }, { PUMPFUN_VENUE }, feedMod] = await Promise.all([
       import("./snipe-lane.mjs"),
       import("./snipe-venue-pumpfun.mjs"),
+      import("./snipe-feed.mjs"),
     ]);
     const laneCfg = snipeLaneConfig(process.env);
+    /* THE SIGNING PORT, on a live install only. Everything it needs is the desk's: the
+       key, both private RPCs, the journal, the sentinel readers, the entry boundary and
+       the runtime the accounting writes. Absent EXECUTE=1 there is no key to hand it, and
+       the lane refuses execute for want of a port before anything else is checked. */
+    let snipeExecutor = null;
+    if (laneCfg.lane === "execute") {
+      if (!EXECUTE) throw new Error("SNIPE_LANE=execute needs a live install (EXECUTE=1); the sniper signs with the desk's wallet and gates");
+      if (RPC === SECONDARY_RPC) throw new Error("SNIPE_LANE=execute needs SOLANA_RPC_SECONDARY distinct from SOLANA_RPC: both providers simulate and both send, and one node must not be the whole story");
+      const { createSnipeExecutor } = await import("./snipe-execute.mjs");
+      /* ITS OWN PAIR for the signing path too, opened on the same two endpoints the live
+         desk already proved distinct. The lane's rule (its readers never borrow the desk's
+         secondary) holds here for the same reason: nothing the sniper does may depend on
+         a connection the desk's mode decides whether to open. */
+      snipeExecutor = createSnipeExecutor({
+        keypair: kp, journal, venue: PUMPFUN_VENUE,
+        connections: [new Connection(RPC, solanaRpcConnectionConfig()), new Connection(SECONDARY_RPC, solanaRpcConnectionConfig())],
+        cfg: { priorityFeeLamports: laneCfg.priorityFeeLamports, maxNetworkFeeLamports: laneCfg.maxNetworkFeeLamports,
+          maxRentLamports: laneCfg.maxRentLamports },
+        control: () => ({ hardStop: hardStop() === true, pauseEntries: pauseEntries() === true }),
+        boundary: ({ side }) => {
+          if (side !== "buy") return;
+          assertEntriesUnpaused();
+          if (process.env["WALLSTE_SUPERVISOR"] === "launchd") {
+            requireMacEntryPower({ ownerPid: process.pid, lockFile: LOCK_FILE, pauseEntriesFile: PAUSE_ENTRIES_FILE });
+            assertEntriesUnpaused();
+          }
+        },
+        runtime: () => S,
+        persist: () => save(),
+        log: (msg) => log(`[snipe] ${msg}`),
+      });
+    }
     /* Its own pair, never the desk's — see property 3. The lane reads through a narrow
        {id, read} port rather than a Connection: it needs the SLOT alongside the accounts
        (the witness rule compares reads BY SLOT, and a read whose slot is unknown cannot
@@ -3257,10 +3454,29 @@ if (SNIPE_LANE_MODE !== "off") {
       laneReader("primary", RPC),
       laneReader("secondary", SECONDARY_RPC),
     ];
+    /* THE FEED. Launches arrive over this bot's own RPC WebSocket (the venue's watch() on a
+       Connection built here and handed in — the adapter never opens one), corroborated by
+       the pump.fun listing poll so a dropped socket is a degraded feed rather than a
+       silent one. snipe-feed.mjs owns the ledger, dedupe and health; this only names the
+       sources. */
+    const laneSocket = new Connection(RPC, solanaRpcConnectionConfig());
+    const laneFeed = feedMod.createSnipeFeed({
+      sources: [
+        feedMod.sourceFromVenueWatch(PUMPFUN_VENUE, {
+          id: "logs:pumpfun", opts: { connection: laneSocket, commitment: "processed" },
+        }),
+        feedMod.pollSource({
+          id: "poll:pumpfun-list", venueId: PUMPFUN_VENUE.id,
+          fetchRows: feedMod.pumpfunListingFetcher({ pages: 1 }),
+        }),
+      ],
+    });
     const lane = createSnipeLane({
       venue: PUMPFUN_VENUE,
       readers: laneReaders,
       cfg: laneCfg,
+      feed: laneFeed,
+      executor: snipeExecutor,
       /* THE DESK'S STATE OBJECT, SO THE TWO BOOKS CAN SEE EACH OTHER — which is the
          opposite of mixing them, and the distinction is the whole design.
          The lane keeps its positions under S.snipes and the desk keeps its under
@@ -3321,8 +3537,26 @@ if (SNIPE_LANE_MODE !== "off") {
           `than disabling, because a disabled lane cannot exit what it opened. The desk is unaffected: ${err?.message || err}`);
       }
     }, snipeTickMs);
+    /* RECOVER, THEN LISTEN. An armed lane first asks its port about its own pending
+       intents — a buy sent before a crash is a position whether or not the book heard —
+       and says, per intent, whether the book holds it. Then the feed starts and the lane
+       consumes it; without start() the lane is deaf, which is what it was until today. */
+    if (snipeExecutor) {
+      const recovered = await snipeExecutor.recoverPending();
+      for (const r of recovered) {
+        if (r.outcome !== "finalized") { log(`[snipe] recovery ${r.mint}: ${r.side} ${r.outcome}`); continue; }
+        const onBook = (() => { try { return Boolean(lane.positionFor(r.mint)); } catch { return false; } })();
+        log(`[snipe] RECOVERED ${r.side} on ${r.mint}: ${r.fill?.signature ?? "?"} finalized — ` +
+          (r.side === "buy"
+            ? (onBook ? "the book holds this position" : "NO BOOK ENTRY for this position: sell it by hand or restore it before arming again")
+            : (onBook ? "the book still lists this position — it was sold; clear it by hand" : "the book agrees it is closed")));
+      }
+    }
+    await lane.start();
     log(`[snipe] launch lane up in ${laneCfg.lane} mode, ${snipeTickMs}ms tick, ` +
-      `${laneReaders.length} endpoints — nothing is signed on this path`);
+      `${laneReaders.length} endpoints — ${laneCfg.lane === "execute"
+        ? `EXECUTING for ${snipeExecutor.wallet} through snipe-execute.mjs`
+        : "nothing is signed on this path"}`);
   } catch (err) {
     /* Deliberately not fatal. The desk was running before the lane existed and must go on
        running if it cannot start: a missing module, a bad SNIPE_* value or an unreachable

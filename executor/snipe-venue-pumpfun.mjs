@@ -1283,12 +1283,18 @@ export function quoteReserveLamports(curve) {
  * because the lane decodes it every tick anyway and a second round trip on the exit
  * question is latency spent to learn nothing.
  *
- * The answer today is `routable: false` for any live curve, and that is the correct
- * answer rather than a missing feature: the sell instruction is unverified, so the only
- * exit is the one we cannot build. Spec gate 10 turns this into `exit_route_unimplemented`
- * — WE MAY NOT ENTER WHAT WE CANNOT EXIT. A completed curve is a different question: it
- * has graduated to a pool the audited Jupiter path already trades, which is why GRADUATED
- * in the state machine swaps the ruler rather than the lane.
+ * A LIVE CURVE ROUTES THROUGH ITS OWN SELL. This answered `routable: false` for every live
+ * curve while the sell layout was unproved — WE MAY NOT ENTER WHAT WE CANNOT EXIT, and spec
+ * gate 10 turned that into `exit_route_unimplemented`. That was the right answer on the
+ * day. The layout was then proved on 30 mainnet occurrences (layoutVerified, above) and
+ * this function was not revisited, so on 2026-09-12 the entry contract still refused every
+ * launch at gate 10 and the shadow book could only ever fill with refusals: the one
+ * measurement the lane exists to make was structurally impossible. Answered from the proof
+ * now, not from a sentence written before it: verified layout plus a live curve is a
+ * route the venue can build; a completed curve has graduated to a pool the audited Jupiter
+ * path already trades, which is why GRADUATED in the state machine swaps the ruler rather
+ * than the lane; an unverified layout still refuses, so a venue that loses its proof loses
+ * its exit with it.
  */
 export function exitRoute(_conn, mint, { curve = null } = {}) {
   if (curve && isComplete(curve))
@@ -1296,9 +1302,14 @@ export function exitRoute(_conn, mint, { curve = null } = {}) {
       via: "jupiter", routable: true, mint: mint ?? curve.mint ?? null,
       reason: "curve is complete; the graduated pool is routable by the audited Jupiter exit path",
     });
+  if (PUMPFUN_VENUE.layoutVerified !== true)
+    return Object.freeze({
+      via: null, routable: false, mint: mint ?? (curve ? curve.mint : null) ?? null,
+      reason: `no exit can be built on this venue: ${LAYOUT_UNVERIFIED_REASON}`,
+    });
   return Object.freeze({
-    via: null, routable: false, mint: mint ?? (curve ? curve.mint : null) ?? null,
-    reason: `no exit can be built on this venue: ${LAYOUT_UNVERIFIED_REASON}`,
+    via: "curve", routable: true, mint: mint ?? (curve ? curve.mint : null) ?? null,
+    reason: "the curve is the exit until it graduates: sell_v2 is proved on mainnet and the curve quotes its own sell",
   });
 }
 

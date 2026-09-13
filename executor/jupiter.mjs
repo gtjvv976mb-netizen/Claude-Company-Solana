@@ -36,7 +36,7 @@ export const EXECUTION_READINESS_AMOUNT_LAMPORTS = 5_000_000;
  * — but the bot reported itself degraded and the dashboard said not-ready, which is the
  * state an operator reads as broken. test-operator-max-parity.mjs now holds this to the
  * poller's ceiling. (jupiter.mjs cannot import poller.mjs — poller imports jupiter.) */
-export const EXECUTION_READINESS_MAX_AMOUNT_LAMPORTS = 400_000_000;
+export const EXECUTION_READINESS_MAX_AMOUNT_LAMPORTS = 1_000_000_000;
 export const EXECUTION_READINESS_RESERVE_LAMPORTS = 10_000_000;
 /* ONE DEFINITION, RE-EXPORTED. The rent ceiling and the fee gate below now live in
    network-fee-budget.mjs so the sniper lane and this envelope cannot drift apart on what
@@ -384,6 +384,20 @@ export function walletTokenAmount(account, { program, mint, wallet, allowMissing
   return checkedTokenAmount(account, { program, mint, wallet, label, allowMissing });
 }
 
+/** The network fee the built transaction will actually pay — signature fee plus the
+ *  compute-budget priority already validated against the fee cap. A known, capped fee is
+ *  not an unexplained drain, so the custody rule admits it beside the drain band rather
+ *  than inside it. Bounded again here so a caller cannot widen the band by naming a fee
+ *  the build check would have refused. */
+function builtFeeAllowance(value, cfg) {
+  if (value === undefined || value === null) return 0n;
+  const lamports = Number(value);
+  if (!Number.isSafeInteger(lamports) || lamports < 0)
+    throw new Error("built network fee is not a valid lamport count");
+  const cap = Number(cfg?.maxNetworkFeeLamports ?? 500_000) + 5_000 * 4;
+  return BigInt(Math.min(lamports, cap));
+}
+
 function foreignRentAllowance(value) {
   if (value === undefined || value === null) return 0n;
   const lamports = Number(value);
@@ -467,6 +481,15 @@ export function validateSimulationEffects(before, after, expected, cfg) {
      * open — that part never leaves custody and must not be spendable twice. */
     const spent = custodyBefore - custodyAfter;
     const rentAllowance = foreignRentAllowance(expected.foreignRentAllowanceLamports);
+    /* THE FEE THE TRANSACTION WAS BUILT WITH IS NOT A DRAIN. The band below was the only
+       allowance for lamports leaving custody beyond the input and the quoted rent, and it
+       had to cover the priority fee too — so a fee between the 500k expected figure and
+       the 2M cap, legal at build time, was refused here as "unexplained". At 1 SOL, where
+       Jupiter bids more aggressively, that refused the readiness rehearsal on a wallet
+       holding 3 SOL, and the log blamed the balance. The built fee is known to the
+       lamport from the compute-budget instructions and already capped; it is admitted
+       as itself, and the band stays what it was: the bound on what nobody can explain. */
+    const builtFee = builtFeeAllowance(expected.builtFeeLamports, cfg);
     /* THE TOLERANCE IS NOT THE GATE. This is the only bound on unexplained lamports
        leaving custody during an entry, and it happened to be spelled with the fee
        ceiling. When that ceiling was raised to admit congested fills, this band would
@@ -474,9 +497,15 @@ export function validateSimulationEffects(before, after, expected, cfg) {
        nothing to do with priority fees. It is pinned to the expected-fee constant, which
        is what a healthy transaction actually costs. */
     if (spent < BigInt(expected.amountRaw) ||
-        spent > BigInt(expected.amountRaw) + BigInt(reconciliationFeeTolerance(cfg)) + rentAllowance)
+        spent > BigInt(expected.amountRaw) + BigInt(reconciliationFeeTolerance(cfg)) + rentAllowance + builtFee) {
+      const beyond = spent - BigInt(expected.amountRaw);
+      const unexplained = beyond - rentAllowance - builtFee;
       throw new Error(`simulation SOL spend ${spent} is outside the exact input ${expected.amountRaw} ` +
-        `plus capped fees${rentAllowance > 0n ? ` and ${rentAllowance} lamports of quoted third-party account rent` : ""}`);
+        `plus capped fees${rentAllowance > 0n ? ` and ${rentAllowance} lamports of quoted third-party account rent` : ""}` +
+        `${builtFee > 0n ? ` and ${builtFee} lamports of built network fee` : ""} — ${beyond} lamports left custody beyond the input, ` +
+        `${unexplained < 0n ? 0n : unexplained} of them unexplained against a ${reconciliationFeeTolerance(cfg)} lamport band ` +
+        "(a route that funds accounts nobody quoted; not the wallet balance)");
+    }
   }
 
   /* THE QUOTE MUST AGREE WITH THE CHAIN, NOT ONLY WITH ITSELF.
@@ -1279,6 +1308,8 @@ export class JupiterV2Executor {
       maxComputeUnits: 1_400_000,
       maxAttempts: 3,
       finalityTimeoutMs: 30_000,
+      // Route-plan labels the order request leaves out; see order() for the measurement.
+      excludeDexes: "HumidiFi",
       ...config,
     };
   }
@@ -1334,6 +1365,22 @@ export class JupiterV2Executor {
       slippageBps: String(this.cfg.slippageBps),
       excludeRouters: "jupiterz,dflow,okx",
     });
+    /* VENUES WHOSE SWAP MAKES THE TAKER FUND AN ACCOUNT NOBODY QUOTED.
+     *
+     * Measured 2026-09-13 on the readiness rehearsal at 0.5 SOL, wsol-usdc: every
+     * order Jupiter routed through HumidiFi created a 2,440-byte account owned by the
+     * HumidiFi program and funded it from the wallet — 13,045,440 lamports, 0.013 SOL,
+     * on top of the input, the quoted ATA rent and the built fee. Jupiter's
+     * rentFeeLamports did not declare it, so validateSimulationEffects refused the
+     * route as "a route that funds accounts nobody quoted", which is exactly right for
+     * signing and wrong as a reason for the bot never to prove readiness: three
+     * rehearsals in a row drew that venue and the desk withheld every call meanwhile.
+     * The custody rule is not loosened for it. The venue is left out of the request,
+     * which Jupiter honours (eight orders excluding seven labels returned none of
+     * them). Labels are Jupiter's own route-plan labels, comma-separated; an empty
+     * string sends nothing. */
+    const excluded = String(this.cfg.excludeDexes ?? "").trim();
+    if (excluded) params.set("excludeDexes", excluded);
     if (taker) params.set("taker", this.wallet);
     const response = await this.fetch(`${this.baseUrl}/order?${params}`, {
       headers: this.headers(), redirect: "error", signal: AbortSignal.timeout(12_000),
@@ -1795,6 +1842,9 @@ export class JupiterV2Executor {
         inputProgram: validation.inputProgram,
         outputProgram: validation.outputProgram,
         foreignRentAllowanceLamports,
+        /* Signature fee plus the priority the build check already bounded. */
+        builtFeeLamports: Number(5_000n +
+          (BigInt(validation.computePrice ?? 0n) * BigInt(validation.computeLimit ?? 0) + 999_999n) / 1_000_000n),
       }, this.cfg);
     return { ...effects, contextSlot };
   }
@@ -2487,8 +2537,14 @@ export class JupiterV2Executor {
     // poller's accounting quarantine path. Slice only after removing them: one
     // permanently malformed confirmed exit must not consume the single bounded slot
     // forever and starve every genuinely signed/submitted stop behind it.
+    /* THE SNIPER'S INTENTS ARE NOT THIS PATH'S TO RECOVER. snipe_entry / snipe_exit bytes
+       are curve instructions sent raw to two RPCs (snipe-execute.mjs), and every rule
+       below — the /execute response, the Jupiter order envelope, the fill verifier —
+       would read them as a malformed Jupiter attempt and either throw or mark them
+       ambiguous, which disarms every exit. The lane's own executor recovers its own
+       kinds on boot; this loop must not touch them. */
     const ordered = this.journal.pendingIntents()
-      .filter((intent) => intent.state !== "confirmed")
+      .filter((intent) => intent.state !== "confirmed" && !String(intent.kind).startsWith("snipe_"))
       .sort((left, right) =>
       Number(!this._isSafetyExit(left)) - Number(!this._isSafetyExit(right)) ||
       Number(left.createdAt) - Number(right.createdAt) || left.id.localeCompare(right.id));

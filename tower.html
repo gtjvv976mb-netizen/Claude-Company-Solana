@@ -6,9 +6,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 
-<meta name="cc-build" content="2026-09-11 09:52 UTC">
-<script>console.log("Claude Company build 2026-09-11 09:52 UTC")</script>
+<meta name="cc-build" content="2026-09-13 12:07 UTC">
+<meta name="cc-commit" content="4be60dc38724c9175121265ebcf015d952701b1d">
+<script>console.log("Claude Company build 2026-09-13 12:07 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
+<script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
 <style>
 :root{
   /* NIGHT FIRST. The bare :root IS the Solana tower after the bell — violet-black
@@ -207,6 +209,10 @@ button.home.on{background:var(--sol-green);color:#04160e;border-color:transparen
 .perf{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 2px;font-size:12px;font-variant-numeric:tabular-nums}
 .perf b{display:block;font-size:15px} .perf .up b{color:var(--good)} .perf .down b{color:var(--bad)}
 .cost{font-size:12px;opacity:.85;margin:6px 0 2px;line-height:1.45}
+/* THE HOUSE RECORD beside the lease: what the house bot did with the house's own money. */
+.house{margin:8px 0 4px;padding:9px 10px;border:1px solid var(--panel-line);border-radius:8px;font-size:12px;line-height:1.45}
+.house .h{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:2px}
+.house .perf{margin:4px 0 6px} .house .cost{margin:4px 0 0}
 .offline{font-size:12px;opacity:.75;padding:10px 2px}
 .note{padding:10px 14px;font-size:10.5px;color:var(--ink-faint);border-top:1px solid var(--panel-line);line-height:1.5}
 </style>
@@ -77689,6 +77695,47 @@ function renderList() {
   }
 }
 
+/* THE HOUSE BOOK, ON THE TOWER (owner, 2026-09-13: "show the offer on the tower").
+   The desk's public heartbeat carries the house bot's own journal — realised P&L,
+   the last 24 hours, what it bought and sold, what it holds now — and the tower shows
+   it beside every lease offer and on HQ's own card, so the pitch for a floor is the
+   house's real record with the house's own money, not a promise. Read once a minute;
+   a floor that is selected while it is vacant or HQ is redrawn when it lands. */
+window.__houseBook = null;
+async function loadHouseBook() {
+  try {
+    const r = await fetch((window.__API_BASE__ || "") + "/api/heartbeat", { headers: { accept: "application/json" } });
+    if (!r.ok) return;
+    const data = await r.json();
+    window.__houseBook = data?.houseBot?.ledger ? data.houseBot : null;
+    const f = floors[selected - 1];
+    if (f && (f.state === "vacant" || f.state === "hq")) renderSel();
+  } catch {}
+}
+loadHouseBook();
+setInterval(loadHouseBook, 60000);
+function houseRecord(heading, tail) {
+  const hb = window.__houseBook;
+  if (!hb?.ledger) return null;
+  const lg = hb.ledger;
+  const s = (v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(Number(v) || 0).toFixed(3)} SOL`;
+  const tone = (v) => v > 0 ? "up" : v < 0 ? "down" : "";
+  const cell = (label, val, cls = "") => `<div class="${cls}"><b>${val}</b>${label}</div>`;
+  const box = document.createElement("div"); box.className = "house";
+  const h = document.createElement("div"); h.className = "h"; h.textContent = heading; box.appendChild(h);
+  const perf = document.createElement("div"); perf.className = "perf";
+  perf.innerHTML = cell("all-time, its own journal", s(lg.realizedSol), tone(lg.realizedSol))
+    + cell("last 24h", s(lg.realized24hSol), tone(lg.realized24hSol))
+    + cell("bought · sold", `${lg.deployments} · ${lg.exits}`)
+    + cell("open now", `${(hb.held || []).length}${lg.openSol > 0 ? ` · ${Number(lg.openSol).toFixed(2)} SOL` : ""}`);
+  box.appendChild(perf);
+  if (tail) { const t = document.createElement("div"); t.className = "cost"; t.innerHTML = tail; box.appendChild(t); }
+  return box;
+}
+const HOUSE_OFFER = "Lease a floor and run the same bot yourself — on your Mac, or on a small Linux server you own "
+  + "for 24/7. The key is made on your machine and never leaves it. One command installs it; the desk delivers its "
+  + "calls to your floor and your bot takes them inside your own caps.";
+
 function renderSel() {
   const f = floors[selected - 1];
   selEl.innerHTML = "";
@@ -77733,6 +77780,8 @@ function renderSel() {
     p.className = "price";
     p.innerHTML = `<b>${fmt(P.leaseTokens)} $CLAUDECO</b> to lease · ${fmt(P.rentTokens)} rent / 30 days · one floor per wallet`;
     selEl.appendChild(p);
+    const house = houseRecord("The house bot, with the house's own money · live", HOUSE_OFFER);
+    if (house) selEl.appendChild(house);
   } else if (f.state === "owned" && window.__mine?.(f)) {
     /* YOURS. The card used to be drawn from the floor's STATE alone, so an owner was
        quoted the price of a pass to their own floor and then told, on the next line,
@@ -77754,6 +77803,8 @@ function renderSel() {
       ? "Your HQ — the house desk. Open to everyone, and it is yours."
       : "Open to everyone — the house desk, live, no pass needed.";
     selEl.appendChild(c);
+    const house = houseRecord("WALL-ST-E · the house bot's live book", null);
+    if (house) selEl.appendChild(house);
   }
   const enter = document.createElement("a");
   enter.className = f.state === "vacant" ? "btn ghost" : "btn primary";

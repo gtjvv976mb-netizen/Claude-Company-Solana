@@ -41,8 +41,22 @@ import { POLICY_DEFAULTS, POLICY_VERSION, pricePolicy } from "./trade-policy.mjs
 
 export { POLICY_VERSION };
 
+/** How the bot decides WHETHER to buy a published call.
+ *    risk            — the rails decide: Kelly's verdicts, R_net, the per-name risk cap and
+ *                      book heat may refuse or shrink a call. The default.
+ *    take-every-call — the owner's instruction (2026-09-13): every call the desk publishes
+ *                      is bought at FIXED_SOL, and the edge rails (R_net, per-name risk,
+ *                      book heat) and the route's stop-floor cost check are advisory. What
+ *                      still refuses: a call with no stop, the rolling 24h loss brake, the
+ *                      open-position count, the daily deploy cap, the spendable balance,
+ *                      the minimum viable size, and every custody, fee, rent and impact
+ *                      rule on the transaction itself. The poller arms it only behind
+ *                      ENTRY_MODE_ACK, a sentence bound to the wallet and the size. */
+export const ENTRY_MODES = Object.freeze(["risk", "take-every-call"]);
+
 export const DEFAULTS = {
-  maxSolPerTrade: 0.4,       // hard ceiling; Kelly may size well under it
+  entryMode: "risk",
+  maxSolPerTrade: 1,         // hard ceiling (0.4 -> 1, 2026-09-12); Kelly may size well under it
   dailySolCap: 1000,         // owner removed the daily cap; the wallet balance binds
   dailyLossLimitSol: 0.4,    // realized losses that stop new entries for the day
   maxOpenPositions: 24,      // a sentinel; risk decides, not a count (see poller LIVE_LIMITS)
@@ -155,6 +169,8 @@ export function minViableSolPerTrade(c, effectiveStopFrac) {
 /** Should we take this entry at all, and at what size? */
 export function planEntry({ call, cfg = DEFAULTS, state }) {
   const c = { ...DEFAULTS, ...cfg };
+  const takeEvery = c.entryMode === "take-every-call";
+  const advisories = [];
   if (state.openCount >= c.maxOpenPositions)
     return { action: "skip", reason: `already holding ${state.openCount} of max ${c.maxOpenPositions}` };
   /* THE BRAKE IS A SHARE OF THE BANKROLL, NOT ONLY A NUMBER OF SOL.
@@ -212,8 +228,10 @@ export function planEntry({ call, cfg = DEFAULTS, state }) {
   //    often under 1.0 once the round trip is paid for. ──
   const cost = c.costPct;
   const rNet = targetFrac != null ? (targetFrac - cost) / (stopFrac + cost) : null;
-  if (rNet != null && !(rNet > 0))
+  if (rNet != null && !(rNet > 0) && !takeEvery)
     return { action: "skip", reason: `costs eat the target: R_net ${rNet.toFixed(2)}` };
+  if (rNet != null && !(rNet > 0) && takeEvery)
+    advisories.push(`costs eat the target (R_net ${rNet.toFixed(2)}) — taken anyway, ENTRY_MODE=take-every-call`);
 
   // ── the break-even hit rate this bracket demands ──
   const wMin = rNet != null ? 1 / (1 + rNet) : null;
@@ -304,11 +322,17 @@ export function planEntry({ call, cfg = DEFAULTS, state }) {
   const bind = (limitSol, label) => {
     if (Number.isFinite(limitSol) && limitSol < want) { want = limitSol; boundBy = label; }
   };
+  /* In take-every-call the two EDGE rails are advisory: the size is the owner's FIXED_SOL
+     and the risk it carries is reported, not enforced. The MONEY rails below (deploy cap,
+     spendable balance, minimum viable size) still bind — no mode can spend what is not
+     there. */
+  const fNameMax = takeEvery ? 1 : c.fNameMax;
+  const bookHeatMax = takeEvery ? 1 : c.bookHeatMax;
   // Per-name stop risk: want * stopFrac + both fees <= fNameMax * equity.
-  bind((c.fNameMax * equity - 2 * feeReserve) / effectiveStopFrac, `per-name risk cap ${(c.fNameMax * 100).toFixed(2)}%`);
+  bind((fNameMax * equity - 2 * feeReserve) / effectiveStopFrac, `per-name risk cap ${(fNameMax * 100).toFixed(2)}%`);
   // Aggregate book heat, on the room this call actually has left.
-  bind(((c.bookHeatMax - heat) * equity - 2 * feeReserve) / effectiveStopFrac,
-    `book heat (${(heat * 100).toFixed(1)}% of ${(c.bookHeatMax * 100).toFixed(0)}% used)`);
+  bind(((bookHeatMax - heat) * equity - 2 * feeReserve) / effectiveStopFrac,
+    `book heat (${(heat * 100).toFixed(1)}% of ${(bookHeatMax * 100).toFixed(0)}% used)`);
   bind(c.dailySolCap - state.deployedTodaySol - feeReserve,
     `rolling 24h deploy cap (${state.deployedTodaySol.toFixed(3)}/${c.dailySolCap} SOL)`);
   if (state.spendableSol != null) bind(state.spendableSol - feeReserve, "spendable balance after the fee reserve");
@@ -357,16 +381,21 @@ export function planEntry({ call, cfg = DEFAULTS, state }) {
     return { action: "skip", reason: "actual risk fraction is invalid" };
   /* The rails above already bound this, so a breach here would mean the arithmetic
      disagrees with itself. Refuse rather than trust it. */
-  if (actualF > c.fNameMax + 1e-9)
-    return { action: "skip", reason: `actual stop risk ${(actualF * 100).toFixed(2)}% exceeds per-name cap ${(c.fNameMax * 100).toFixed(2)}%` };
-  if (heat + actualF > c.bookHeatMax + 1e-9)
-    return { action: "skip", reason: `book heat ${(heat * 100).toFixed(1)}% + ${(actualF * 100).toFixed(1)}% exceeds ${(c.bookHeatMax * 100).toFixed(0)}%` };
+  if (actualF > fNameMax + 1e-9)
+    return { action: "skip", reason: `actual stop risk ${(actualF * 100).toFixed(2)}% exceeds per-name cap ${(fNameMax * 100).toFixed(2)}%` };
+  if (heat + actualF > bookHeatMax + 1e-9)
+    return { action: "skip", reason: `book heat ${(heat * 100).toFixed(1)}% + ${(actualF * 100).toFixed(1)}% exceeds ${(bookHeatMax * 100).toFixed(0)}%` };
+  if (takeEvery && actualF > c.fNameMax + 1e-9)
+    advisories.push(`stop risk ${(actualF * 100).toFixed(2)}% of equity is over the ${(c.fNameMax * 100).toFixed(2)}% per-name cap`);
+  if (takeEvery && heat + actualF > c.bookHeatMax + 1e-9)
+    advisories.push(`book heat ${((heat + actualF) * 100).toFixed(1)}% is over the ${(c.bookHeatMax * 100).toFixed(0)}% ceiling`);
 
   return { action: "buy", sol: want, f: actualF, estimatedF: f, rNet, wMin,
     /* No convictionScale. There is no scale: the desk's conviction cannot move this
        number, so there is nothing here to report about how far it moved it. */
-    boundBy,
-    reason: `${why}${boundBy ? `; sized down by ${boundBy}` : ""}; actual stop risk ${(actualF * 100).toFixed(2)}%` };
+    boundBy, advisories,
+    reason: `${takeEvery ? "take-every-call: " : ""}${why}${boundBy ? `; sized down by ${boundBy}` : ""}; actual stop risk ${(actualF * 100).toFixed(2)}%` +
+      (advisories.length ? ` — ADVISORY: ${advisories.join("; ")}` : "") };
 }
 
 /** Fresh position record, created after a fill.
