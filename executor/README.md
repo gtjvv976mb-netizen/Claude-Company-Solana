@@ -568,6 +568,19 @@ The installer records explicit paths in the protected environment file:
   to the installer and it lifts the pause itself the moment the new release is the
   running one (never before, so a failed activation still comes up paused). The floor's
   "New buys" chip reads OFF while the file exists.
+- **The supervisor writes that same file by itself whenever the host is on battery**, and
+  it keeps writing it: the sleep-assertion watcher re-publishes the pause every 15
+  seconds while battery lasts, and only the first one logs a line. So `rm` on battery is
+  undone within 15 seconds, silently. Its content names the cause — `automatic pause:
+  host is drawing battery power` — which is how you tell it from a pause you created.
+  **Restoring AC does not clear it**: the watcher logs `AC sleep assertions restored;
+  entry pause remains until explicit readiness review` and leaves the file, because a
+  machine that just slept has positions nobody was watching. Lift it yourself with `rm`
+  on AC, or restart the agent on AC and the supervisor lifts its own automatic pause
+  once at startup (`entries re-armed`). `WALLSTE_ALLOW_BATTERY_ENTRIES=1` keeps entries
+  armed on battery instead — the honest trade is in the log line it prints: the machine
+  can still sleep on a closed lid or a flat battery, and a position open across that has
+  no stop until it wakes. Carried across upgrades like the other dials.
 - If the file named by `HARD_STOP_FILE` exists, WALL-ST-E creates no new submissions,
   including automated exits. It still reconciles transactions that were already
   signed or submitted. Existing positions require operator supervision or manual
