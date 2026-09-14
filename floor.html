@@ -6,9 +6,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-14 16:11 UTC">
-<meta name="cc-commit" content="b9b2c5235c4615a968dd05782f620b386680520d">
-<script>console.log("Claude Company build 2026-09-14 16:11 UTC")</script>
+<meta name="cc-build" content="2026-09-14 23:18 UTC">
+<meta name="cc-commit" content="1d159e574b140379806bb0967177504c98cb9a12">
+<script>console.log("Claude Company build 2026-09-14 23:18 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
 <style>
@@ -360,14 +360,40 @@ body{
 .bot-book .tbar .now.flat{border-color:rgba(128,128,128,.7)}
 .bot-book .tbar .end{position:absolute;top:0;bottom:0;width:3px;border-radius:2px}
 .bot-book .tbar .end.stop{left:0;background:#d05353}.bot-book .tbar .end.target{right:0;background:#2f9e6b}
-/* THE GUIDE: one player, one caption, chapters underneath. */
-.guide-video{display:block;width:100%;aspect-ratio:16/9;border-radius:10px;background:#000;max-height:60vh}
-.guide-cap{min-height:2.6em;margin:8px 0 6px;font-size:13px;line-height:1.45;opacity:.88}
-.guide-chapters{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+/* THE GUIDE. A player shell, a chapter rail that shows where you are, and a transcript
+   that follows the voice. The rail is the point: a 17-chapter walkthrough with no map is
+   a video you scrub blindly, so every chapter is a labelled target and the one playing is
+   lit. Two columns on a desk, one on a phone. */
+.guide-stage{position:relative;border-radius:12px;overflow:hidden;background:#05070b;box-shadow:0 10px 34px rgba(0,0,0,.28)}
+.guide-video{display:block;width:100%;aspect-ratio:16/9;background:#000;max-height:58vh}
+/* The scrub bar is drawn from chapter ticks, so the shape of the guide is visible before
+   it is played — and a click lands on a chapter rather than an arbitrary second. */
+.guide-scrub{position:relative;height:6px;background:rgba(128,128,128,.22);cursor:pointer}
+.guide-scrub .played{position:absolute;left:0;top:0;bottom:0;background:var(--claude,#d97757);width:0}
+.guide-scrub .tick{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:rgba(255,255,255,.34)}
+.guide-bar{display:flex;align-items:center;gap:10px;padding:8px 10px;background:rgba(10,12,16,.92);color:#f4f1e8}
+.guide-bar button{flex:none;border:1px solid rgba(244,241,232,.3);background:transparent;color:inherit;font:inherit;
+  font-size:12px;padding:5px 10px;border-radius:7px;cursor:pointer;line-height:1}
+.guide-bar button:hover{border-color:var(--claude,#d97757)}
+.guide-bar .now{flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.92}
+.guide-bar .clock{flex:none;font-size:11.5px;font-variant-numeric:tabular-nums;opacity:.7}
+.guide-cap{min-height:3em;margin:10px 0 4px;font-size:14px;line-height:1.5}
+.guide-cap b{color:var(--claude,#d97757);font-weight:700}
+/* CONTAINER query, not a viewport one. This panel lives in the dock rail at roughly 400px
+   no matter how wide the screen is, so a `@media (max-width:700px)` rule never fires and
+   the two-column split crushed the player to a thumbnail on a 1280px desktop. The column
+   count has to answer to the PANEL's width, which is what a container query asks. */
+.guide{container-type:inline-size}
+.guide-split{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
+@container (min-width:620px){.guide-split{grid-template-columns:minmax(0,1fr) minmax(0,240px)}}
+.guide-chapters{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+@container (min-width:620px){.guide-chapters{max-height:58vh;overflow-y:auto}}
 .guide-ch{width:100%;display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:7px 9px;border:1px solid rgba(128,128,128,.28);border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:11.5px;cursor:pointer;text-align:left}
 .guide-ch b{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .guide-ch span{opacity:.6;font-variant-numeric:tabular-nums;flex:none}
+.guide-ch:hover{border-color:rgba(217,119,87,.6)}
 .guide-ch.on{border-color:var(--claude,#d97757);box-shadow:inset 0 0 0 1px var(--claude,#d97757)}
+.guide-ch.done{opacity:.55}
 .wallste-grid,.settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .statusline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px}
 .statusdot{width:9px;height:9px;border-radius:50%;background:var(--ink-faint)}
@@ -87930,7 +87956,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · arms on install"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "b9b2c5235c4615a968dd05782f620b386680520d";
+    const releaseCommit = "1d159e574b140379806bb0967177504c98cb9a12";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "e17698f907c47872344295510024bba2c1c50bf52a396af0c66d2588228a3496";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -90705,7 +90731,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "b9b2c5235c4615a968dd05782f620b386680520d";
+    const executorReleaseCommit = "1d159e574b140379806bb0967177504c98cb9a12";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
@@ -91368,12 +91394,16 @@ async function loadSettingsDashboard() {
 
 /* ══ THE GUIDE TAB (owner, 2026-09-13): the real site, recorded and narrated. ═══════
  *
- * Two minutes of the published pages — the tower, a lease card, the house floor, the
- * Overview's book, the calls, the bot, the Team tab's two tracks, and BIG C's wall —
- * recorded as real clicks on the live site by scripts/record-guide.mjs, with the
- * narration spoken over it and burned into the file. Chapters ride beside it from
- * assets/guide-chapters.json: click one to jump, and the caption under the player
- * follows the narration so a reader with the sound off loses nothing. Loaded once;
+ * Three minutes of the published pages — the tower, a lease card, the house floor and its
+ * funnel, Big Callers, the candidates, the published and closed calls, the Overview's
+ * book, both bot lanes, the receipts, the analyst ranks, the Team tab's two tracks and
+ * BIG C's wall — recorded as real clicks on the live site by scripts/record-guide.mjs,
+ * with the narration spoken over it and burned into the file.
+ *
+ * The map beside it comes from assets/guide-chapters.json in two grains: CHAPTERS for the
+ * rail and the scrub ticks, and the BEATS inside them — one per spoken sentence — for the
+ * transcript, so the words under the player are the words being said rather than the whole
+ * chapter at once. Click any chapter to jump. Loaded once;
  * the video is a few megabytes and a tab that reloads it on every visit is a tab that
  * costs a reader on a phone. */
 /* Two encodings of the same recording: H.264 for Safari and every phone, VP9 for the
@@ -91388,55 +91418,147 @@ async function loadGuideDashboard() {
   guideLoaded = true;
   el.innerHTML = "";
   dashReady(el);
-  el.append(plainLead("Two minutes on the real site: the tower, a lease, the house floor, the bot, and how to plug in yourself.",
-    { info: "Recorded on the published site — every step is a real click on the live pages, and the numbers on screen were live when it was recorded. The voice is in the video; the caption under the player follows it.",
+  el.append(plainLead("The whole desk on the real site: the tower, a lease, the funnel, the calls, the money, both bot lanes, and how to plug in yourself.",
+    { info: "Recorded on the published site — every step is a real click on the live pages, and the numbers on screen were live when it was recorded. The voice is in the video; the transcript under the player follows it, and the list on the right jumps to any chapter.",
       infoTitle: "About this guide" }));
   const wrap = dashNode("section", "dashsection guide");
+  const split = dashNode("div", "guide-split");
+  const left = dashNode("div", "");
+  const stage = dashNode("div", "guide-stage");
   const video = document.createElement("video");
-  video.className = "guide-video"; video.controls = true; video.playsInline = true; video.preload = "metadata";
+  video.className = "guide-video"; video.playsInline = true; video.preload = "metadata";
   for (const [src, type] of [[GUIDE_VIDEO, "video/mp4"], [GUIDE_VIDEO_WEBM, "video/webm"]]) {
     const source = document.createElement("source"); source.src = src; source.type = type; video.append(source);
   }
   video.setAttribute("aria-label", "Guided walkthrough of the tower and the house floor, narrated");
-  wrap.append(video);
+  stage.append(video);
+  /* Our own scrub bar rather than the browser's, because the chapter ticks are the map:
+     they show the shape of the walkthrough before a second of it has played. The native
+     controls stay reachable for anyone who wants them (right-click, or keyboard). */
+  const scrub = dashNode("div", "guide-scrub");
+  const played = dashNode("div", "played");
+  scrub.append(played);
+  stage.append(scrub);
+  const bar = dashNode("div", "guide-bar");
+  const playBtn = dashNode("button", "", "► Play"); playBtn.type = "button";
+  const prevBtn = dashNode("button", "", "‹ Prev"); prevBtn.type = "button"; prevBtn.title = "Previous chapter";
+  const nextBtn = dashNode("button", "", "Next ›"); nextBtn.type = "button"; nextBtn.title = "Next chapter";
+  const nowLabel = dashNode("div", "now", "");
+  const clock = dashNode("div", "clock", "");
+  bar.append(playBtn, prevBtn, nextBtn, nowLabel, clock);
+  stage.append(bar);
+  left.append(stage);
   const cap = dashNode("div", "guide-cap", "");
   cap.setAttribute("aria-live", "polite");
-  wrap.append(cap);
+  left.append(cap);
   const list = dashNode("ol", "guide-chapters");
-  wrap.append(list);
+  list.setAttribute("aria-label", "Chapters");
+  split.append(left, list);
+  wrap.append(split);
   el.append(wrap);
+
   let chapters = [];
   try {
     const r = await fetch(GUIDE_CHAPTERS, { cache: "no-store" });
     if (r.ok) chapters = ((await r.json())?.chapters || []).filter((c) => Number.isFinite(Number(c.at)));
   } catch {}
+  /* Beats are the sentence-level marks the recorder wrote; the transcript follows THEM so
+     the words under the player are the words being spoken, not the whole chapter at once.
+     A recording made before beats existed still works — the chapter becomes its own beat. */
+  const beats = chapters.flatMap((c) => (Array.isArray(c.beats) && c.beats.length ? c.beats : [{ at: c.at, say: c.say }])
+    .filter((b) => Number.isFinite(Number(b.at))).map((b) => ({ ...b, title: c.title })));
+  const mmss = (s) => {
+    if (!Number.isFinite(s) || s < 0) return "0:00";
+    return Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
+  };
+  const seek = (t) => { video.currentTime = Math.max(0, t); video.play().catch(() => {}); };
   chapters.forEach((c, i) => {
     const li = dashNode("li", "", "");
     const b = dashNode("button", "guide-ch", "");
     b.type = "button";
-    b.append(dashNode("b", "", String(i + 1) + " · " + c.title), dashNode("span", "", Math.round(Number(c.at)) + "s"));
+    b.append(dashNode("b", "", String(i + 1) + " · " + c.title), dashNode("span", "", mmss(Number(c.at))));
     b.title = c.say;
-    b.onclick = () => { video.currentTime = Number(c.at); video.play().catch(() => {}); };
+    b.onclick = () => seek(Number(c.at));
     li.append(b);
     list.append(li);
   });
-  const current = () => {
-    let hit = null;
-    for (const c of chapters) if (video.currentTime + 0.05 >= Number(c.at)) hit = c;
+  /* Before the first mark there is no chapter yet — the recording opens on a beat of
+     picture before anyone speaks. Falling back to the first row keeps the bar, the rail
+     and the transcript populated from frame one instead of showing an empty shell for
+     the opening seconds, which reads as broken rather than as not-started-yet. */
+  const at = (rows) => {
+    let hit = rows[0] ?? null;
+    for (const r of rows) if (video.currentTime + 0.05 >= Number(r.at)) hit = r;
     return hit;
   };
   const follow = () => {
-    const c = current();
-    cap.textContent = c ? c.say : "";
-    [...list.querySelectorAll(".guide-ch")].forEach((b, i) => b.classList.toggle("on", chapters[i] === c));
+    const c = at(chapters), b = at(beats);
+    const n = chapters.indexOf(c);
+    cap.textContent = b ? b.say : "";
+    nowLabel.textContent = c ? `${n + 1}/${chapters.length} · ${c.title}` : "";
+    const dur = Number(video.duration) || 0;
+    clock.textContent = dur ? `${mmss(video.currentTime)} / ${mmss(dur)}` : "";
+    played.style.width = dur ? (video.currentTime / dur * 100).toFixed(2) + "%" : "0";
+    [...list.querySelectorAll(".guide-ch")].forEach((el2, i) => {
+      el2.classList.toggle("on", i === n);
+      el2.classList.toggle("done", i < n);
+    });
   };
+  /* The ticks need the duration, which arrives with the metadata, not with the JSON. */
+  const drawTicks = () => {
+    const dur = Number(video.duration) || 0;
+    if (!dur) return;
+    scrub.querySelectorAll(".tick").forEach((t) => t.remove());
+    chapters.forEach((c) => {
+      const t = dashNode("div", "tick");
+      t.style.left = (Number(c.at) / dur * 100).toFixed(2) + "%";
+      scrub.append(t);
+    });
+  };
+  video.addEventListener("loadedmetadata", () => { drawTicks(); follow(); });
   video.addEventListener("timeupdate", follow);
   video.addEventListener("seeked", follow);
+  video.addEventListener("play", () => { playBtn.textContent = "❚❚ Pause"; });
+  video.addEventListener("pause", () => { playBtn.textContent = "► Play"; });
+  playBtn.onclick = () => { video.paused ? video.play().catch(() => {}) : video.pause(); };
+  const step = (dir) => {
+    const n = chapters.indexOf(at(chapters));
+    /* Back inside the first two seconds of a chapter means "the previous one"; later it
+       means "start this one again", which is what a viewer who missed a line wants. */
+    const target = dir < 0
+      ? (n > 0 && video.currentTime - Number(chapters[n]?.at ?? 0) < 2 ? n - 1 : Math.max(0, n))
+      : Math.min(chapters.length - 1, n + 1);
+    if (chapters[target]) seek(Number(chapters[target].at));
+  };
+  prevBtn.onclick = () => step(-1);
+  nextBtn.onclick = () => step(1);
+  /* Native controls are off because the burned-in captions sit exactly where they would
+     draw, so the keys they would have given us are wired here instead: the stage takes
+     focus, space plays, the arrows step a chapter. Without this the guide is mouse-only. */
+  stage.tabIndex = 0;
+  stage.setAttribute("role", "group");
+  stage.setAttribute("aria-label", "Guide player — space to play or pause, left and right arrows to change chapter");
+  stage.addEventListener("keydown", (e) => {
+    if (e.key === " " || e.key === "Spacebar") { e.preventDefault(); playBtn.onclick(); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
+  });
+  scrub.onclick = (e) => {
+    const dur = Number(video.duration) || 0;
+    if (!dur) return;
+    const r = scrub.getBoundingClientRect();
+    seek((e.clientX - r.left) / r.width * dur);
+  };
   video.querySelectorAll("source")[1]?.addEventListener("error", () => {
     cap.textContent = "The recording is not published on this host yet. It ships with the site build (assets/guide-walkthrough.mp4).";
   });
-  /* The play button, beside the figures, for a reader who has not found the controls. */
-  el.append(leadButton("Play the guide", () => { video.play().catch(() => {}); video.scrollIntoView({ block: "nearest", behavior: "smooth" }); }));
+  /* THE RACE, and it is the normal case on a warm cache. Everything above is wired only
+     after awaiting the chapter JSON, so a video whose metadata arrived during that await
+     has already fired loadedmetadata and will never fire it again: the ticks stay undrawn
+     and the clock stays blank for the whole sitting. readyState is the state the event
+     announced, so ask it rather than wait for a second announcement. */
+  if (video.readyState >= 1) drawTicks();
+  follow();
 }
 
 window.__loadDashboardDestination = (which) => {
