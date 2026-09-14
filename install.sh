@@ -187,6 +187,18 @@ Options:
                         up front. Nothing else changes: caps, hard stop and
                         readiness still bind, and an empty wallet still
                         trades nothing.
+  --no-equity-brake     Set DAILY_LOSS_PCT_OF_EQUITY=0, turning off the half
+                        of the realized-loss brake that scales with the wallet
+                        balance. That half tightens as the balance falls (20%
+                        of 0.55 SOL is 0.11 SOL, one stop-out), so leaving it
+                        on while raising the absolute cap changes nothing.
+                        The absolute cap is a money cap and is NOT set here:
+                        raise DAILY_LOSS_LIMIT_SOL with arm-caps.
+  --allow-battery-entries
+                        Set WALLSTE_ALLOW_BATTERY_ENTRIES=1, so the supervisor
+                        does not pause entries whenever the host is on battery.
+                        Without it, unplugging re-publishes the pause file
+                        every 15 seconds and restoring power does not lift it.
   --expected-commit SHA The exact 40-character published commit to sign with.
                         Live never runs code downloaded from the site. If you
                         do not pass it, you are asked for it; the site prints
@@ -254,12 +266,20 @@ HELP
 # Off by default: an upgrade that comes up paused is the reviewed behaviour, and the
 # operator lifts it as a separate act unless they said otherwise on this command line.
 RESUME_ENTRIES=0
+# Both off by default, and both are settings rather than caps: neither authorises a
+# spend, so neither goes through the caps ceremony. They exist as flags because the
+# alternative is hand-editing the protected environment file between an upgrade and a
+# load, which is where an operator following a three-step list loses a step.
+NO_EQUITY_BRAKE=0
+ALLOW_BATTERY_ENTRIES=0
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --help|-h) usage; exit 0;;
     --live) MODE="live"; shift;;
     --resume-entries) RESUME_ENTRIES=1; shift;;
+    --no-equity-brake) NO_EQUITY_BRAKE=1; shift;;
+    --allow-battery-entries) ALLOW_BATTERY_ENTRIES=1; shift;;
     # Kept, and now the default it names. Scripts and documents that pass it keep
     # working byte for byte; --dry-run is the flag that changes anything.
     --dry-run) MODE="paper"; shift;;
@@ -1216,7 +1236,11 @@ LIVE_CANARY_DAILY_LOSS_CAP="0.01"
 LIVE_MIN_MONEY_CAP="0.000001"
 LIVE_OPERATOR_MAX_SOL="1"
 LIVE_OPERATOR_MAX_DAILY_CAP="1000"
-LIVE_OPERATOR_MAX_DAILY_LOSS_CAP="0.4"
+# 0.4 -> 1000 (owner, 2026-09-14: "i want it to trade until it losses the funds"). Held
+# equal to poller.mjs OPERATOR_MAX.dailyLossLimitSol by test-operator-max-parity.mjs. A
+# realized loss cannot exceed what was deployed to realize it, so the deploy ceiling is
+# the arithmetic ceiling on this rail; the wallet balance is what stops the day.
+LIVE_OPERATOR_MAX_DAILY_LOSS_CAP="1000"
 
 # One SOL has exactly 1e9 lamports. Limiting cap literals to that precision keeps
 # the comparison exact enough for the declared unit and prevents awk's binary
@@ -1853,14 +1877,29 @@ fi
   # arming lines. Until 2026-09-13 an upgrade dropped all of them silently: a bot armed
   # for the sniper came back from an upgrade with the lane off. Carried verbatim; the
   # runner validates each against its own allow-list and bounds before anything runs.
+  # THE FLAGS WIN OVER THE CARRY. Written first, and named in SET_BY_FLAG so the carry
+  # loop below leaves them alone — otherwise an upgrade would emit the flag's line and
+  # then the prior value's line for the same key, and which one the runtime honours
+  # would depend on the env parser rather than on what the operator just typed.
+  SET_BY_FLAG=""
+  if [ "$NO_EQUITY_BRAKE" -eq 1 ]; then
+    write_env_line DAILY_LOSS_PCT_OF_EQUITY "0"
+    SET_BY_FLAG="$SET_BY_FLAG DAILY_LOSS_PCT_OF_EQUITY"
+  fi
+  if [ "$ALLOW_BATTERY_ENTRIES" -eq 1 ]; then
+    write_env_line WALLSTE_ALLOW_BATTERY_ENTRIES "1"
+    SET_BY_FLAG="$SET_BY_FLAG WALLSTE_ALLOW_BATTERY_ENTRIES"
+  fi
   if [ "$UPGRADE" -eq 1 ]; then
     for dial in ENTRY_MODE ENTRY_MODE_ACK FIXED_SOL F_DEFAULT F_NAME_MAX BOOK_HEAT_MAX MIN_CONVICTION \
+      DAILY_LOSS_PCT_OF_EQUITY \
       MAX_OPEN_POSITIONS TRAIL_PCT MAX_AGE_HOURS \
       SNIPE_LANE SNIPE_TICK_MS SNIPE_MAX_SOL_PER_TRADE SNIPE_DAILY_SOL_CAP SNIPE_LIVE_ACK \
       SNIPE_TAKE_AT_ENTRY_X SNIPE_STOP_FRAC SNIPE_HOLD_MAX_MS SNIPE_PRIORITY_FEE_LAMPORTS \
       SNIPE_MAX_PRICE_IMPACT_PCT SNIPE_MAX_ROUND_TRIP_LOSS_PCT \
       JUPITER_EXCLUDE_DEXES WALLSTE_ALLOW_BATTERY_ENTRIES \
       MARK_MS POLL_MS RECONCILE_MS SOL_USD_CACHE_MAX_AGE_MS MAX_ENTRY_MARK_AGE_MIN; do
+      case " $SET_BY_FLAG " in *" $dial "*) continue;; esac
       if upgrade_env_read "$dial" && [ -n "$UPGRADE_VALUE" ]; then write_env_line "$dial" "$UPGRADE_VALUE"; fi
     done
   fi
@@ -2048,7 +2087,10 @@ cat <<DONE
 
   Runtime commit: $SOURCE_COMMIT
   Max $MAX_SOL SOL/trade · $DAILY_CAP SOL/rolling 24h deploy
-  Realized-loss entry brake $DAILY_LOSS_CAP SOL/rolling 24h
+  Realized-loss entry brake $DAILY_LOSS_CAP SOL/rolling 24h$(
+    if [ "$NO_EQUITY_BRAKE" -eq 1 ]; then
+      printf '\n  Equity brake OFF (DAILY_LOSS_PCT_OF_EQUITY=0) — the %s SOL figure\n  above is now the ONLY loss brake. Raise it with arm-caps to trade\n  until the wallet is the stop.' "$DAILY_LOSS_CAP"
+    fi)
   Pause entries:  install -m 600 /dev/null $PAUSE_FILE
   Resume entries: rm -f $PAUSE_FILE   (or pass --resume-entries next time)
   Hard stop:      install -m 600 /dev/null $HARD_STOP_FILE

@@ -409,12 +409,32 @@ if (EXECUTE) {
  * that exists. What still bounds a day is the balance itself, the per-name risk cap,
  * book heat, maxOpenPositions and the realized-loss brake.
  *
- * The loss brake moves 0.15 -> 0.4 for a reason, not for symmetry: it is applied as the
- * TIGHTER of the absolute figure and 20% of the bankroll, so at 0.15 it was the binding
- * number and stopped the day after roughly two stop-outs on a 0.4 position. At 0.4 the
- * percentage becomes the binding one (0.399 on this balance), which is the owner's
- * original "stop after losing 20% of the SOL" rule actually taking effect. */
-const OPERATOR_MAX = Object.freeze({ maxSolPerTrade: 1, dailySolCap: 1000, dailyLossLimitSol: 0.4 });
+ * The loss brake moved 0.15 -> 0.4 for a reason, not for symmetry: it is applied as the
+ * TIGHTER of the absolute figure and dailyLossPctOfEquity of the bankroll, so at 0.15 it
+ * was the binding number and stopped the day after roughly two stop-outs on a 0.4
+ * position. At 0.4 the percentage became the binding one on a ~2 SOL balance, which is
+ * the owner's original "stop after losing 20% of the SOL" rule actually taking effect.
+ *
+ * 0.4 -> 1000 (owner, 2026-09-14: "i want it to trade until it losses the funds"). The
+ * old ceiling was a SECOND stop layered under the wallet, and on a bankroll that had
+ * shrunk it became the only thing the bot traded against: at a 0.55 SOL balance the
+ * equity brake is 0.11 SOL, which one stop-out on a 0.5 SOL position clears in a single
+ * trade. Measured on the live desk that day — nine closes, a -0.5167 SOL rolling
+ * window, and entries refused for eighteen hours on a wallet that could still fund
+ * them. The owner could not lift it from either side: the absolute figure was frozen at
+ * 0.4 and the percentage had no dial at all.
+ *
+ * Matching dailySolCap is the coherent bound rather than a round number: a realized loss
+ * cannot exceed what was deployed to realize it, so the deploy ceiling IS the arithmetic
+ * ceiling on this rail. Raising it does not remove a stop. The wallet's spendable
+ * balance is checked on every entry, the per-trade cap, per-name risk cap, book heat and
+ * maxOpenPositions all still bind, the hard-stop file still halts the process, and every
+ * custody, fee, rent and impact rule still refuses. What it removes is the
+ * DISCRETIONARY layer, which is the owner's to set — including to a number that never
+ * binds before the balance does. DAILY_LOSS_PCT_OF_EQUITY is the other half of that
+ * decision: BOTH must be lifted, because the brake is the tighter of the two, and the
+ * startup line names whichever one still binds. */
+const OPERATOR_MAX = Object.freeze({ maxSolPerTrade: 1, dailySolCap: 1000, dailyLossLimitSol: 1000 });
 const capsAckSentence = (wallet, trade, daily, loss) =>
   `I acknowledge WALL-ST-E caps v2 for ${wallet}: ${trade} SOL per trade, ${daily} SOL per day, ${loss} SOL rolling realized-loss entry brake`;
 
@@ -476,6 +496,18 @@ const CFG = {
   fDefault: number("F_DEFAULT", process.env.F_DEFAULT || DEFAULTS.fDefault, { min: 0.00001, max: 1 }),
   fNameMax: number("F_NAME_MAX", process.env.F_NAME_MAX || DEFAULTS.fNameMax, { min: 0.00001, max: 1 }),
   bookHeatMax: number("BOOK_HEAT_MAX", process.env.BOOK_HEAT_MAX || DEFAULTS.bookHeatMax, { min: 0.00001, max: 1 }),
+  /* THE OTHER HALF OF THE REALIZED-LOSS BRAKE, and until 2026-09-14 the half no operator
+   * could reach. planEntry brakes on the TIGHTER of dailyLossLimitSol and this share of
+   * the bankroll, so a shrinking wallet tightens the brake by itself: at 0.55 SOL the 20%
+   * default brakes at 0.11 SOL, which one stop-out on a 0.5 SOL position clears. Lifting
+   * the absolute figure alone therefore changes nothing — the percentage keeps binding —
+   * which is why this dial exists alongside the raised OPERATOR_MAX ceiling.
+   *
+   * 0 turns the equity brake off, and the startup line below says so. `||` rather than
+   * `??` is deliberate: "0" is a truthy string so an explicit zero survives, while an
+   * empty or unset value falls back to the default rather than silently reading as off. */
+  dailyLossPctOfEquity: number("DAILY_LOSS_PCT_OF_EQUITY",
+    process.env.DAILY_LOSS_PCT_OF_EQUITY || DEFAULTS.dailyLossPctOfEquity, { min: 0, max: 1 }),
   maxAgeHours: number("MAX_AGE_HOURS", process.env.MAX_AGE_HOURS || DEFAULTS.maxAgeHours, { min: 0.01, max: 720 }),
   /* THE ONLY THING THE DESK'S CONVICTION CAN DO, AND ONLY BECAUSE A HUMAN HERE ASKED.
    * A take-it-or-leave-it floor, read from THIS machine's environment. It cannot change
@@ -3337,10 +3369,25 @@ if (CFG.entryMode === "take-every-call")
   log(`ENTRY MODE take-every-call: every published call is bought at ${CFG.fixedSol} SOL; the R_net, per-name risk and book-heat rails ` +
     "and the route's stop-floor cost check are ADVISORY (logged as WARN); the loss brake, the deploy cap, the wallet, the open-position count, " +
     "and every custody, fee, rent and impact rule still refuse");
+/* THE BRAKE, AS CONFIGURED — not as defaulted. This line read DEFAULTS.dailyLossPctOfEquity
+   while every other figure on it read CFG, which was harmless only while the percentage had
+   no dial. With one, an operator who turned the equity brake off would have been told at
+   every startup that it was still on at 20%, and the one line that exists to name the
+   binding rail would have named the wrong one. */
 log(`caps: ${CFG.maxSolPerTrade} SOL/trade, ${CFG.dailySolCap} SOL/rolling 24h deploy, ` +
-  `realized-loss entry brake = the TIGHTER of ${CFG.dailyLossLimitSol} SOL and ` +
-  `${(DEFAULTS.dailyLossPctOfEquity * 100).toFixed(0)}% of the bankroll, ` +
-  `${CFG.maxOpenPositions} open (a sentinel — book heat and the wallet bind first)`);
+  `realized-loss entry brake = ` +
+  (CFG.dailyLossPctOfEquity > 0
+    ? `the TIGHTER of ${CFG.dailyLossLimitSol} SOL and ` +
+      `${(CFG.dailyLossPctOfEquity * 100).toFixed(0)}% of the bankroll`
+    : `${CFG.dailyLossLimitSol} SOL flat (DAILY_LOSS_PCT_OF_EQUITY=0 — no equity brake)`) +
+  `, ${CFG.maxOpenPositions} open (a sentinel — book heat and the wallet bind first)`);
+/* Say it plainly when the owner has lifted BOTH halves. Neither rail can bind before the
+   balance does at this point, so the wallet is the stop and the log should not imply
+   there is another one waiting underneath it. */
+if (CFG.dailyLossPctOfEquity === 0 && CFG.dailyLossLimitSol >= OPERATOR_MAX.dailyLossLimitSol)
+  log("realized-loss brake: LIFTED on both halves — the wallet's spendable balance is the " +
+    "only stop on losses. Per-trade size, book heat, the open-position count, the hard-stop " +
+    "file and every custody, fee, rent and impact rule still refuse.");
 log(`journal: ${STATE_DB}; entries pause: ${PAUSE_ENTRIES_FILE}; ` +
   `sleep fault: ${SLEEP_ASSERTION_FAULT_FILE}; hard stop: ${HARD_STOP_FILE}`);
 log(`desk-led exits (${POLICY_VERSION}): the bot holds until the desk determines the exit — ` +

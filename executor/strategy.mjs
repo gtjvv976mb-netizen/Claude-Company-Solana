@@ -102,7 +102,12 @@ export const DEFAULTS = {
      twelve simultaneous positions, against four before. */
   bookHeatMax: 0.20,         // sum of f across open positions — correlated names share it
   /* Stop for the day after losing this share of the bankroll. Applied as the TIGHTER of
-     this and dailyLossLimitSol, so it can only ever brake sooner. */
+     this and dailyLossLimitSol, so it can only ever brake sooner.
+     0 turns it off entirely, leaving dailyLossLimitSol as the only discretionary stop —
+     set from the environment as DAILY_LOSS_PCT_OF_EQUITY (poller.mjs). Until 2026-09-14
+     this was a default with no dial, which made it the one money rail an operator could
+     not reach: on a bankroll that had shrunk to 0.55 SOL it braked at 0.11 SOL, one
+     stop-out on a 0.5 SOL position, and no setting anywhere could lift it. */
   dailyLossPctOfEquity: 0.20,
   maxAgeHours: POLICY_DEFAULTS.maxAgeHours,
   // Kept as a compatibility field for old env/config files. Snipe-v2 never emits

@@ -64,6 +64,11 @@ const ALLOWED_ENV = new Set([
   "SNIPE_MAX_PRICE_IMPACT_PCT", "SNIPE_MAX_ROUND_TRIP_LOSS_PCT",
   "BLOCK_HEIGHT_WINDOW", "BOOK_HEAT_MAX", "CC_API", "CC_FLOOR", "CC_SECRET",
   "DAILY_LOSS_LIMIT_SOL",
+  /* The share of the bankroll the realized-loss brake stops at, 0 to turn it off. Not a
+     money cap — it never authorises a spend, it only decides when entries stop — so it
+     is an ordinary bounded dial here (poller.mjs bounds it 0 to 1) rather than one of
+     the three OPERATOR_MONEY_MAX caps that `arm-caps` must ceremony through. */
+  "DAILY_LOSS_PCT_OF_EQUITY",
   /* desk-led-v4 (2026-09-05). How long the desk may be consecutively unreachable before
      the bot mirrors the desk's own levels with the desk's ruler. Bounded in poller.mjs
      (live 2 min to 1 h). */
@@ -420,7 +425,12 @@ const OPERATOR_MONEY_MAX = Object.freeze({
      now asserts all four copies agree. */
   MAX_SOL_PER_TRADE: 1,
   DAILY_SOL_CAP: 1000,
-  DAILY_LOSS_LIMIT_SOL: 0.4,
+  /* 0.4 -> 1000 (owner, 2026-09-14: "i want it to trade until it losses the funds").
+     See the note in poller.mjs: a realized loss cannot exceed what was deployed to
+     realize it, so the deploy ceiling is the arithmetic ceiling on this rail, and the
+     wallet balance is what stops the day. This copy has to move with the poller's or
+     the raise cannot be armed at all — which is precisely the ae6fd1c failure above. */
+  DAILY_LOSS_LIMIT_SOL: 1000,
 });
 const MONEY_CAP_NAMES = Object.freeze(Object.keys(CANARY_MONEY_CAPS));
 const capsAckSentence = (wallet, trade, daily, loss) =>

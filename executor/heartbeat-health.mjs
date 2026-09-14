@@ -20,7 +20,7 @@ const POSITION_FLAGS = ["callIdentityIncomplete", "accountingIncomplete", "balan
 /* How long a readiness proof keeps counting after a later probe misses. The same figure
    the desk's entry gate uses (src/alerts.js READINESS_PROOF_GRACE_MS): 7.5 probes. */
 export const READINESS_PROOF_GRACE_MS = 15 * 60_000;
-export const HEARTBEAT_CAP_BOUNDS = Object.freeze({ maxSolPerTrade: 1, dailySolCap: 1000, dailyLossLimitSol: 0.4 });
+export const HEARTBEAT_CAP_BOUNDS = Object.freeze({ maxSolPerTrade: 1, dailySolCap: 1000, dailyLossLimitSol: 1000 });
 
 const TRADING_RUNTIME_FILES = Object.freeze([
   "poller.mjs", "journal.mjs", "jupiter.mjs", "network-fee-budget.mjs",
