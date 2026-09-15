@@ -1,261 +1,357 @@
 {
   "site": "https://solana.claudedotcompany.com",
-  "recordedAt": "2026-09-14T23:50:33.721Z",
-  "duration": 157.5,
+  "recordedAt": "2026-09-15T03:06:13.838Z",
+  "duration": 293.9,
   "chapters": [
     {
       "id": "hook",
       "title": "The desk",
       "at": 0,
-      "say": "Sixteen analysts. One trading desk. Real money on Solana. This is the fiftieth floor, and everything you're about to see is live.",
+      "say": "Sixteen analysts. One trading desk. Real money on Solana. This is the fiftieth floor, and everything you're about to see is live right now. In three minutes you'll know how a coin becomes a call, how a call becomes a trade, and how to run the whole thing yourself.",
       "beats": [
         {
           "at": 0,
           "say": "Sixteen analysts. One trading desk. Real money on Solana."
         },
         {
-          "at": 5.2,
-          "say": "This is the fiftieth floor, and everything you're about to see is live."
+          "at": 5.4,
+          "say": "This is the fiftieth floor, and everything you're about to see is live right now."
+        },
+        {
+          "at": 9.9,
+          "say": "In three minutes you'll know how a coin becomes a call, how a call becomes a trade, and how to run the whole thing yourself."
         }
       ]
     },
     {
       "id": "tower",
       "title": "The tower",
-      "at": 13.3,
-      "say": "Claude Tower. Fifty floors, one desk on each. The house desk works upstairs on fifty. It studies new coins all day, and publishes the few it would actually trade.",
+      "at": 17,
+      "say": "Claude Tower. Fifty floors, one desk on each. The house desk works upstairs on fifty. It studies new coins all day and publishes only the few it would actually trade. Every other floor is a tenant running that same desk, on their own wallet.",
       "beats": [
         {
-          "at": 13.3,
+          "at": 17,
           "say": "Claude Tower. Fifty floors, one desk on each."
         },
         {
-          "at": 17.7,
-          "say": "The house desk works upstairs on fifty. It studies new coins all day, and publishes the few it would actually trade."
+          "at": 21.4,
+          "say": "The house desk works upstairs on fifty. It studies new coins all day and publishes only the few it would actually trade."
+        },
+        {
+          "at": 28.9,
+          "say": "Every other floor is a tenant running that same desk, on their own wallet."
         }
       ]
     },
     {
       "id": "lease",
       "title": "Lease a floor",
-      "at": 25.9,
-      "say": "Any vacant floor can be yours. One floor per wallet. And right beside the price: the house bot's own record, with the house's own money.",
+      "at": 34.2,
+      "say": "Any vacant floor can be yours. One floor per wallet. Here's the price, and right beside it the house bot's own record — its real trades, with the house's own money. Nothing on this card is a promise. It's a journal.",
       "beats": [
         {
-          "at": 25.9,
+          "at": 34.2,
           "say": "Any vacant floor can be yours. One floor per wallet."
         },
         {
-          "at": 29.9,
-          "say": "And right beside the price: the house bot's own record, with the house's own money."
+          "at": 38,
+          "say": "Here's the price, and right beside it the house bot's own record — its real trades, with the house's own money."
+        },
+        {
+          "at": 44.4,
+          "say": "Nothing on this card is a promise. It's a journal."
         }
       ]
     },
     {
       "id": "enter",
       "title": "Step inside",
-      "at": 45.5,
-      "say": "Step inside. The house floor is open to everyone, no sign-in needed. Every character here is an analyst, and every one of them has a job.",
+      "at": 48.3,
+      "say": "Step inside. The house floor is open to everyone, no sign-in needed. Every character here is an analyst, and every one of them has a job — reading launches, checking holders, hunting for the reasons to say no.",
       "beats": [
         {
-          "at": 45.5,
+          "at": 48.3,
           "say": "Step inside. The house floor is open to everyone, no sign-in needed."
         },
         {
-          "at": 51.7,
-          "say": "Every character here is an analyst, and every one of them has a job."
+          "at": 54.3,
+          "say": "Every character here is an analyst, and every one of them has a job — reading launches, checking holders, hunting for the reasons to say no."
         }
       ]
     },
     {
       "id": "funnel",
       "title": "The funnel",
-      "at": 56.1,
-      "say": "Watch the counter along the bottom. Coins studied today, coins turned down, and the few still on watch. Most of them die right here, and that is the point.",
+      "at": 62.2,
+      "say": "Watch the counter along the bottom. That's the funnel, and it's the heart of the desk. Coins studied today. Coins turned down. And the few still on watch. Most coins die right here, on purpose. The desk's job is refusal, not speed.",
       "beats": [
         {
-          "at": 56.1,
-          "say": "Watch the counter along the bottom."
+          "at": 62.2,
+          "say": "Watch the counter along the bottom. That's the funnel, and it's the heart of the desk."
         },
         {
-          "at": 58.4,
-          "say": "Coins studied today, coins turned down, and the few still on watch. Most of them die right here, and that is the point."
+          "at": 67,
+          "say": "Coins studied today. Coins turned down. And the few still on watch."
+        },
+        {
+          "at": 72.2,
+          "say": "Most coins die right here, on purpose. The desk's job is refusal, not speed."
         }
       ]
     },
     {
       "id": "callouts",
       "title": "Big Callers",
-      "at": 67.1,
-      "say": "Big Callers is the raw feed — everything the desk has spotted. None of these is a call yet.",
+      "at": 79.5,
+      "say": "Big Callers is the raw feed — everything the desk has spotted, before anyone has judged it. None of these is a call yet. Think of it as the in-tray.",
       "beats": [
         {
-          "at": 67.1,
-          "say": "Big Callers is the raw feed — everything the desk has spotted."
+          "at": 79.5,
+          "say": "Big Callers is the raw feed — everything the desk has spotted, before anyone has judged it."
         },
         {
-          "at": 71.2,
-          "say": "None of these is a call yet."
+          "at": 85.5,
+          "say": "None of these is a call yet. Think of it as the in-tray."
         }
       ]
     },
     {
       "id": "candidates",
       "title": "Candidates",
-      "at": 74.4,
-      "say": "Candidates are the shortlist, waiting to be studied.",
+      "at": 90.3,
+      "say": "Candidates are the shortlist — coins that survived the first cut and are waiting to be studied. Still not calls. Still no money. Just the ones worth a closer look.",
       "beats": [
         {
-          "at": 74.4,
-          "say": "Candidates are the shortlist, waiting to be studied."
+          "at": 90.3,
+          "say": "Candidates are the shortlist — coins that survived the first cut and are waiting to be studied."
+        },
+        {
+          "at": 95.9,
+          "say": "Still not calls. Still no money. Just the ones worth a closer look."
         }
       ]
     },
     {
       "id": "published",
       "title": "The calls",
-      "at": 78.7,
-      "say": "A published call carries three numbers. An entry, a stop, and a target. That is what your bot acts on — nothing vaguer than that.",
+      "at": 102,
+      "say": "And this is a published call. It carries three numbers, and only three. An entry. A stop below it. A target above it. That's what your bot acts on. Nothing vaguer than that, ever.",
       "beats": [
         {
-          "at": 78.7,
-          "say": "A published call carries three numbers."
+          "at": 102,
+          "say": "And this is a published call. It carries three numbers, and only three."
         },
         {
-          "at": 81.6,
-          "say": "An entry, a stop, and a target. That is what your bot acts on — nothing vaguer than that."
+          "at": 106.7,
+          "say": "An entry. A stop below it. A target above it."
+        },
+        {
+          "at": 110.7,
+          "say": "That's what your bot acts on. Nothing vaguer than that, ever."
         }
       ]
     },
     {
       "id": "closed",
       "title": "How it ended",
-      "at": 88.4,
-      "say": "Closed shows how each one ended, and the coins the desk turned down.",
+      "at": 115.6,
+      "say": "Closed shows how every call ended — and the coins the desk turned down, so you can see what it refused as well as what it took.",
       "beats": [
         {
-          "at": 88.4,
-          "say": "Closed shows how each one ended, and the coins the desk turned down."
+          "at": 115.6,
+          "say": "Closed shows how every call ended — and the coins the desk turned down, so you can see what it refused as well as what it took."
         }
       ]
     },
     {
       "id": "overview",
       "title": "The money",
-      "at": 93.7,
-      "say": "The Overview is the money view. Profit and loss, straight out of the bot's own journal. Open positions draw as a bar: where it got in, the stop below, the target above.",
+      "at": 123.7,
+      "say": "The Overview is the money view. Profit and loss, straight out of the bot's own journal — not the desk's paper, the bot's actual fills. Every open position draws as a bar: where it got in, the stop below, the target above, and a dot for where the coin is now. Closed trades draw the same way, so you can see at a glance how far each one ran, and which way.",
       "beats": [
         {
-          "at": 93.7,
+          "at": 123.7,
           "say": "The Overview is the money view."
         },
         {
-          "at": 95.9,
-          "say": "Profit and loss, straight out of the bot's own journal."
+          "at": 125.9,
+          "say": "Profit and loss, straight out of the bot's own journal — not the desk's paper, the bot's actual fills."
         },
         {
-          "at": 100.2,
-          "say": "Open positions draw as a bar: where it got in, the stop below, the target above."
+          "at": 133.4,
+          "say": "Every open position draws as a bar: where it got in, the stop below, the target above, and a dot for where the coin is now."
+        },
+        {
+          "at": 141.4,
+          "say": "Closed trades draw the same way, so you can see at a glance how far each one ran, and which way."
         }
       ]
     },
     {
       "id": "wallste",
       "title": "WALL-ST-E",
-      "at": 106.8,
-      "say": "Wall Street E is the bot itself. Your wallet, your caps, running on your own machine. The key is made there and never leaves it.",
+      "at": 148.4,
+      "say": "Wall Street E is the bot itself — the thing that takes the calls. It runs on your own machine, with a wallet whose key is made there and never leaves it. The desk never holds it. You set the caps: how much per trade, how much per day, and where it stops if a day goes badly. Those caps are hard ceilings in the code, not suggestions on a screen.",
       "beats": [
         {
-          "at": 106.8,
-          "say": "Wall Street E is the bot itself."
+          "at": 148.4,
+          "say": "Wall Street E is the bot itself — the thing that takes the calls."
         },
         {
-          "at": 109.8,
-          "say": "Your wallet, your caps, running on your own machine. The key is made there and never leaves it."
+          "at": 152.7,
+          "say": "It runs on your own machine, with a wallet whose key is made there and never leaves it. The desk never holds it."
+        },
+        {
+          "at": 158.9,
+          "say": "You set the caps: how much per trade, how much per day, and where it stops if a day goes badly."
+        },
+        {
+          "at": 164.9,
+          "say": "Those caps are hard ceilings in the code, not suggestions on a screen."
         }
       ]
     },
     {
       "id": "hawkai",
       "title": "HAWK-AI",
-      "at": 116.3,
-      "say": "Hawk A I is the second lane — a sniper that watches brand new launches.",
+      "at": 170.2,
+      "say": "Hawk A I is the second lane — a sniper aimed at brand-new launches in their first seconds. Two dials: how much per trade, and the multiple of your entry at which he sells. Both refused if they don't add up. And this box answers the question every floor asks — is he actually running, and if not, why not. A sniper that stopped tells you here, in its own words. It never goes quiet.",
       "beats": [
         {
-          "at": 116.3,
-          "say": "Hawk A I is the second lane — a sniper that watches brand new launches."
+          "at": 170.2,
+          "say": "Hawk A I is the second lane — a sniper aimed at brand-new launches in their first seconds."
+        },
+        {
+          "at": 176,
+          "say": "Two dials: how much per trade, and the multiple of your entry at which he sells. Both refused if they don't add up."
+        },
+        {
+          "at": 184.3,
+          "say": "And this box answers the question every floor asks — is he actually running, and if not, why not."
+        },
+        {
+          "at": 189.9,
+          "say": "A sniper that stopped tells you here, in its own words. It never goes quiet."
         }
       ]
     },
     {
       "id": "activity",
       "title": "The receipts",
-      "at": 122,
-      "say": "Activity is the receipt. The tape, every decision the desk made, and the ledger underneath it.",
+      "at": 196,
+      "say": "Activity is the receipt for everything. The Tape is the live stream — every move the floor makes, as it makes it. Decisions is every verdict an analyst reached, and the reason they gave. And the Ledger is the money underneath it all, line by line.",
       "beats": [
         {
-          "at": 122,
-          "say": "Activity is the receipt."
+          "at": 196,
+          "say": "Activity is the receipt for everything."
         },
         {
-          "at": 124.4,
-          "say": "The tape, every decision the desk made, and the ledger underneath it."
+          "at": 199.8,
+          "say": "The Tape is the live stream — every move the floor makes, as it makes it."
+        },
+        {
+          "at": 205.3,
+          "say": "Decisions is every verdict an analyst reached, and the reason they gave."
+        },
+        {
+          "at": 210.7,
+          "say": "And the Ledger is the money underneath it all, line by line."
         }
       ]
     },
     {
       "id": "performance",
       "title": "Who is right",
-      "at": 129.5,
-      "say": "Performance ranks the analysts on one thing: whether they were actually right.",
+      "at": 215.4,
+      "say": "Performance keeps score. The Building is the whole tower's record — calls published, calls live, and the realised result across every floor. And the Leaderboard ranks the analysts on one thing only: whether they were actually right.",
       "beats": [
         {
-          "at": 129.5,
-          "say": "Performance ranks the analysts on one thing: whether they were actually right."
+          "at": 215.4,
+          "say": "Performance keeps score."
+        },
+        {
+          "at": 218.4,
+          "say": "The Building is the whole tower's record — calls published, calls live, and the realised result across every floor."
+        },
+        {
+          "at": 226.2,
+          "say": "And the Leaderboard ranks the analysts on one thing only: whether they were actually right."
         }
       ]
     },
     {
       "id": "team",
       "title": "Your track",
-      "at": 135.5,
-      "say": "Team is who works your floor. It is also where you choose who runs your bot — and you can run it yourself, with one command.",
+      "at": 232.1,
+      "say": "Team is who works your floor — the sixteen analysts and the boss who signs off. It's also where you choose who runs your bot. You can run it yourself, with one command, on a Mac or a small Linux server you own.",
       "beats": [
         {
-          "at": 135.5,
-          "say": "Team is who works your floor."
+          "at": 232.1,
+          "say": "Team is who works your floor — the sixteen analysts and the boss who signs off."
         },
         {
-          "at": 138.7,
-          "say": "It is also where you choose who runs your bot — and you can run it yourself, with one command."
+          "at": 238.2,
+          "say": "It's also where you choose who runs your bot. You can run it yourself, with one command, on a Mac or a small Linux server you own."
+        }
+      ]
+    },
+    {
+      "id": "settings",
+      "title": "Settings",
+      "at": 247.2,
+      "say": "Settings holds your floor's own switches — what it takes, what it skips, and the pause that stops new buys without touching what's open.",
+      "beats": [
+        {
+          "at": 247.2,
+          "say": "Settings holds your floor's own switches — what it takes, what it skips, and the pause that stops new buys without touching what's open."
+        }
+      ]
+    },
+    {
+      "id": "stops",
+      "title": "What stops it",
+      "at": 255,
+      "say": "Two files on your machine stop everything. One pauses new entries and lets open trades exit. The other halts the lot. Both bots obey the same two files. Drop one, and both stop. That's the only rule worth remembering under pressure.",
+      "beats": [
+        {
+          "at": 255,
+          "say": "Two files on your machine stop everything. One pauses new entries and lets open trades exit. The other halts the lot."
+        },
+        {
+          "at": 262.9,
+          "say": "Both bots obey the same two files. Drop one, and both stop. That's the only rule worth remembering under pressure."
         }
       ]
     },
     {
       "id": "board",
       "title": "Big C's board",
-      "at": 144.7,
-      "say": "And up on the wall, Big C keeps the live book. Every open trade, every close, redrawn every ten seconds.",
+      "at": 271.8,
+      "say": "And up on the wall, Big C keeps the live book. Every open trade, every close, the day's result — redrawn every ten seconds, for anyone standing on the floor.",
       "beats": [
         {
-          "at": 144.7,
+          "at": 271.8,
           "say": "And up on the wall, Big C keeps the live book."
         },
         {
-          "at": 147.9,
-          "say": "Every open trade, every close, redrawn every ten seconds."
+          "at": 275.1,
+          "say": "Every open trade, every close, the day's result — redrawn every ten seconds, for anyone standing on the floor."
         }
       ]
     },
     {
       "id": "end",
       "title": "Plug in",
-      "at": 152.4,
-      "say": "Lease a floor. Plug in your own bot. Let it work.",
+      "at": 282.3,
+      "say": "So: the desk finds the coin. The call gives your bot three numbers. Your bot trades them with your money, on your machine. Lease a floor. Plug in. Let it work.",
       "beats": [
         {
-          "at": 152.4,
-          "say": "Lease a floor. Plug in your own bot. Let it work."
+          "at": 282.3,
+          "say": "So: the desk finds the coin. The call gives your bot three numbers. Your bot trades them with your money, on your machine."
+        },
+        {
+          "at": 289.6,
+          "say": "Lease a floor. Plug in. Let it work."
         }
       ]
     }
