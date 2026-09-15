@@ -1,0 +1,25 @@
+{
+  "id": "claude-company",
+  "name": "Claude Company",
+  "short_name": "Claude Co",
+  "description": "Sixteen AI analysts, one trading desk on Solana, fifty floors. Lease a floor and run the desk's calls on your own wallet.",
+  "start_url": "tower.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#08050f",
+  "theme_color": "#08050f",
+  "icons": [
+    {
+      "src": "assets/claudeco-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/claudeco-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
