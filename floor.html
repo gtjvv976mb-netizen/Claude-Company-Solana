@@ -6,9 +6,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-14 23:18 UTC">
-<meta name="cc-commit" content="1d159e574b140379806bb0967177504c98cb9a12">
-<script>console.log("Claude Company build 2026-09-14 23:18 UTC")</script>
+<meta name="cc-build" content="2026-09-15 02:33 UTC">
+<meta name="cc-commit" content="648d472c7be6d5dfff79524eb0118115936698e5">
+<script>console.log("Claude Company build 2026-09-15 02:33 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
 <style>
@@ -87956,7 +87956,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · arms on install"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "1d159e574b140379806bb0967177504c98cb9a12";
+    const releaseCommit = "648d472c7be6d5dfff79524eb0118115936698e5";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "e17698f907c47872344295510024bba2c1c50bf52a396af0c66d2588228a3496";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -90195,6 +90195,81 @@ function loadHawkDashboard() {
     d && { label: "Size", value: `${d.sizeSol} SOL`, title: `operator maximum ${d.operatorMaxSol} SOL a trade` },
   ]));
 
+  /* IS HE ACTUALLY RUNNING (owner, 2026-09-15: "fully working and fail proof, I will ship
+     this to all floors"). Everything above is build-time — the executor's own armability
+     checklist — and it can say whether HAWK-AI MAY run, never whether he IS. Until today
+     nothing could: the lane reported to a log on the operator's machine and nowhere else,
+     so a floor that armed him against a bad SNIPE_* value had a sniper that was silently
+     absent, and this page still read "cleared". The bot now puts the lane in its
+     heartbeat, the desk keeps it, and this block reads it — from the owner's status when
+     signed in, from the public house book otherwise. Rendered into a placeholder so the
+     checklist paints at once and the live line fills in; a fetch that fails leaves the
+     placeholder saying so rather than saying nothing. */
+  const liveBox = dashNode("div", "hawk-live");
+  liveBox.append(dashLead("Live", "Asking the desk what the bot last reported…", "…", ""));
+  el.appendChild(liveBox);
+  (async () => {
+    let snipe = null, ageMs = null;
+    try {
+      const r = await call_api("/api/floor/" + FLOOR_N + "/executor/status");
+      const hb = r?.status === 200 ? r.body?.telemetry?.heartbeat : null;
+      if (hb?.snipe) { snipe = hb.snipe; ageMs = hb.seenAt ? Math.max(0, Date.now() - Number(hb.seenAt)) : null; }
+    } catch {}
+    if (!snipe && window.__houseBot?.snipe) { snipe = window.__houseBot.snipe; ageMs = window.__houseBot.ageMs ?? null; }
+    liveBox.innerHTML = "";
+    const mins = (ms) => (ms == null ? "" : ms < 90_000 ? `${Math.round(ms / 1000)}s ago` : `${Math.round(ms / 60_000)} min ago`);
+    const when = (ts) => (ts ? new Date(ts).toUTCString().replace(/:\d\d GMT$/, " UTC") : "");
+    if (!snipe) {
+      liveBox.append(dashLead("Live", "No bot has reported to this floor yet, so whether HAWK-AI is running is not known here. "
+        + "Once WALL-ST-E is installed and pulsing, the lane's state appears in this box within a minute.", "NO PULSE", "warn"));
+      return;
+    }
+    if (snipe.mode === "off") {
+      liveBox.append(dashLead("Live", "The bot on this floor is pulsing, and HAWK-AI is switched off in its settings (SNIPE_LANE is not set). "
+        + "Nothing is watched and nothing is signed on this lane.", "OFF", ""));
+      return;
+    }
+    /* THE SENTENCE THAT MATTERS. Armed and not running is the state support gets asked
+       about, and it now names the bot's own reason instead of leaving a floor to guess. */
+    const reason = snipe.lastError ? ` The bot's own reason: “${snipe.lastError}”.` : "";
+    const heading = { starting: ["STARTING", ""], up: ["RUNNING", "ok"], faulted: ["FAULTED", "warn"],
+      disabled: ["STOPPED", "warn"], "failed-to-start": ["DID NOT START", "warn"] }[snipe.state] || ["UNKNOWN", "warn"];
+    const line = snipe.state === "up"
+      ? `HAWK-AI is running in ${snipe.mode} mode${snipe.feed ? ` — feed ${snipe.feed.state}${snipe.feed.dead?.length ? `, dead: ${snipe.feed.dead.join(", ")}` : ""}` : ""}. `
+        + `${snipe.open?.length || 0} open. Last pulse ${mins(ageMs)}.`
+      : snipe.state === "failed-to-start"
+        ? `HAWK-AI is armed (${snipe.mode}) but did not start when the bot booted, so this floor has no sniper running.${reason} `
+          + "Fix the setting it names and reload the bot; the desk is unaffected and is still trading."
+        : snipe.state === "disabled"
+          ? `HAWK-AI stopped itself after a fault with no position open, and stays stopped until the bot is reloaded.${reason}`
+          : snipe.state === "faulted"
+            ? `HAWK-AI hit a fault with a position open and is retrying rather than abandoning it — ${snipe.faults} so far`
+              + `${snipe.retryAt ? `, next try ${when(snipe.retryAt)}` : ""}.${reason}`
+            : `HAWK-AI is starting in ${snipe.mode} mode.`;
+    liveBox.append(dashLead("Live", line, heading[0], heading[1]));
+    const c = snipe.counts;
+    if (c) {
+      const grid = dashNode("div", "dashgrid");
+      grid.append(
+        dashMetric("Bought", String(c.entered), c.entryFailures ? `${c.entryFailures} buy${c.entryFailures === 1 ? "" : "s"} failed` : "confirmed by the port"),
+        dashMetric("Sold", String(c.exited), c.exitFailures ? `${c.exitFailures} sell${c.exitFailures === 1 ? "" : "s"} failed` : "confirmed by the port"),
+        dashMetric("Refused", String(c.refused), "launches the gates turned down"),
+        dashMetric("Signed / sent", `${c.signed} / ${c.sent}`, "what the port itself counted"),
+      );
+      if (snipe.lastFillAt) grid.append(dashMetric("Last fill", when(snipe.lastFillAt), "buy or sell, whichever was later"));
+      liveBox.appendChild(grid);
+    }
+    if (Array.isArray(snipe.open) && snipe.open.length) {
+      const list = dashNode("div", "dashgrid");
+      for (const p of snipe.open) {
+        const mark = p.high && p.entry ? ` · high ${(p.high / p.entry).toFixed(2)}x` : "";
+        list.append(dashMetric(p.mint.slice(0, 4) + "…" + p.mint.slice(-4), `${p.sizeSol} SOL`,
+          `${p.openedAt ? "opened " + when(p.openedAt) : ""}${mark}`));
+      }
+      liveBox.appendChild(list);
+    }
+  })();
+
   /* THE CHECKLIST, VERBATIM. Not a summary of it — the reasons are the useful part, and
      they are written for someone deciding whether to arm. */
   const grid = dashNode("div", "dashgrid");
@@ -90731,7 +90806,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "1d159e574b140379806bb0967177504c98cb9a12";
+    const executorReleaseCommit = "648d472c7be6d5dfff79524eb0118115936698e5";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();

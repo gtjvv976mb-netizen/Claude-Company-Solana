@@ -851,6 +851,23 @@ rm "$PAUSE_ENTRIES_FILE"    # when, and only when, the armed line has been read
 `SNIPE_LANE="observe"` keeps the shadow book with no key in reach; `SNIPE_LANE="off"` (the
 default) constructs nothing. The legacy `SNIPE_EXECUTE` flag is refused on sight.
 
+### What the desk can see
+
+The lane reports itself in the same heartbeat as the desk book, once a minute: its mode,
+whether it is up, the feed's health, every open snipe (a mint, a size and two levels), and
+the port's own counts of buys and sells confirmed, refused and failed. The HAWK-AI tab on
+your floor reads that block — from your signed-in status, and from the public house book
+for anyone else — so "is my sniper running" has an answer on the site rather than only in
+`wallste.stdout.log`.
+
+The part that matters for a floor you do not sit at: **the two ways the lane stops are
+named there.** A lane that could not start at boot (a bad `SNIPE_*` value, a secondary
+endpoint down) reports `failed-to-start` with the bot's own reason; a lane that disabled
+itself after a fault with nothing open reports `disabled`. Before this, both were one
+line in a log on the operator's machine, and the desk went on reporting the floor healthy
+because the desk was. A lane that faults *with a position open* reports `faulted` with
+its retry count — it keeps trying rather than abandoning the bag, and now says so.
+
 ### What has and has not been proved
 
 The instruction encoders are re-encoded byte for byte against 30 mainnet transactions on

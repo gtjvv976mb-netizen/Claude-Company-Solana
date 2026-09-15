@@ -1,20 +1,20 @@
 {
   "site": "https://solana.claudedotcompany.com",
-  "recordedAt": "2026-09-14T22:15:41.605Z",
-  "duration": 177.5,
+  "recordedAt": "2026-09-14T23:50:33.721Z",
+  "duration": 157.5,
   "chapters": [
     {
       "id": "hook",
       "title": "The desk",
-      "at": 1.2,
+      "at": 0,
       "say": "Sixteen analysts. One trading desk. Real money on Solana. This is the fiftieth floor, and everything you're about to see is live.",
       "beats": [
         {
-          "at": 1.2,
+          "at": 0,
           "say": "Sixteen analysts. One trading desk. Real money on Solana."
         },
         {
-          "at": 6.6,
+          "at": 5.2,
           "say": "This is the fiftieth floor, and everything you're about to see is live."
         }
       ]
@@ -22,15 +22,15 @@
     {
       "id": "tower",
       "title": "The tower",
-      "at": 15.4,
+      "at": 13.3,
       "say": "Claude Tower. Fifty floors, one desk on each. The house desk works upstairs on fifty. It studies new coins all day, and publishes the few it would actually trade.",
       "beats": [
         {
-          "at": 15.4,
+          "at": 13.3,
           "say": "Claude Tower. Fifty floors, one desk on each."
         },
         {
-          "at": 19.6,
+          "at": 17.7,
           "say": "The house desk works upstairs on fifty. It studies new coins all day, and publishes the few it would actually trade."
         }
       ]
@@ -38,15 +38,15 @@
     {
       "id": "lease",
       "title": "Lease a floor",
-      "at": 28.1,
+      "at": 25.9,
       "say": "Any vacant floor can be yours. One floor per wallet. And right beside the price: the house bot's own record, with the house's own money.",
       "beats": [
         {
-          "at": 28.1,
+          "at": 25.9,
           "say": "Any vacant floor can be yours. One floor per wallet."
         },
         {
-          "at": 32.2,
+          "at": 29.9,
           "say": "And right beside the price: the house bot's own record, with the house's own money."
         }
       ]
@@ -54,15 +54,15 @@
     {
       "id": "enter",
       "title": "Step inside",
-      "at": 49,
+      "at": 45.5,
       "say": "Step inside. The house floor is open to everyone, no sign-in needed. Every character here is an analyst, and every one of them has a job.",
       "beats": [
         {
-          "at": 49,
+          "at": 45.5,
           "say": "Step inside. The house floor is open to everyone, no sign-in needed."
         },
         {
-          "at": 54.9,
+          "at": 51.7,
           "say": "Every character here is an analyst, and every one of them has a job."
         }
       ]
@@ -70,15 +70,15 @@
     {
       "id": "funnel",
       "title": "The funnel",
-      "at": 59.9,
+      "at": 56.1,
       "say": "Watch the counter along the bottom. Coins studied today, coins turned down, and the few still on watch. Most of them die right here, and that is the point.",
       "beats": [
         {
-          "at": 59.9,
+          "at": 56.1,
           "say": "Watch the counter along the bottom."
         },
         {
-          "at": 63.1,
+          "at": 58.4,
           "say": "Coins studied today, coins turned down, and the few still on watch. Most of them die right here, and that is the point."
         }
       ]
@@ -86,15 +86,15 @@
     {
       "id": "callouts",
       "title": "Big Callers",
-      "at": 72.2,
+      "at": 67.1,
       "say": "Big Callers is the raw feed — everything the desk has spotted. None of these is a call yet.",
       "beats": [
         {
-          "at": 72.2,
+          "at": 67.1,
           "say": "Big Callers is the raw feed — everything the desk has spotted."
         },
         {
-          "at": 76.5,
+          "at": 71.2,
           "say": "None of these is a call yet."
         }
       ]
@@ -102,11 +102,11 @@
     {
       "id": "candidates",
       "title": "Candidates",
-      "at": 80.4,
+      "at": 74.4,
       "say": "Candidates are the shortlist, waiting to be studied.",
       "beats": [
         {
-          "at": 80.4,
+          "at": 74.4,
           "say": "Candidates are the shortlist, waiting to be studied."
         }
       ]
@@ -114,15 +114,15 @@
     {
       "id": "published",
       "title": "The calls",
-      "at": 85.6,
+      "at": 78.7,
       "say": "A published call carries three numbers. An entry, a stop, and a target. That is what your bot acts on — nothing vaguer than that.",
       "beats": [
         {
-          "at": 85.6,
+          "at": 78.7,
           "say": "A published call carries three numbers."
         },
         {
-          "at": 89,
+          "at": 81.6,
           "say": "An entry, a stop, and a target. That is what your bot acts on — nothing vaguer than that."
         }
       ]
@@ -130,11 +130,11 @@
     {
       "id": "closed",
       "title": "How it ended",
-      "at": 97.1,
+      "at": 88.4,
       "say": "Closed shows how each one ended, and the coins the desk turned down.",
       "beats": [
         {
-          "at": 97.1,
+          "at": 88.4,
           "say": "Closed shows how each one ended, and the coins the desk turned down."
         }
       ]
@@ -142,19 +142,19 @@
     {
       "id": "overview",
       "title": "The money",
-      "at": 103.8,
+      "at": 93.7,
       "say": "The Overview is the money view. Profit and loss, straight out of the bot's own journal. Open positions draw as a bar: where it got in, the stop below, the target above.",
       "beats": [
         {
-          "at": 103.8,
+          "at": 93.7,
           "say": "The Overview is the money view."
         },
         {
-          "at": 106.8,
+          "at": 95.9,
           "say": "Profit and loss, straight out of the bot's own journal."
         },
         {
-          "at": 112.6,
+          "at": 100.2,
           "say": "Open positions draw as a bar: where it got in, the stop below, the target above."
         }
       ]
@@ -162,15 +162,15 @@
     {
       "id": "wallste",
       "title": "WALL-ST-E",
-      "at": 119.6,
+      "at": 106.8,
       "say": "Wall Street E is the bot itself. Your wallet, your caps, running on your own machine. The key is made there and never leaves it.",
       "beats": [
         {
-          "at": 119.6,
+          "at": 106.8,
           "say": "Wall Street E is the bot itself."
         },
         {
-          "at": 122.8,
+          "at": 109.8,
           "say": "Your wallet, your caps, running on your own machine. The key is made there and never leaves it."
         }
       ]
@@ -178,11 +178,11 @@
     {
       "id": "hawkai",
       "title": "HAWK-AI",
-      "at": 130.7,
+      "at": 116.3,
       "say": "Hawk A I is the second lane — a sniper that watches brand new launches.",
       "beats": [
         {
-          "at": 130.7,
+          "at": 116.3,
           "say": "Hawk A I is the second lane — a sniper that watches brand new launches."
         }
       ]
@@ -190,15 +190,15 @@
     {
       "id": "activity",
       "title": "The receipts",
-      "at": 137.2,
+      "at": 122,
       "say": "Activity is the receipt. The tape, every decision the desk made, and the ledger underneath it.",
       "beats": [
         {
-          "at": 137.2,
+          "at": 122,
           "say": "Activity is the receipt."
         },
         {
-          "at": 140,
+          "at": 124.4,
           "say": "The tape, every decision the desk made, and the ledger underneath it."
         }
       ]
@@ -206,11 +206,11 @@
     {
       "id": "performance",
       "title": "Who is right",
-      "at": 146.5,
+      "at": 129.5,
       "say": "Performance ranks the analysts on one thing: whether they were actually right.",
       "beats": [
         {
-          "at": 146.5,
+          "at": 129.5,
           "say": "Performance ranks the analysts on one thing: whether they were actually right."
         }
       ]
@@ -218,15 +218,15 @@
     {
       "id": "team",
       "title": "Your track",
-      "at": 152.5,
+      "at": 135.5,
       "say": "Team is who works your floor. It is also where you choose who runs your bot — and you can run it yourself, with one command.",
       "beats": [
         {
-          "at": 152.5,
+          "at": 135.5,
           "say": "Team is who works your floor."
         },
         {
-          "at": 156.1,
+          "at": 138.7,
           "say": "It is also where you choose who runs your bot — and you can run it yourself, with one command."
         }
       ]
@@ -234,15 +234,15 @@
     {
       "id": "board",
       "title": "Big C's board",
-      "at": 163,
+      "at": 144.7,
       "say": "And up on the wall, Big C keeps the live book. Every open trade, every close, redrawn every ten seconds.",
       "beats": [
         {
-          "at": 163,
+          "at": 144.7,
           "say": "And up on the wall, Big C keeps the live book."
         },
         {
-          "at": 166.6,
+          "at": 147.9,
           "say": "Every open trade, every close, redrawn every ten seconds."
         }
       ]
@@ -250,11 +250,11 @@
     {
       "id": "end",
       "title": "Plug in",
-      "at": 171.7,
+      "at": 152.4,
       "say": "Lease a floor. Plug in your own bot. Let it work.",
       "beats": [
         {
-          "at": 171.7,
+          "at": 152.4,
           "say": "Lease a floor. Plug in your own bot. Let it work."
         }
       ]

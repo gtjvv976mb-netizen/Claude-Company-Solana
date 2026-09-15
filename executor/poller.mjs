@@ -2428,6 +2428,10 @@ function sendHeartbeat() {
         lastError: fillReporting.lastError,
         lastErrorAt: fillReporting.lastErrorAt || null,
       },
+      /* THE SNIPER, IN THE SAME PULSE. Mode, whether the lane is up or how it stopped,
+         the feed's health, the open snipes and the port's counts — so a floor can see the
+         lane it armed, and support can see the one that never started. */
+      snipe: snipeHeartbeat(),
       ts: Date.now(),
     }),
   }).then((r) => {
@@ -2460,6 +2464,83 @@ let reportingFillDetails = false;
    owed and the last refusal, so the board can say WHY a trade is missing from it. */
 const fillReporting = { lastReportedAt: 0, lastError: null, lastErrorAt: 0 };
 const FILL_REPORT_WINDOW_MS = 7 * 24 * 3600e3;
+
+/* WHAT THE DESK IS TOLD ABOUT THE SNIPER (owner, 2026-09-15: "make the sniper bot fully
+   working and fail proof, I will ship this to all floors").
+
+   Until this object existed the launch lane reported to nobody. Its book lived in
+   S.snipes on this machine, its counters in a closure, and its two ways of stopping —
+   a throw at startup, and the latch that disables it after a tick fault with nothing
+   open — each wrote one line to the local log and nothing anywhere else. src/office.js
+   had no word for it. A floor that armed HAWK-AI and got a bad SNIPE_* value, or lost
+   its secondary endpoint, had a sniper that was silently absent, and the desk went on
+   reporting the floor healthy because the desk was.
+
+   Shipped to fifty floors, the first support question is "is my sniper running", and it
+   had no answer. This is the answer. The lane block at the bottom of the file writes it
+   as things happen; sendHeartbeat reads it once a minute and adds the live book and
+   counters at that moment. Same durability rule as fill reporting above: a report that
+   cannot be built loses detail and never stops the tick. Nothing here carries a key, an
+   endpoint, or a wallet — the desk already knows the burner from the heartbeat's own
+   `wallet` field, and a sniper row is a mint, a size and two levels. */
+const snipeStatus = {
+  mode: String(process.env.SNIPE_LANE || "off").trim().toLowerCase(),
+  state: "off",            // off | starting | up | faulted | disabled | failed-to-start
+  since: 0,                // when `state` was last set
+  lastError: null, lastErrorAt: 0,
+  faults: 0, retryAt: 0,   // the backoff, while faulted with a position open
+  lastFillAt: 0,           // the last confirmed buy or sell the port reported
+  lane: null, feed: null,  // references, read by the builder below and never serialized
+};
+const setSnipeState = (state, error) => {
+  snipeStatus.state = state;
+  snipeStatus.since = Date.now();
+  if (error !== undefined) {
+    snipeStatus.lastError = error == null ? null : String(error?.message || error).slice(0, 200);
+    snipeStatus.lastErrorAt = error == null ? 0 : Date.now();
+  }
+};
+/** The block the heartbeat carries. Built defensively: a lane that throws from
+ *  openPositions() or stats() costs the desk a field, not the pulse. */
+function snipeHeartbeat() {
+  if (snipeStatus.mode === "off") return { mode: "off", state: "off" };
+  const out = {
+    mode: snipeStatus.mode, state: snipeStatus.state, since: snipeStatus.since || null,
+    lastError: snipeStatus.lastError, lastErrorAt: snipeStatus.lastErrorAt || null,
+    faults: snipeStatus.faults, retryAt: snipeStatus.retryAt || null,
+    lastFillAt: snipeStatus.lastFillAt || null,
+    open: [], counts: null, feed: null,
+  };
+  const lane = snipeStatus.lane;
+  try {
+    if (lane) out.open = lane.openPositions().slice(0, 20).map((p) => ({
+      mint: String(p.mint || "").slice(0, 64),
+      sizeSol: Number(Number(p.sizeSol || 0).toFixed(6)),
+      entry: Number(p.entry) > 0 ? Number(p.entry) : null,
+      openedAt: Number(p.openedAt) > 0 ? Number(p.openedAt) : null,
+      high: Number(p.high) > 0 ? Number(p.high) : null,
+    }));
+  } catch {}
+  try {
+    if (lane) {
+      const s = lane.stats() || {};
+      out.counts = {
+        notices: Number(s.notices) || 0, refused: Number(s.refused) || 0,
+        entered: Number(s.entered) || 0, exited: Number(s.exited) || 0,
+        entryFailures: Number(s.entryFailures) || 0, exitFailures: Number(s.exitFailures) || 0,
+        readErrors: Number(s.readErrors) || 0, ticks: Number(s.ticks) || 0,
+        signed: Number(s.signed) || 0, sent: Number(s.sent) || 0,
+      };
+    }
+  } catch {}
+  try {
+    const h = snipeStatus.feed?.health?.();
+    if (h) out.feed = { state: String(h.state || "").slice(0, 16), ok: h.ok === true,
+      live: (h.live || []).slice(0, 8).map(String), dead: (h.dead || []).slice(0, 8).map(String),
+      message: String(h.message || "").slice(0, 200) };
+  } catch {}
+  return out;
+}
 const fillReportedKey = (intentId) => `fill_reported:${intentId}`;
 
 /** The exact body the desk stores, built from the durable intent alone so a boot
@@ -3548,6 +3629,10 @@ if (SNIPE_LANE_MODE !== "off") {
       control: () => ({ hardStop: hardStop() === true, pauseEntries: pauseEntries() === true }),
       log: (msg) => log(`[snipe] ${msg}`),
     });
+    /* Hand the heartbeat its references, and say the lane is starting. From here every
+       transition — up, faulted, disabled — is written to snipeStatus as it happens. */
+    snipeStatus.lane = lane; snipeStatus.feed = laneFeed;
+    setSnipeState("starting", null);
     const snipeTickMs = Number(process.env.SNIPE_TICK_MS || 1_000);
     /* A FAULT MUST NEVER ABANDON AN OPEN POSITION.
      *
@@ -3563,6 +3648,7 @@ if (SNIPE_LANE_MODE !== "off") {
      * lane from spinning every tick, and the log escalates so a persistent fault with a
      * bag open is not a line that scrolls past looking like the last one. */
     let laneFaulted = false, laneFaults = 0, laneRetryAt = 0;
+    let snipeFillsSeen = 0;   // the port's fill total at the last tick that looked
     const LANE_BACKOFF_MAX_MS = 60_000;
     setInterval(async () => {
       if (laneFaulted) return;
@@ -3570,16 +3656,30 @@ if (SNIPE_LANE_MODE !== "off") {
       try {
         await lane.tick(Date.now());
         laneFaults = 0; laneRetryAt = 0;
+        snipeStatus.faults = 0; snipeStatus.retryAt = 0;
+        if (snipeStatus.state !== "up") setSnipeState("up", null);
+        /* A fill is a moment worth a timestamp: the port's confirmed buys and sells are
+           the only count of them, so the tick that sees the total grow marks the time. */
+        try {
+          const s = lane.stats() || {};
+          const fills = (Number(s.entered) || 0) + (Number(s.exited) || 0);
+          if (fills > snipeFillsSeen) { snipeFillsSeen = fills; snipeStatus.lastFillAt = Date.now(); }
+        } catch {}
       } catch (err) {
         const open = (() => { try { return lane.openPositions().length; } catch { return 0; } })();
         if (open === 0) {
           laneFaulted = true;
+          /* The other silent stop. Correct to disable with nothing open; wrong to do it
+             where only this log can see. The desk is told it is disabled, and why. */
+          setSnipeState("disabled", err);
           log(`[snipe] lane disabled after a tick fault with nothing open — the desk is unaffected: ${err?.message || err}`);
           return;
         }
         laneFaults += 1;
         const wait = Math.min(snipeTickMs * 2 ** Math.min(laneFaults, 6), LANE_BACKOFF_MAX_MS);
         laneRetryAt = Date.now() + wait;
+        snipeStatus.faults = laneFaults; snipeStatus.retryAt = laneRetryAt;
+        setSnipeState("faulted", err);
         log(`[snipe] TICK FAULT ${laneFaults} WITH ${open} POSITION(S) OPEN — retrying in ${wait}ms rather ` +
           `than disabling, because a disabled lane cannot exit what it opened. The desk is unaffected: ${err?.message || err}`);
       }
@@ -3600,6 +3700,7 @@ if (SNIPE_LANE_MODE !== "off") {
       }
     }
     await lane.start();
+    setSnipeState("up", null);
     log(`[snipe] launch lane up in ${laneCfg.lane} mode, ${snipeTickMs}ms tick, ` +
       `${laneReaders.length} endpoints — ${laneCfg.lane === "execute"
         ? `EXECUTING for ${snipeExecutor.wallet} through snipe-execute.mjs`
@@ -3610,5 +3711,6 @@ if (SNIPE_LANE_MODE !== "off") {
        secondary endpoint are all reasons to have no shadow book, and none of them is a
        reason to stop trading. */
     log(`[snipe] launch lane did not start (${err?.message || err}) — the desk is unaffected`);
+    setSnipeState("failed-to-start", err);   // told to the desk, not only to this log
   }
 }
