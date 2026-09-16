@@ -151,6 +151,9 @@ let lastDecisionSeen = Date.now() - 6 * 3600e3;
  * the first live start REFUSED with the true genesis printed in the message, which is
  * how this was caught. Verified against the RPC's own answer. */
 const MAINNET_GENESIS = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
+/* The entry round-trip DEFAULT, distinct from the ceiling in LIVE_LIMITS below — see the
+   note at CFG.maxEntryRoundTripLossPct for the measurement that separated them. */
+const ENTRY_ROUND_TRIP_DEFAULT_PCT = 5;
 const LIVE_LIMITS = Object.freeze({
   maxSolPerTrade: 0.005,
   dailySolCap: 0.01,
@@ -570,8 +573,17 @@ const JUPITER_CFG = {
   maxRentLamports: number("MAX_RENT_LAMPORTS",
     process.env.MAX_RENT_LAMPORTS || LIVE_LIMITS.maxRentLamports,
     { min: 0, max: EXECUTE ? LIVE_LIMITS.maxRentLamports : 10_000_000 }),
+  /* THE DEFAULT IS NO LONGER THE CEILING (2026-09-16). Measured on the house floor's first
+   * twenty live trades against the desk's paper marks for the same calls: the bot lost
+   * 3.2% a trade more than the desk's record said, and up to 11% on bonding-curve coins
+   * (KRYPTO: paper +9.6%, real -1.5%; MINI: -8.3 points; USDC: -8.1). The whole edge the
+   * desk's record shows on its best calls is +3.6% a trade, so a 12% round trip is a cap
+   * that admits every trade the friction can kill. Five is what a liquid pump.fun pool
+   * quotes at this size, and the route ladder (entry-sizing.mjs) now halves a clip that
+   * cannot clear it rather than paying 12% to fill it whole. Twelve remains the operator's
+   * ceiling: an operator who wants it back sets MAX_ENTRY_ROUND_TRIP_LOSS_PCT=12. */
   maxEntryRoundTripLossPct: number("MAX_ENTRY_ROUND_TRIP_LOSS_PCT",
-    process.env.MAX_ENTRY_ROUND_TRIP_LOSS_PCT || LIVE_LIMITS.maxEntryRoundTripLossPct,
+    process.env.MAX_ENTRY_ROUND_TRIP_LOSS_PCT || ENTRY_ROUND_TRIP_DEFAULT_PCT,
     { min: 0.1, max: EXECUTE ? LIVE_LIMITS.maxEntryRoundTripLossPct : 50 }),
   maxEntryQuoteDriftPct: number("MAX_ENTRY_QUOTE_DRIFT_PCT",
     process.env.MAX_ENTRY_QUOTE_DRIFT_PCT || LIVE_LIMITS.maxEntryQuoteDriftPct,
