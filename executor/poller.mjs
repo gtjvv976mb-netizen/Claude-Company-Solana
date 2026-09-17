@@ -3658,6 +3658,29 @@ if (SNIPE_LANE_MODE !== "off") {
       cfg: laneCfg,
       feed: laneFeed,
       executor: snipeExecutor,
+      /* WHAT THE WALLET HOLDS, so the lane can tell a sell that FAILED from a position
+         that has already GONE. Wired only on a live install, because only then is there a
+         signing wallet whose balance means anything; in observe mode the lane latches and
+         retries exactly as it always has. The primary endpoint alone is enough: this is
+         not a trading decision and it prices nothing — it decides whether to keep retrying
+         a sell, and walletHoldsNothing fails closed, so an unreadable answer changes
+         nothing at all. */
+      ...(snipeExecutor ? { holdingsReader: {
+        async read(mint) {
+          const res = await new Connection(RPC, solanaRpcConnectionConfig())
+            .getParsedTokenAccountsByOwner(kp.publicKey, { mint: new PublicKey(String(mint)) });
+          /* NO ACCOUNT AT ALL IS A DEFINITE ZERO: an owner with no token account for a
+             mint holds none of it. Several accounts are summed, never picked between. An
+             amount that will not parse makes the whole answer null — unknown, not zero. */
+          let total = 0n;
+          for (const v of res?.value ?? []) {
+            const amount = v?.account?.data?.parsed?.info?.tokenAmount?.amount;
+            if (!/^\d+$/.test(String(amount ?? ""))) return { qtyRaw: null };
+            total += BigInt(String(amount));
+          }
+          return { qtyRaw: total.toString() };
+        },
+      } } : {}),
       /* THE DESK'S STATE OBJECT, SO THE TWO BOOKS CAN SEE EACH OTHER — which is the
          opposite of mixing them, and the distinction is the whole design.
          The lane keeps its positions under S.snipes and the desk keeps its under

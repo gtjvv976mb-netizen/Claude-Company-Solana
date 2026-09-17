@@ -807,6 +807,22 @@ export function createSnipeLane({
      able to drive every answer — an empty document, a hang, a hostile body — without a
      network and without a real stranger's server on the other end. */
   socialsReader = readSocials,
+  /* WHAT THE WALLET ACTUALLY HOLDS, AS A PORT — and it exists because of one position.
+     2026-09-17: the owner's lane kept a row for 5xXJ1Aqjw…pump for eight hours, failing
+     its exit once per tick, sixty times and counting. The coin had been SOLD at 12:17:42Z
+     — 0.193313 SOL back against 0.201920 spent, confirmed on chain — and the wallet's
+     balance of that mint was zero the entire time the lane was trying to sell it. Nothing
+     was stuck: no money was at risk and nothing was signed. But the row held an open slot
+     and its realised result was missing from the record.
+
+     The retry rule in exitForReal is RIGHT for what it was written for — a sell the port
+     could not land must never be forgotten. What it could not distinguish is a position
+     that is not unsellable but ALREADY GONE. Retrying that is not caution, it is a loop.
+
+     So: a reader, injected like every other outside call this lane makes, answering one
+     question — how many units of this mint does the signing wallet hold. Absent, nothing
+     changes and the lane latches and retries exactly as before. */
+  holdingsReader = null,
 } = {}) {
   const conf = Object.freeze({ ...SNIPE_LANE_DEFAULTS, ...cfg });
   if (!SNIPE_LANE_MODES.includes(conf.lane))
@@ -884,6 +900,10 @@ export function createSnipeLane({
        counters count buys and sells the port refused or could not land, which in observe
        mode stay at zero for the life of the process. */
     entered: 0, exited: 0, entryFailures: 0, exitFailures: 0,
+    /* Rows closed because the wallet no longer held them. Counted apart from exitFailures
+       on purpose: an exit that failed and an exit that had already happened are different
+       facts, and folding them together is what let one of them hide for eight hours. */
+    reconciled: 0,
   };
   /* The would-have-deployed total. It charges the real daily cap only when the operator
      asks; either way it is REPORTED, so "how many would this lane have taken today" is a
@@ -1418,6 +1438,31 @@ export function createSnipeLane({
    * lane may forget. The book closes only on a fill, and the realized figure is what the
    * chain paid back less the fee and the basis the entry recorded — never a mark.
    */
+  /**
+   * Does the signing wallet hold nothing of this mint?
+   *
+   * TRUE ONLY ON A DEFINITE ZERO. Every other answer — no port, a throw, a null, a
+   * number that will not parse — is "I do not know", and not knowing must never close a
+   * position: that is the difference between reconciling a sale that happened and
+   * forgetting one that did not. The whole point of this function is that it fails
+   * closed, so it is written to return false everywhere except the one certain case.
+   */
+  async function walletHoldsNothing(mint) {
+    if (!holdingsReader || typeof holdingsReader.read !== "function") return false;
+    let answer;
+    try { answer = await holdingsReader.read(mint); }
+    catch (error) {
+      log(`snipe live ${mint}: could not read the wallet's balance (${error?.message ?? error}) — `
+        + "treating it as unknown, so the position is kept");
+      return false;
+    }
+    const raw = answer?.qtyRaw;
+    if (raw === null || raw === undefined) return false;
+    const text = String(raw);
+    if (!/^\d+$/.test(text)) return false;
+    return BigInt(text) === 0n;
+  }
+
   async function exitForReal({ pos, mint, curve, read, reason, now, markX, samples, creatorBaselineRaw, step }) {
     let fill = null;
     try {
@@ -1425,6 +1470,30 @@ export function createSnipeLane({
     } catch (error) {
       counters.exitFailures++;
       const detail = `${error?.clause ?? error?.name ?? "error"}: ${error?.message ?? error}`;
+      /* BEFORE LATCHING IT: is there anything left to sell? A failed sell and a position
+         that is already gone look identical from inside this catch, and only the wallet
+         can tell them apart. A DEFINITE zero is the only answer that closes a row — an
+         unreadable balance, a throwing reader and a missing port all fall through to the
+         latch below, which is the behaviour this lane has always had. */
+      const gone = await walletHoldsNothing(mint);
+      if (gone) {
+        counters.reconciled++;
+        const why = `reconciled: the wallet holds no ${mint} — this position left before this sell could. `
+          + `The last attempt failed with ${detail}`;
+        try {
+          /* realizedLamports stays NULL. The sale happened outside this lane's sight, so
+             its result is unknown here — and "not read" is a true statement where a zero
+             would be a false one. The book and the board both render it as words. */
+          closeSnipe(S, mint, { reason: why, closedAt: now, exitSignature: null,
+            quoteOutRaw: null, realizedLamports: null });
+          recorder.close(mint, { action: "reconciled", reason: why, atMs: now, slot: read.slot });
+          log(`snipe live ${mint}: RECONCILED — the wallet holds none of it, so the position is `
+            + `closed rather than retried for ever. Its realised result is not read here.`);
+          return Object.freeze({ mint, action: "reconciled", markX, closed: true, reconciled: true });
+        } catch (closeError) {
+          log(`snipe live ${mint}: could not close the reconciled row (${closeError?.message ?? closeError})`);
+        }
+      }
       log(`snipe live ${mint}: EXIT FAILED — ${detail}; the position is kept and the sell is retried next tick`);
       try {
         updateSnipe(S, { ...pos, ...(isPlainObject(step?.position) ? step.position : {}), mint, samples,
