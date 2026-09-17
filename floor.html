@@ -13,9 +13,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-17 10:47 UTC">
-<meta name="cc-commit" content="28927b0e174ca8d130f31edeb51b1223d59b548b">
-<script>console.log("Claude Company build 2026-09-17 10:47 UTC")</script>
+<meta name="cc-build" content="2026-09-17 16:12 UTC">
+<meta name="cc-commit" content="356e1ad9d8b0334cbbf49d22025f0f047bdf1453">
+<script>console.log("Claude Company build 2026-09-17 16:12 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
 <style>
@@ -79238,6 +79238,15 @@ function drawHouseMark(c) {
   img.src = HOUSE_MARK_SRC;
 }
 
+/* HAWK-AI's BOARD TAKES A WINDOW. The owner, 2026-09-17: "remove the windows and
+   put it on the window like the other board." GROX MULDER's board hangs on a solid
+   partition his office builds IN FRONT of this glazing; HAWK-AI has no office to
+   build one in, so the bay itself becomes his wall — this one is left unglazed and
+   panelled instead, and his book hangs on it where the glass would be. The bay is
+   the one behind his shooting line (HAWK_RANGE.x, 11.3), which is asserted in
+   test-hawk-range-board.mjs so the two cannot drift apart. */
+const HAWK_BOARD_BAY = 11.2;
+
 (function buildShell() {
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(HALF_W * 2, HALF_D * 2),
@@ -79276,6 +79285,14 @@ function drawHouseMark(c) {
     roughness: 0.18, metalness: 0.05,
   });
   for (const x of [-14.4, -11.2, 11.2, 14.4]) {
+    /* HAWK-AI's bay: no glass, no mullions — a solid dark panel, because his board
+       hangs here. Wider and taller than the pane it replaces so the 3.0 x 1.75
+       board reads as hung ON something rather than floating over a hole. */
+    if (x === HAWK_BOARD_BAY) {
+      box(room, [3.46, 3.9, 0.22], [x, 2.15, -HALF_D + 0.14], 0x141a1f, 0.9);
+      box(room, [3.46, 0.12, 0.30], [x, 0.26, -HALF_D + 0.18], 0x1c6667, 0.72);  // kick rail
+      continue;
+    }
     const g = new THREE.Mesh(BOX, glass);
     g.scale.set(2.3, 3.2, 0.15); g.position.set(x, 2.2, -HALF_D + 0.1);
     room.add(g);
@@ -81432,6 +81449,11 @@ async function pollBossBoard() {
     let hb = null;
     try { hb = roomB?.executorHeartbeat ? JSON.parse(roomB.executorHeartbeat) : null; } catch { hb = null; }
     if (hb) window.__botHeartbeat = hb;
+    /* HAWK-AI's range scoreboard reads the same pulse. Chalked here rather than in
+       the tab so the board on the floor is current whether or not anybody has
+       opened a panel — a board you have to click something else to refresh is a
+       board that lies to whoever walks past it. */
+    window.__hawkBoardUpdate?.();
     /* And when the room gave nothing (a visitor, or a token the desk rejected), the
        pulse the WALL-ST-E and Overview panels fetched is just as good — and failing
        that, the public house book. */
@@ -82179,7 +82201,7 @@ scene.add(codexOffice);
 const GROK_OFFICE = { x0: 5.9, x1: 9.65, z0: -12.5, z1: -8.6, cx: 7.78 };  // ends clear of the 11.2 window's mullion
 const GROX_DAIS = 0.22;                           // a step up — but under the boss's 0.35
 const grokOffice = new THREE.Group();
-grokOffice.visible = false;                       // shown only on a Grok desk
+grokOffice.visible = false;                       // until __setGrokPresent runs, below the workers
 scene.add(grokOffice);
 
 const grokBoard = (() => {
@@ -83263,8 +83285,18 @@ STAFF.forEach((spec, i) => {
 });
 window.__workers = workers;   // debug hook, same idiom as __bossBoard / __figure
 if (CAPTURE) window.__rig = { renderer, scene, camera };   // scripted turntables only
-// The Assistant Director is off-stage until this floor's brain is Grok.
-if (workers.GrokAD && workers.GrokAD.g) workers.GrokAD.g.visible = false;
+/* THE ASSISTANT DIRECTOR IS ALWAYS IN THE BUILDING, and now he actually is.
+   __setGrokPresent says so in its own comment — "hiding him made the room look
+   unbuilt on Claude floors" — and it opens his office and shows him whichever way
+   it is called. But it was called from ONE place: applyBrainRoom, inside
+   pollBossBoard, which returns before it on any page with no /floor/N in the URL
+   (the house desk is one) and swallows a failed fetch in a bare catch. So on the
+   house floor nothing ever called it, he and his whole suite stayed hidden from
+   the build, and the owner read a corner of the room that looked unfinished.
+   Calling it once here, with `false`, is the default the comment always described:
+   present, asleep at his desk, his board on standby. A brain change still wakes
+   him — applyBrainRoom passes `true` — and nothing hides him again. */
+window.__setGrokPresent(false);
 
 /** Tear one worker out of the scene and build them again from their (edited) spec.
  * Used exactly once so far: the boss. On the house floor the corner office is BIG C;
@@ -83967,6 +83999,152 @@ const hawkFig = (() => {
   return { g, range, head, eye, finder, lamp, bow, drawHand };
 })();
 window.__hawkGroup = hawkFig.g;
+
+/* ═══ HAWK-AI's BOARD — his book, hung on the back wall ══════════════════════════
+ *
+ * The owner, 2026-09-17: a physical board, like GROX MULDER's. Then, twice more,
+ * that he still could not see it — and finally the instruction that settled it:
+ * "remove the windows and put it on the window like the other board."
+ *
+ * So it is GROX's board, in GROX's terms. His hangs on a solid partition because
+ * his office builds one in front of the building glazing. HAWK-AI has no office,
+ * so the building gives him the bay instead: the back-wall window behind his
+ * shooting line is built unglazed and panelled, and his book hangs on it, square
+ * to the room, at the same 3.0 x 1.75 that made GROX's readable from the floor.
+ *
+ * It is the same construction as GROX's and deliberately so: a canvas on a plane,
+ * a frame box behind it, a steel sill under it, redrawn from a texture flag rather
+ * than per frame.
+ *
+ * The numbers are the SAME ones the HAWK-AI tab shows, from the same heartbeat —
+ * the lane's own journal, not the desk's paper. It PULLS rather than being pushed:
+ * the panels that already poll set window.__botHeartbeat, and this reads it. That
+ * way a board can never disagree with the tab beside it, and nothing in the scene
+ * fetches. Blank until a pulse carries a book, which is the honest state. */
+const hawkBoard = (() => {
+  const STEEL = 0x5f7d96;
+  const mat = (c, r = 0.65) => new THREE.MeshStandardMaterial({
+    color: c, roughness: r, metalness: 0.25,
+  });
+  /* ── IT HANGS WHERE A WINDOW WAS, FACING THE ROOM ─────────────────────────────
+     Two builds got this wrong before this one. First a small freestanding
+     scoreboard on posts beside the line: honest to an archery range, and the owner
+     could not find it. Then a big panel on its own partition inside the range
+     group: findable, and still not what was asked for. The owner, third time,
+     plainly — "remove the windows and put it on the window like the other board."
+
+     So it is on the building. The back-wall bay behind his shooting line is built
+     unglazed and panelled (see HAWK_BOARD_BAY in buildShell) and the board hangs
+     there, square to the room, at GROX's exact size — the same wall, the same
+     3.0 x 1.75, the same construction. It goes on the SCENE rather than on `room`
+     or on his range group: `room` gets statically merged and the merger would eat
+     a canvas texture, and the board is part of the building now, not of the kit he
+     carries. The bay tracks HAWK_RANGE.x, which the test pins. */
+  const BX = HAWK_BOARD_BAY, BY = 2.15, BZ = -HALF_D + 0.14;
+
+  const c = document.createElement("canvas"); c.width = 1024; c.height = 597;
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  /* 3.0 x 1.75 — GROX's board, to the centimetre. It is the size that made his
+     readable from the floor, and this one has the same job. */
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 1.75),
+    new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
+  /* The panel's front face is at BZ + 0.11 and the frame box is 0.10 deep centred
+     on BZ + 0.16, so the frame's front face is at BZ + 0.21. The canvas sits at
+     BZ + 0.30 — 90mm proud. GROX's board carries a comment about this exact
+     failure: it once drew perfectly into a plane buried inside its own frame, and
+     a few millimetres of clearance is a bug waiting for a different driver. */
+  mesh.position.set(BX, BY, BZ + 0.30);
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(3.22, 1.97, 0.10), mat(0x232a30, 0.7));
+  frame.position.set(BX, BY, BZ + 0.16);
+  const sill = new THREE.Mesh(BOX, mat(STEEL, 0.55));
+  sill.scale.set(3.22, 0.05, 0.16); sill.position.set(BX, BY - 1.02, BZ + 0.18);
+  scene.add(mesh, frame, sill);
+  return { c, tex };
+})();
+
+/**
+ * Redraw the scoreboard from whatever pulse the panels have published.
+ *
+ * Reads, never fetches. Called by the pulse handler and by the HAWK-AI tab, and
+ * safe to call when there is nothing: no heartbeat draws the standby face, which
+ * is a real state and not an error.
+ */
+window.__hawkBoardUpdate = () => {
+  const x = hawkBoard.c.getContext("2d");
+  const W = 1024, H = 597;
+  const INK = "#eef2f4", DIM = "#8d99a2", GOOD = "#4ec9a5", BAD = "#e0685c";
+  const F = (w, px) => `${w} ${px}px "JetBrains Mono", ui-monospace, monospace`;
+  const snipe = window.__botHeartbeat?.snipe ?? window.__houseBot?.snipe ?? null;
+  const bk = snipe?.book ?? null;
+
+  x.fillStyle = "#0c1115"; x.fillRect(0, 0, W, H);
+  x.fillStyle = "#151f26"; x.fillRect(0, 0, W, 96);
+  x.strokeStyle = "#2a343b"; x.lineWidth = 3;
+  x.beginPath(); x.moveTo(0, 96); x.lineTo(W, 96); x.stroke();
+  x.fillStyle = INK; x.font = F(700, 44);
+  x.textBaseline = "middle"; x.textAlign = "left";
+  x.fillText("HAWK-AI", 34, 49);
+  x.fillStyle = "#5f7d96"; x.font = F(500, 24);
+  x.fillText("LAUNCH LANE \u00b7 THE BOOK", 286, 52);
+
+  if (!bk || (!bk.trades && !(bk.closed || []).length)) {
+    x.fillStyle = DIM; x.font = F(500, 30); x.textAlign = "center";
+    x.fillText(snipe ? "NO CLOSED TRADE YET" : "NO PULSE FROM THE LANE", W / 2, 280);
+    x.font = F(400, 22);
+    x.fillText(snipe ? "the first round trip is chalked here"
+      : "the bot publishes this on its own heartbeat", W / 2, 326);
+    x.textAlign = "left";
+    hawkBoard.tex.needsUpdate = true;
+    return;
+  }
+
+  /* THE TOTAL, big, and coloured by sign — a board is read by its sign first. */
+  const net = Number(bk.realizedSol) || 0;
+  x.textAlign = "left";
+  x.fillStyle = DIM; x.font = F(500, 22);
+  x.fillText("REALISED", 34, 148);
+  x.fillStyle = net > 0 ? GOOD : net < 0 ? BAD : INK;
+  x.font = F(700, 72);
+  x.fillText(`${net > 0 ? "+" : ""}${net.toFixed(4)} SOL`, 34, 202);
+
+  x.textAlign = "right";
+  x.fillStyle = DIM; x.font = F(500, 22);
+  x.fillText("RECORD", W - 34, 148);
+  x.fillStyle = INK; x.font = F(700, 40);
+  x.fillText(`${bk.wins}\u2013${bk.losses}`, W - 34, 200);
+  x.fillStyle = DIM; x.font = F(500, 20);
+  x.fillText(`${bk.trades} closed${bk.unknown ? ` \u00b7 ${bk.unknown} unpriced` : ""}`, W - 34, 234);
+  x.textAlign = "left";
+
+  x.strokeStyle = "#222c33"; x.lineWidth = 3;
+  x.beginPath(); x.moveTo(34, 262); x.lineTo(W - 34, 262); x.stroke();
+
+  /* The last ends, newest first — mint, what it made, how far. Six rows is what
+     fits at a size readable from the floor; the tab carries the rest. */
+  const rows = (bk.closed || []).filter((r) => r && r.mint).slice(0, 6);
+  let y = 300;
+  x.font = F(500, 26);
+  for (const r of rows) {
+    const pctv = r.realizedSol !== null && r.sizeSol > 0 ? (r.realizedSol / r.sizeSol) * 100 : null;
+    x.fillStyle = DIM;
+    x.fillText(`${r.mint.slice(0, 4)}\u2026${r.mint.slice(-4)}`, 34, y);
+    x.fillStyle = r.realizedSol === null ? DIM : r.realizedSol > 0 ? GOOD : BAD;
+    x.textAlign = "right";
+    x.fillText(r.realizedSol === null ? "not read"
+      : `${r.realizedSol > 0 ? "+" : ""}${r.realizedSol.toFixed(4)}`, W - 210, y);
+    x.fillStyle = DIM;
+    x.fillText(pctv === null ? "\u2014" : `${pctv > 0 ? "+" : ""}${pctv.toFixed(0)}%`, W - 34, y);
+    x.textAlign = "left";
+    y += 46;
+  }
+  if (bk.trades > rows.length) {
+    x.fillStyle = "#6b757c"; x.font = F(400, 20);
+    x.fillText(`the ${rows.length} most recent of ${bk.trades}`, 34, y + 4);
+  }
+  hawkBoard.tex.needsUpdate = true;
+};
+window.__hawkBoardUpdate();
 window.__hawk = () => ({ x: +hawkFig.g.position.x.toFixed(2), z: +hawkFig.g.position.z.toFixed(2),
                          yaw: +hawkFig.head.rotation.y.toFixed(3), ...window.__hawkStatus() });
 
@@ -87726,7 +87904,7 @@ async function withdrawHqInterest() {
 function openWallsteWalkthrough() {
   return window.CCModals.openInstallWalkthrough({
     floorNo: FLOOR_N,
-    installerSha256: "1251d7eae8b0fd52a1cbf754896b78860d190a0850326d8f7c8e8018ea4faa49",
+    installerSha256: "50b366e616369d177022be028ae43739505c415382d5b573e97c10ee910d2192",
   });
 }
 function openHqConditions({ alreadyRequested = false, onRecorded = null } = {}) {
@@ -87968,9 +88146,9 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · arms on install"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "28927b0e174ca8d130f31edeb51b1223d59b548b";
+    const releaseCommit = "356e1ad9d8b0334cbbf49d22025f0f047bdf1453";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
-    const installerDigest = "1251d7eae8b0fd52a1cbf754896b78860d190a0850326d8f7c8e8018ea4faa49";
+    const installerDigest = "50b366e616369d177022be028ae43739505c415382d5b573e97c10ee910d2192";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
     /* ONE line, one paste — and now genuinely one line. install.sh has bootstrapped
        itself from $STATIC and read every prompt from /dev/tty for weeks, so piping it
@@ -90903,7 +91081,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "28927b0e174ca8d130f31edeb51b1223d59b548b";
+    const executorReleaseCommit = "356e1ad9d8b0334cbbf49d22025f0f047bdf1453";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
@@ -90921,7 +91099,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
      * click to INSTALL must never become one click to trade real money — so the
      * short path buys convenience only in step 2, and steps 4 and 5 stay exactly
      * as deliberate as they were. */
-    const installerSha256 = "1251d7eae8b0fd52a1cbf754896b78860d190a0850326d8f7c8e8018ea4faa49";
+    const installerSha256 = "50b366e616369d177022be028ae43739505c415382d5b573e97c10ee910d2192";
     /* The build substitutes the digest of the very install.sh it published. Unsubstituted
        means a local preview, and a digest a reader cannot rely on is worse than none. */
     const installerShaKnown = /^[0-9a-f]{64}$/i.test(installerSha256);

@@ -940,7 +940,7 @@ if [ "$MODE" = "live" ]; then
     echo "live --expected-commit must exactly match the published commit $SOURCE_COMMIT" >&2
     exit 1
   fi
-  for source_file in poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs network-fee-budget.mjs snipe-lane.mjs snipe-venue-pumpfun.mjs snipe-venue.mjs snipe-curve.mjs snipe-entry.mjs snipe-feed.mjs snipe-book.mjs snipe-shadow.mjs snipe-policy.mjs snipe-execute.mjs dexscreener-consensus.mjs desk-mirror.mjs package.json package-lock.json; do
+  for source_file in poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs network-fee-budget.mjs snipe-lane.mjs snipe-venue-pumpfun.mjs snipe-venue.mjs snipe-curve.mjs snipe-entry.mjs snipe-feed.mjs snipe-book.mjs snipe-shadow.mjs snipe-policy.mjs snipe-socials.mjs snipe-execute.mjs dexscreener-consensus.mjs desk-mirror.mjs package.json package-lock.json; do
     if [ -n "$(git -C "$source_root" status --porcelain -- "executor/$source_file")" ]; then
       echo "live source file executor/$source_file differs from commit $SOURCE_COMMIT" >&2
       exit 1
@@ -1697,7 +1697,7 @@ rollback_install() {
 trap rollback_install EXIT
 
 echo "▶ fetching the executor and shared policy…"
-RUNTIME_FILES=(poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs network-fee-budget.mjs snipe-lane.mjs snipe-venue-pumpfun.mjs snipe-venue.mjs snipe-curve.mjs snipe-entry.mjs snipe-feed.mjs snipe-book.mjs snipe-shadow.mjs snipe-policy.mjs snipe-execute.mjs dexscreener-consensus.mjs desk-mirror.mjs)
+RUNTIME_FILES=(poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs network-fee-budget.mjs snipe-lane.mjs snipe-venue-pumpfun.mjs snipe-venue.mjs snipe-curve.mjs snipe-entry.mjs snipe-feed.mjs snipe-book.mjs snipe-shadow.mjs snipe-policy.mjs snipe-socials.mjs snipe-execute.mjs dexscreener-consensus.mjs desk-mirror.mjs)
 SOURCE_FILES=("${RUNTIME_FILES[@]}" package.json package-lock.json)
 # launchd adopts a DIRECTORY, not a command line: macos-launchagent.sh resolves
 # launchd-runner.mjs and poller.mjs out of the --executor-dir it is handed, and
@@ -1895,6 +1895,7 @@ fi
       DAILY_LOSS_PCT_OF_EQUITY \
       MAX_OPEN_POSITIONS TRAIL_PCT MAX_AGE_HOURS \
       SNIPE_LANE SNIPE_TICK_MS SNIPE_MAX_SOL_PER_TRADE SNIPE_DAILY_SOL_CAP SNIPE_LIVE_ACK \
+      SNIPE_REQUIRE_SOCIALS SNIPE_SOCIALS_TIMEOUT_MS SNIPE_STALL_MS SNIPE_STALL_AT_X SNIPE_TIME_STOP_MS \
       SNIPE_TAKE_AT_ENTRY_X SNIPE_STOP_FRAC SNIPE_HOLD_MAX_MS SNIPE_PRIORITY_FEE_LAMPORTS \
       SNIPE_MAX_PRICE_IMPACT_PCT SNIPE_MAX_ROUND_TRIP_LOSS_PCT \
       JUPITER_EXCLUDE_DEXES WALLSTE_ALLOW_BATTERY_ENTRIES \

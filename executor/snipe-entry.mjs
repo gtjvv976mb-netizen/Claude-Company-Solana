@@ -142,6 +142,7 @@ export const SNIPE_GATES = Object.freeze([
   "curve_already_complete",
   "exit_route_unimplemented",
   "mint_refused",
+  "no_socials",
   // ── COST 2: pure arithmetic on bytes already fetched ─────────────────────────────
   "impact_over_cap",
   "round_trip_over_cap",
@@ -163,7 +164,7 @@ export const SNIPE_GATE_COST = Object.freeze({
   lane_off: 0, venue_not_enabled: 0, hard_stop: 0, pause_entries: 0,
   daily_capacity: 0, notice_stale: 0, already_holding: 0, already_attempted: 0,
   curve_unreadable: 1, curve_type_unsupported: 1, quote_not_sol: 1, curve_already_complete: 1,
-  exit_route_unimplemented: 1, mint_refused: 1,
+  exit_route_unimplemented: 1, mint_refused: 1, no_socials: 1,
   impact_over_cap: 2, round_trip_over_cap: 2, stop_floor: 2, size_under_minimum: 2,
   creator_profile: 3, launch_share: 3,
   network_fee_over_cap: 4, rent_over_cap: 4, instruction_mismatch: 4,
@@ -680,6 +681,44 @@ const GATE_IMPLS = Object.freeze({
 
   mint_refused: (c) => c.mintVerdict,
 
+  /**
+   * DID ANYONE PUT A NAME TO THIS COIN?
+   *
+   * Owner, 2026-09-17, after four losing round trips in twenty minutes: only trade tokens
+   * with a social attached at creation. A pump.fun launch carries a metadata uri; a
+   * deployer who attached a twitter, telegram or website spent thirty seconds more on it
+   * than one who did not. That is a floor of effort, not evidence of quality, and this
+   * gate claims nothing more — the link is never followed, scored, or asked about.
+   *
+   * THE LOOKUP IS THE LANE'S, NOT THIS GATE'S. Every gate here is pure; the metadata read
+   * happens beside the account read and arrives as a settled fact, the same way the mint
+   * account and the creator's history do. A gate that awaited a stranger's web server
+   * would make the whole contract async and put a launch's fate in the hands of whoever
+   * chose the URL.
+   *
+   * OFF MEANS OFF. When `requireSocials` is not true this gate passes without looking,
+   * because an operator who has not asked for the filter should not have their launches
+   * refused by a gateway they never configured.
+   *
+   * ON, IT FAILS CLOSED — an unreadable document refuses exactly like an empty one, since
+   * a filter that opens when its input is missing is not a filter. The two say different
+   * things, though: one is a fact about the coin, the other a fact about the network, and
+   * an operator reading a log full of `fetch_timeout` is looking at their own gateway
+   * rather than at bad launches.
+   */
+  no_socials: (c) => {
+    if (c.cfg.requireSocials !== true) return null;
+    const s = c.socials;
+    if (s && s.ok === true) return null;
+    const clause = s?.clause ?? "no_uri";
+    const detail = s?.message ?? "no metadata was read for this launch";
+    return clause === "no_socials" || clause === "no_uri" || clause === "uri_not_http"
+      ? { message: `the launch attaches no social: ${detail}`, socialsClause: clause }
+      : { message: `the launch's socials could not be verified (${clause}): ${detail} — ` +
+          "this refuses like an absent social, because a filter that opens when it cannot " +
+          "see is not a filter", socialsClause: clause };
+  },
+
   impact_over_cap: (c) => (c.plan.impactOverCap ? {
     message: `price impact ${c.plan.impactPct?.toFixed(4)}% exceeds the ${c.cfg.maxPriceImpactPct}% cap ` +
       `at every rung down to ${Number(c.plan.spendLamports) / LAMPORTS_PER_SOL} SOL ` +
@@ -867,6 +906,7 @@ function holderFor(mint) {
 export function snipeContract({
   notice = {}, curve = null, adapter = null, cfg = {}, book = {}, nowMs = null,
   control = {}, mint: mintAccount = null, creator = {}, fees = {}, instruction = null,
+  socials = null,
 } = {}) {
   const lane = isStr(cfg.lane) ? cfg.lane.trim() : "off";
   const mint = isStr(notice.mint) ? notice.mint.trim() : null;
@@ -898,6 +938,9 @@ export function snipeContract({
        `snipeCurveState` keeps the numbers; the quote mint is a fact about the coin, not a
        number, and `quote_not_sol` needs it. */
     curveRaw: isPlainObject(curve) ? curve : null,
+    /* The settled result of the lane's metadata read — see the `no_socials` gate for why
+       it arrives as a fact rather than being awaited here. */
+    socials: isPlainObject(socials) ? socials : null,
     creator: isPlainObject(creator) ? creator : {},
     launchSharePct: state && state.vQuote0Raw !== null && state.realQuoteRaw !== null
       ? pctOf(state.realQuoteRaw, state.vQuote0Raw) : null,

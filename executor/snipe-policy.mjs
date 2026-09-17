@@ -129,7 +129,39 @@ export const SNIPE_DEFAULTS = Object.freeze({
   /* A sniper must not become a bag holder by inaction. If none of the triggers has
      fired by here, leave: the thesis of a launch entry is measured in minutes, and a
      position still open long after has stopped being the trade that was entered. */
-  timeStopMs: 10 * 60_000,
+  timeStopMs: 3 * 60_000,
+  /* ── THE STALL EXIT, AND THE MEASUREMENT THAT PUT IT HERE ──────────────────────────
+   *
+   * HAWK-AI's first 58 closed round trips, read back off mainnet on 2026-09-17 — the
+   * whole record, 290 of 290 transactions fetched, nothing sampled:
+   *
+   *     hold time      n    won     net SOL    average
+   *       0– 30s      32    25%     -0.8829     -2.3%
+   *      30– 60s       3     0%     -0.1323    -12.4%
+   *      60–120s       2   100%     +0.3436    +42.9%
+   *     120–300s       3     0%     -0.2782    -23.6%
+   *     600s+         18     0%     -0.6294    -10.2%
+   *
+   * EIGHTEEN POSITIONS REACHED THE TEN-MINUTE TIME STOP AND NOT ONE OF THEM WON. That is
+   * not a thin edge, it is a clean sweep — and the worst of them decayed from roughly the
+   * round-trip cost to −30% while the clock ran. Meanwhile every large winner this bot
+   * has ever had resolved fast: +191% at 4s, +148% at 7s, +140% at 18s, +84% at 86s.
+   *
+   * So the rule the record supports is: A LAUNCH THAT HAS NOT MOVED IN YOUR FAVOUR
+   * QUICKLY IS NOT GOING TO. `stallMs` is how long a position gets to get above
+   * `stallAtX` × entry; failing that it leaves — not because a stop was hit, but because
+   * the thesis of a launch entry is that it moves NOW, and a flat position at ninety
+   * seconds has falsified that thesis while it is still cheap to say so.
+   *
+   * It sits ABOVE the time stop deliberately. The time stop is the backstop for a
+   * position that is alive and merely drifting; this is the one for a position that never
+   * got going. Both are now measured in minutes rather than ten of them.
+   *
+   * WHAT THIS IS NOT: a claim to have found the optimum. It is 58 trades from one bot
+   * over one day — enough to say "18 for 18 is not noise", not enough to tune a constant
+   * to the minute. The dials exist so the next 58 can move it. */
+  stallMs: 90_000,
+  stallAtX: 1.0,
   /* Observations used to confirm an irreversible arm. Three is the smallest window in
      which a single outlier cannot move the median. */
   confirmWindow: 3,
@@ -411,6 +443,15 @@ export function snipePolicy({
   }
   if (p.armedTrail && p.high > 0 && usable && mark <= p.high * (1 - cfg.trailFrac)) {
     return sell(1, `trailing stop: ${(cfg.trailFrac * 100).toFixed(0)}% below a confirmed high of ${p.high}`, next);
+  }
+  /* THE STALL EXIT. Reads a USABLE mark only: a position is not declared dead on a price
+     the lane could not read, which is the same discipline every other price trigger here
+     follows. See SNIPE_POLICY_DEFAULTS.stallMs for the 18-for-18 that put it here. */
+  if (usable && Number(cfg.stallMs) > 0 && nowMs - p.openedAt >= cfg.stallMs
+      && mark < p.entry * cfg.stallAtX) {
+    return sell(1, `stall: ${Math.round(cfg.stallMs / 1000)}s at ${(mark / p.entry).toFixed(3)}x entry, ` +
+      `under the ${cfg.stallAtX}x this lane gives a launch to move — of the 18 positions that ` +
+      "ever ran to the old ten-minute clock, none recovered", next);
   }
   /* Inaction is a decision, and on a launch it is usually the wrong one. */
   if (nowMs - p.openedAt >= cfg.timeStopMs) {
