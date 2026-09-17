@@ -894,6 +894,33 @@ line in a log on the operator's machine, and the desk went on reporting the floo
 because the desk was. A lane that faults *with a position open* reports `faulted` with
 its retry count — it keeps trying rather than abandoning the bag, and now says so.
 
+### Where to check what it made
+
+The same heartbeat carries **HAWK-AI's book**: every closed trade with the realised SOL
+beside it, plus the running total, the wins, the losses, and the count of closes it could
+not price. The HAWK-AI tab renders it under the open positions — a gain in green, a loss
+in red, and each row's reason (`take`, `stop`, `creator_exit`, `clock`) with the size it
+was made on.
+
+Three things about that number are deliberate:
+
+- **It is read from the journal, not from the lane.** The lane's counters live in memory
+  and a restart zeroes them. The book is a SQL read of `state='accounted' AND
+  kind='snipe_exit'`, so it survives restarts, upgrades and reinstalls.
+- **It is the risk ledger's own arithmetic**, joined from `risk_events` rather than
+  recomputed — net of the network fee and of the basis the sale closed against, pro rata if
+  the sale was partial. The board and the desk's rolling risk cannot disagree, because
+  there is only one calculation.
+- **It is the sniper's alone.** Both lanes share one wallet and one journal, so the read
+  filters by intent kind: a desk exit never lands in HAWK-AI's book, and vice versa.
+
+A close the bot cannot price reads as **"not read"**, never as zero — zero is a trade that
+broke even. And because the read is capped, the tab says "Counting the N most recent"
+whenever the window is smaller than the full count.
+
+Everything on it is checkable on-chain: each row is one confirmed sell, and the journal
+holds its signature.
+
 ### What has and has not been proved
 
 The instruction encoders are re-encoded byte for byte against 30 mainnet transactions on

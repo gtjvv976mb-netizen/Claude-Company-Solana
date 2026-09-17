@@ -825,6 +825,84 @@ export class ExecutionJournal {
     return out;
   }
 
+  /**
+   * THE SNIPER'S OWN CLOSED TRADES, FROM THE DURABLE RECORD (owner, 2026-09-17: "make his
+   * own HAWK-AI board", after asking where anyone would verify its profit).
+   *
+   * Every other surface the sniper had was a counter or an open row. What a person means by
+   * "did it make money" is a list of closed trades with a realised number beside each, and
+   * the only place that survives a restart is this table. A snipe exit is identifiable on
+   * its own: `kind = 'snipe_exit'` is written by snipe-execute and by nothing else, so this
+   * is the sniper's result and never the desk's, on a wallet the two lanes share.
+   *
+   * REALISED IS THE RISK LEDGER'S OWN NUMBER, not a second opinion about it. `markAccounted`
+   * already computed this result once, in `_riskEvent`, and wrote it to `risk_events` in the
+   * same transaction that moved the intent to `accounted` — so it is read back from there by
+   * a join rather than recomputed here from the raw columns.
+   *
+   * THE FIRST DRAFT OF THIS METHOD DID RECOMPUTE IT, as `proceeds - fee - basis`, and that
+   * was wrong in a way worth recording: `_riskEvent` allocates the basis PRO RATA when an
+   * exit sells less than the whole position (`basis * input / beforeRaw`), and the naive
+   * version charged the entire position's cost against a partial sale. HAWK-AI sells in full
+   * — it is in the sentence its owner types to arm it — so the two agreed on every trade the
+   * bot has actually made, which is exactly how a board ends up disagreeing with the ledger
+   * beside it the first time something changes. One arithmetic, in one place, read twice.
+   *
+   * A row with no `realized` risk event returns `realizedLamports: null` rather than a zero.
+   * Zero is a trade that broke even; null is a trade whose result is unknown, and a board
+   * that shows the second as the first is lying quietly.
+   */
+  snipeExits({ sinceMs = null, limit = 50 } = {}) {
+    const floor = Number.isFinite(Number(sinceMs)) ? Number(sinceMs) : 0;
+    const cap = Math.max(1, Math.min(200, Number(limit) || 50));
+    const rows = this.db.prepare(`SELECT i.*, r.realized_lamports AS ledger_realized
+      FROM intents i LEFT JOIN risk_events r ON r.intent_id = i.id AND r.kind = 'realized'
+      WHERE i.state='accounted' AND i.kind='snipe_exit' AND COALESCE(i.confirmed_at, i.updated_at) >= ?
+      ORDER BY COALESCE(i.confirmed_at, i.updated_at) DESC, i.id DESC LIMIT ?`).all(floor, cap);
+    const big = (v) => (/^\d+$/.test(String(v ?? "")) ? BigInt(String(v)) : null);
+    const out = [];
+    for (const row of rows) {
+      let intent;
+      try { intent = this._intent(row); } catch { continue; }
+      const proceeds = big(row.actual_output_raw);
+      const fee = big(row.network_fee_lamports) ?? 0n;
+      const basis = big(intent.context?.position?.costBasisLamports);
+      const ledger = Number(row.ledger_realized);
+      const realized = row.ledger_realized === null || row.ledger_realized === undefined
+        || !Number.isSafeInteger(ledger) ? null : BigInt(ledger);
+      out.push({
+        mint: String(row.mint),
+        closedAt: Number(row.confirmed_at ?? row.updated_at) || null,
+        signature: row.signature ?? null,
+        reason: typeof intent.context?.reason === "string" ? intent.context.reason : null,
+        basisLamports: basis === null ? null : String(basis),
+        proceedsLamports: proceeds === null ? null : String(proceeds),
+        feeLamports: String(fee),
+        realizedLamports: realized === null ? null : String(realized),
+      });
+    }
+    return out;
+  }
+
+  /**
+   * HOW MANY CLOSED TRADES THERE REALLY ARE, which is not the same question as the one
+   * above and must not be answered with the same number.
+   *
+   * `snipeExits()` is bounded — it has to be, because a heartbeat that reads an unbounded
+   * table is a heartbeat that gets slower every week. But a board headed "14 closed trades"
+   * when the read stopped at its cap is a quiet lie of exactly the kind this pair of methods
+   * exists to avoid: the reader would take a truncated window for the whole record and a
+   * truncated sum for the whole profit. So the count is asked separately, over every row,
+   * and the surfaces above report the window and the total as two different numbers.
+   */
+  snipeExitCount({ sinceMs = null } = {}) {
+    const floor = Number.isFinite(Number(sinceMs)) ? Number(sinceMs) : 0;
+    const row = this.db.prepare(`SELECT COUNT(*) AS n FROM intents
+      WHERE state='accounted' AND kind='snipe_exit' AND COALESCE(confirmed_at, updated_at) >= ?`)
+      .get(floor);
+    return Number(row?.n || 0);
+  }
+
   hasBlockingIntent(exceptId = null) {
     const row = this.db.prepare(`SELECT id FROM intents
       WHERE state IN ('signed','submitted','confirmed','ambiguous') AND (? IS NULL OR id<>?) LIMIT 1`)

@@ -13,9 +13,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-17 06:44 UTC">
-<meta name="cc-commit" content="c21fe74ddb87f38506ceefb2650856082c7a080b">
-<script>console.log("Claude Company build 2026-09-17 06:44 UTC")</script>
+<meta name="cc-build" content="2026-09-17 08:09 UTC">
+<meta name="cc-commit" content="d2bde3c4d09956ae4567ca7bd92552333fe0c79e">
+<script>console.log("Claude Company build 2026-09-17 08:09 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
 <style>
@@ -322,6 +322,11 @@ body{
 .dashmetric .k{font:600 9px "JetBrains Mono",monospace;letter-spacing:.1em;text-transform:uppercase;
   color:var(--ink-faint);overflow-wrap:break-word;hyphens:none;line-height:1.35}
 .dashmetric b{display:block;margin-top:4px;font-size:14px;line-height:1.2;overflow-wrap:break-word;hyphens:none}
+/* A REALISED RESULT IS READ BY ITS SIGN before it is read as a number, which is the whole
+   reason HAWK-AI's book colours its rows. Same two tokens the badges use, so a gain and a
+   loss look the same here as everywhere else on the floor. */
+.dashmetric b.good{color:var(--good)}
+.dashmetric b.bad{color:var(--bad)}
 .dashmetric small{display:block;margin-top:4px;color:var(--ink-faint);font-size:10.5px;line-height:1.35}
 .dashsection{padding:12px;border:1px solid var(--card-line);border-radius:10px;background:var(--card)}
 .dashsection h4{margin:0 0 8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
@@ -87963,7 +87968,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · arms on install"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "c21fe74ddb87f38506ceefb2650856082c7a080b";
+    const releaseCommit = "d2bde3c4d09956ae4567ca7bd92552333fe0c79e";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "1251d7eae8b0fd52a1cbf754896b78860d190a0850326d8f7c8e8018ea4faa49";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -90252,7 +90257,9 @@ function loadHawkDashboard() {
     /* THE SENTENCE THAT MATTERS. Armed and not running is the state support gets asked
        about, and it now names the bot's own reason instead of leaving a floor to guess. */
     const reason = snipe.lastError ? ` The bot's own reason: “${snipe.lastError}”.` : "";
-    const heading = { starting: ["STARTING", ""], up: ["RUNNING", "ok"], faulted: ["FAULTED", "warn"],
+    /* `good`, not `ok`: the badge styles are good/warn/bad and an `ok` class paints nothing,
+       so RUNNING had been rendering in the default ink since this block shipped. */
+    const heading = { starting: ["STARTING", ""], up: ["RUNNING", "good"], faulted: ["FAULTED", "warn"],
       disabled: ["STOPPED", "warn"], "failed-to-start": ["DID NOT START", "warn"] }[snipe.state] || ["UNKNOWN", "warn"];
     const line = snipe.state === "up"
       ? `HAWK-AI is running in ${snipe.mode} mode${snipe.feed ? ` — feed ${snipe.feed.state}${snipe.feed.dead?.length ? `, dead: ${snipe.feed.dead.join(", ")}` : ""}` : ""}. `
@@ -90287,6 +90294,76 @@ function loadHawkDashboard() {
           `${p.openedAt ? "opened " + when(p.openedAt) : ""}${mark}`));
       }
       liveBox.appendChild(list);
+    }
+
+    /* ── HAWK-AI'S OWN BOOK ────────────────────────────────────────────────────────────
+       The owner, 2026-09-17: "where will users verify the performance and trades and
+       profit of HAWK-AI", then "make his own HAWK-AI board".
+
+       Until this block there was no answer. The tab could say he was RUNNING and what he
+       held, and the counters could say he had entered once and exited once — and a reader
+       had no way to learn whether that round trip made money or lost it. The floor's
+       Overview is the DESK's book and the sniper never reports a fill into it, by design:
+       the desk engine is never handed one of his positions.
+
+       So this is his own, and it reads from his own journal rather than from a counter:
+       every closed trade with the realised SOL beside it, computed from the confirmed
+       transaction's numbers, net of the network fee and of the basis it closed against.
+       That is the same arithmetic the bot logs at the moment of exit, carried to the page
+       instead of dying in a log file on one person's Mac.
+
+       A LOSS MUST LOOK LIKE A LOSS. The total and every row are signed, coloured by sign,
+       and a trade whose result the bot could not read renders as "not read" rather than as
+       zero — a board that rounds the unknown to break-even is the one dishonest thing this
+       page could do. */
+    const bk = snipe.book;
+    if (bk && (bk.trades > 0 || (bk.closed || []).length)) {
+      const sol = (n) => `${n > 0 ? "+" : ""}${Number(n).toFixed(4)} SOL`;
+      /* `good`/`bad`, because those are the classes this page actually styles — `ok` is not
+         one of them and paints nothing. */
+      const sign = (n) => (n > 0 ? "good" : n < 0 ? "bad" : "");
+      /* THE TOTAL SAYS WHAT IT COVERS. `trades` is every close there has ever been;
+         `counted` is how many the tally and the total were computed over, because the bot
+         reads its journal with a ceiling. They agree until the lane outruns that ceiling,
+         and the sentence names the gap rather than presenting a window as the record. An
+         older bot sends no `counted` at all, and there the two are the same thing. */
+      const counted = bk.counted > 0 ? bk.counted : bk.trades;
+      liveBox.append(dashLead("Book",
+        `${bk.trades} closed trade${bk.trades === 1 ? "" : "s"}. `
+        + (bk.trades > counted ? `Counting the ${counted} most recent: ` : "")
+        + `${bk.wins} up and ${bk.losses} down`
+        + `${bk.unknown ? `, ${bk.unknown} the bot could not price` : ""}. `
+        + "Realised is net of the network fee and of what the position cost, straight from the "
+        + "confirmed transactions — not a mark, and not the desk's paper.",
+        sol(bk.realizedSol), sign(bk.realizedSol)));
+      const rows = (bk.closed || []).filter((r) => r && r.mint);
+      if (rows.length) {
+        const list = dashNode("div", "dashgrid");
+        for (const r of rows) {
+          const name = r.mint.slice(0, 4) + "…" + r.mint.slice(-4);
+          const value = r.realizedSol === null ? "not read" : sol(r.realizedSol);
+          const onSize = r.realizedSol !== null && r.sizeSol > 0
+            ? ` · ${((r.realizedSol / r.sizeSol) * 100).toFixed(0)}% of ${r.sizeSol} SOL` : "";
+          const m = dashMetric(name, value,
+            `${r.closedAt ? when(r.closedAt) : ""}${r.reason ? ` · ${r.reason}` : ""}${onSize}`);
+          /* dashMetric has no colour argument and its value node is the <b> it builds
+             (span.k + b + small). The sign is the one thing a reader scans a book for, so
+             it is coloured here rather than left as another number to parse. */
+          const v = m.querySelector?.("b") || null;
+          const cls = sign(r.realizedSol);
+          if (v && cls && r.realizedSol !== null) v.classList.add(cls);
+          list.append(m);
+        }
+        liveBox.appendChild(list);
+      }
+      if (bk.trades > (bk.closed || []).length) {
+        const more = dashNode("p", "dp-note",
+          `Showing the ${(bk.closed || []).length} most recent of ${bk.trades}. The bot keeps the rest.`);
+        liveBox.appendChild(more);
+      }
+    } else if (snipe.state === "up") {
+      liveBox.append(dashNode("p", "dp-note",
+        "No closed trade yet. The moment he buys and sells one, it appears here with what it made."));
     }
   })();
 
@@ -90826,7 +90903,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "c21fe74ddb87f38506ceefb2650856082c7a080b";
+    const executorReleaseCommit = "d2bde3c4d09956ae4567ca7bd92552333fe0c79e";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();

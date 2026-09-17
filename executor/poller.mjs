@@ -2521,8 +2521,49 @@ function snipeHeartbeat() {
     lastError: snipeStatus.lastError, lastErrorAt: snipeStatus.lastErrorAt || null,
     faults: snipeStatus.faults, retryAt: snipeStatus.retryAt || null,
     lastFillAt: snipeStatus.lastFillAt || null,
-    open: [], counts: null, feed: null,
+    open: [], counts: null, feed: null, book: null,
   };
+  /* THE BOOK — closed trades with a realised number beside each (owner, 2026-09-17).
+   *
+   * Read from the JOURNAL rather than from the lane, and that is the point rather than an
+   * implementation detail. The lane's counters are in memory: they say "exited 1" and a
+   * restart says "exited 0", so a board built on them forgets every trade the bot ever made
+   * and cannot be the thing anyone verifies profit on. `journal.snipeExits()` reads the
+   * durable table, computes realised from the chain's own confirmed numbers, and attributes
+   * it to the sniper alone by intent kind on a wallet both lanes share.
+   *
+   * Defensive like every other field here: a journal that throws costs the desk this block,
+   * never the pulse. */
+  try {
+    const rows = journal.snipeExits({ limit: 200 });
+    let realized = 0, wins = 0, losses = 0, unknown = 0;
+    for (const r of rows) {
+      if (r.realizedLamports === null) { unknown++; continue; }
+      const sol = Number(r.realizedLamports) / 1e9;
+      realized += sol;
+      if (sol > 0) wins++; else losses++;
+    }
+    out.book = {
+      /* Newest first, and capped well under the sanitizer's own ceiling. */
+      closed: rows.slice(0, 20).map((r) => ({
+        mint: String(r.mint).slice(0, 64),
+        closedAt: Number(r.closedAt) > 0 ? Number(r.closedAt) : null,
+        reason: r.reason ? String(r.reason).slice(0, 80) : null,
+        realizedSol: r.realizedLamports === null ? null
+          : Number((Number(r.realizedLamports) / 1e9).toFixed(9)),
+        sizeSol: r.basisLamports === null ? null
+          : Number((Number(r.basisLamports) / 1e9).toFixed(9)),
+      })),
+      /* TWO NUMBERS, BECAUSE THEY ARE TWO FACTS. `trades` is every closed trade there has
+         ever been; `counted` is how many of them the tallies and the total below actually
+         cover. They are equal until the lane outruns the read's ceiling, and the page says
+         so plainly when they diverge rather than passing a window off as the record. */
+      trades: journal.snipeExitCount(),
+      counted: rows.length,
+      wins, losses, unknown,
+      realizedSol: Number(realized.toFixed(9)),
+    };
+  } catch {}
   const lane = snipeStatus.lane;
   try {
     if (lane) out.open = lane.openPositions().slice(0, 20).map((p) => ({
