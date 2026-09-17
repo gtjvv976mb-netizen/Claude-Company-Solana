@@ -9,6 +9,15 @@ LABEL="com.claudeco.wallste"
 THROTTLE_SECONDS="15"
 COMMAND="${1:-}"
 if [ "$#" -gt 0 ]; then shift; fi
+# `buys` takes a positional verb (on|off|status). Captured here, before the option loop,
+# because that loop refuses anything that is not a --flag and would reject it as garbage.
+BUYS_VERB=""
+if [ "$COMMAND" = "buys" ]; then
+  case "${1:-}" in
+    ""|--*) ;;
+    *) BUYS_VERB="$1"; shift;;
+  esac
+fi
 EXECUTOR_DIR=""
 ENV_FILE=""
 MAX_SOL=""
@@ -24,6 +33,8 @@ Commands:
   load        Explicitly load and start the installed LaunchAgent.
   unload      Explicitly stop and unload only this LaunchAgent.
   arm-caps    While stopped and entry-paused, bind a cap tuple to the burner wallet.
+  buys        on | off | status. OFF stops both lanes opening anything; open positions
+              still exit on their stop, target and clock. Takes effect on the next tick.
   status      Show whether the plist is installed and the agent is loaded.
   uninstall   Remove the plist after an explicit unload. Keeps logs and all state.
 
@@ -34,9 +45,11 @@ Options:
   --daily-sol-cap SOL  arm-caps: rolling 24-hour deployment cap (up to 1000 — removed in effect; the wallet binds).
   --daily-loss-cap SOL arm-caps: rolling realized-loss entry brake (up to 0.4).
 
-This lifecycle never funds a wallet, changes trading mode, removes pause or hard-stop
-sentinels, or terminates a manually-started poller. arm-caps is the sole cap-changing
-command; it requires a real terminal and retains an owner-only rollback environment.
+This lifecycle never funds a wallet, changes trading mode, or terminates a
+manually-started poller. arm-caps is the sole cap-changing command; it requires a real
+terminal and retains an owner-only rollback environment. `buys` is the sole
+pause-changing command, and it moves only the ENTRY pause: no command here ever touches
+the hard stop, which blocks exits as well and stays a deliberate act of its own.
 HELP
 }
 
@@ -64,6 +77,13 @@ done
 case "$COMMAND" in
   help|--help|-h|"") usage; [ -n "$COMMAND" ] && exit 0 || exit 1;;
   install|load|unload|arm-caps|status|uninstall) ;;
+  buys)
+    case "$BUYS_VERB" in
+      on|off|status) ;;
+      "") fail "buys needs one of: on, off, status";;
+      *) fail "buys takes on, off or status — received: $BUYS_VERB";;
+    esac
+    ;;
   *) fail "unknown command: $COMMAND";;
 esac
 
@@ -189,6 +209,67 @@ rollback_load() {
 }
 
 case "$COMMAND" in
+  # THE BUY SWITCH (owner, 2026-09-17: "a buy off/on button — when it is off the bot
+  # cannot buy but can sell what he last bought, and on for automatic").
+  #
+  # The MECHANISM already existed and is unchanged: the entry-pause sentinel, which
+  # poller.mjs reads fresh on every tick (controlActive -> inspectOwnerControlFile) and
+  # which both lanes consult before opening anything — the desk at its entry gate and the
+  # sniper through its control() reader. Exits run on a different path entirely and never
+  # consult it, which is exactly the asked-for shape: no new buys, and what is already held
+  # still leaves on its stop, its target, the creator's exit or the clock.
+  #
+  # What was missing was a switch a person can actually throw. Setting it meant typing
+  # `install -m 600 /dev/null` against a long absolute path, and `touch` — the obvious
+  # thing to reach for instead — writes 0644 under a normal umask, which the watchdog
+  # reads as an unsafe control and SIGTERMs the agent ten seconds after every load.
+  #
+  # IT IS A LOCAL SWITCH, AND THAT IS ARCHITECTURE RATHER THAN AN OMISSION. The hosted
+  # desk cannot throw it: DESK.md's deployment rule is that authenticated polling delivers
+  # research events and never commands, so a remote party able to stop this bot would also
+  # be able to silence it. The site SHOWS the state — the heartbeat already carries
+  # entriesPaused — and the operator's own machine sets it.
+  buys)
+    # WHERE THE SENTINEL LIVES. The protected env file names it (install.sh writes
+    # PAUSE_ENTRIES_FILE), so that one key is read out of it by name — this script still
+    # never sources the environment and never prints any other line of it. The default
+    # install layout is the fallback, so an older env without the key still resolves.
+    BUYS_ENV="${ENV_FILE:-$USER_HOME/claudeco-executor/.cc-executor.env}"
+    PAUSE_FILE=""
+    if [ -f "$BUYS_ENV" ]; then
+      PAUSE_LINE="$(grep -m1 '^PAUSE_ENTRIES_FILE=' "$BUYS_ENV" 2>/dev/null || true)"
+      PAUSE_FILE="${PAUSE_LINE#PAUSE_ENTRIES_FILE=}"
+      PAUSE_FILE="${PAUSE_FILE#\"}"; PAUSE_FILE="${PAUSE_FILE%\"}"
+    fi
+    if [ -z "$PAUSE_FILE" ]; then PAUSE_FILE="$USER_HOME/claudeco-executor/PAUSE_ENTRIES"; fi
+    case "$PAUSE_FILE" in
+      /*) ;;
+      *) fail "the entry-pause sentinel must be an absolute path; read: $PAUSE_FILE";;
+    esac
+    if [ -L "$PAUSE_FILE" ]; then fail "the entry-pause sentinel is a symlink; refusing to move it"; fi
+    case "$BUYS_VERB" in
+      status) ;;
+      off)
+        # `install -m 600`, never `touch` — see the note above; 0644 is not a control.
+        install -m 600 /dev/null "$PAUSE_FILE" 2>/dev/null || : > "$PAUSE_FILE"
+        chmod 600 "$PAUSE_FILE"
+        ;;
+      on) rm -f "$PAUSE_FILE";;
+    esac
+    if [ -e "$PAUSE_FILE" ]; then
+      echo "BUYS ARE OFF. Neither WALL-ST-E nor HAWK-AI will open a new position."
+      echo "What is already held is untouched, and still exits on its stop, its target,"
+      echo "the creator's exit or the clock."
+      echo "Sentinel: $PAUSE_FILE"
+      echo "Back on:  bash macos-launchagent.sh buys on"
+    else
+      echo "BUYS ARE ON. WALL-ST-E takes the desk's published calls and HAWK-AI takes"
+      echo "launches, each inside its own caps."
+      echo "Off:      bash macos-launchagent.sh buys off"
+    fi
+    echo "Either way this never touches the hard stop, which blocks exits too."
+    echo "No restart is needed: the running bot reads this file on its next tick."
+    ;;
   install)
     if is_loaded; then fail "agent is loaded; run the explicit unload command before reinstalling"; fi
     # ~/Library/LaunchAgents is scanned at login. Persistently disable the label

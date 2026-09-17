@@ -1248,9 +1248,31 @@ export function decodeBuyIx(ix) {
   if (!isBuy && !isSell)
     throw new PumpfunVenueError("arg_invalid",
       `discriminator ${disc.toString("hex")} is neither buy_v2 nor sell_v2`);
+  const amountRaw = data.readBigUInt64LE(8);
   return Object.freeze({
     instruction: isBuy ? "buy_v2" : "sell_v2",
-    amountRaw: data.readBigUInt64LE(8),
+    amountRaw,
+    /* THE SAME u64, ALSO UNDER THE NAME THE ROUND-TRIP CHECK ASKS FOR (2026-09-17).
+     *
+     * `amountRaw` is the honest neutral name — arg0 is base tokens OUT on a buy and base
+     * tokens IN on a sell, so one directional name would be a lie on one side. But
+     * snipe-entry.mjs assertSnipeInstruction reads `decoded.baseOutRaw`, the name the
+     * ENVELOPE uses, and this adapter never set it. Measured on the owner's live floor,
+     * 2026-09-17: HAWK-AI armed, the feed ran 2/2 live, and all 92 launches it saw were
+     * refused at `instruction_mismatch — decoded.baseOutRaw must be an integer amount, got
+     * undefined`. Zero signed, zero sent. The BYTES were always correct — snipe-execute
+     * converts baseOutRaw to amountRaw before encoding, and the 30 mainnet re-encode
+     * fixtures pass — so the lane was refusing its own sound instruction over a field name.
+     *
+     * A SEAM NEITHER SIDE'S TESTS COULD SEE. test-snipe-entry.mjs drives
+     * assertSnipeInstruction with a FIXTURE adapter whose decodeBuyIx returns baseOutRaw,
+     * and this file drives the real decoder and asserts amountRaw. Both passed. The two
+     * were never introduced to each other, which is why the seam test below now does it.
+     *
+     * Added rather than renamed: amountRaw is pinned here and is the correct name for the
+     * sell side, so both live, and each direction is null on the leg it does not describe. */
+    baseOutRaw: isBuy ? amountRaw : null,
+    baseInRaw: isSell ? amountRaw : null,
     /* Named for what it IS on each side rather than reused: a ceiling on a buy and a floor
        on a sell, and a caller that confuses them authorises the opposite of what it meant. */
     maxQuoteInRaw: isBuy ? data.readBigUInt64LE(16) : null,

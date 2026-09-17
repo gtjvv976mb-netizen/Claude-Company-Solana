@@ -559,15 +559,41 @@ the durable position is retained, new entries are blocked, and the host logs
 
 ## Pause and hard stop
 
+### The buy switch
+
+One command, either lane, no restart:
+
+```bash
+bash ~/claudeco-executor/current/macos-launchagent.sh buys off      # open nothing new
+bash ~/claudeco-executor/current/macos-launchagent.sh buys on       # automatic again
+bash ~/claudeco-executor/current/macos-launchagent.sh buys status
+```
+
+**OFF** stops WALL-ST-E taking the desk's calls and HAWK-AI taking launches. It touches
+nothing already open: those positions still exit on their stop, their target, the
+creator's exit or the clock. **ON** returns both lanes to automatic. The running bot
+reads the sentinel on its next tick, so neither needs a reload.
+
+It is a LOCAL switch, and that is the architecture rather than a gap. The hosted desk
+delivers research events and never commands (DESK.md), so a remote party able to stop
+this bot would also be able to silence it. The site *shows* the state — the heartbeat
+carries `entriesPaused` and the floor's "New buys" chip reads OFF — and the operator's
+own machine *sets* it.
+
+`buys` moves only the ENTRY pause. Nothing in that script ever touches the hard stop
+below, which blocks exits too and stays a deliberate act of its own.
+
+### The sentinels underneath
+
 The installer records explicit paths in the protected environment file:
 
 - If the file named by `PAUSE_ENTRIES_FILE` exists, WALL-ST-E refuses new buys but
   continues monitoring, closing recorded positions, and reconciling pending attempts.
   **Every install and upgrade creates it**, so a new release comes up not buying until
-  you lift it: `rm -f ~/claudeco-executor/PAUSE_ENTRIES`, or pass `--resume-entries`
-  to the installer and it lifts the pause itself the moment the new release is the
-  running one (never before, so a failed activation still comes up paused). The floor's
-  "New buys" chip reads OFF while the file exists.
+  you lift it: `buys on` above, or `rm -f ~/claudeco-executor/PAUSE_ENTRIES`, or
+  pass `--resume-entries` to the installer and it lifts the pause itself the moment
+  the new release is the running one (never before, so a failed activation still comes
+  up paused). The floor's "New buys" chip reads OFF while the file exists.
 - **The supervisor writes that same file by itself whenever the host is on battery**, and
   it keeps writing it: the sleep-assertion watcher re-publishes the pause every 15
   seconds while battery lasts, and only the first one logs a line. So `rm` on battery is

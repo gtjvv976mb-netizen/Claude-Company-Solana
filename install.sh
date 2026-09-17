@@ -2091,7 +2091,9 @@ cat <<DONE
     if [ "$NO_EQUITY_BRAKE" -eq 1 ]; then
       printf '\n  Equity brake OFF (DAILY_LOSS_PCT_OF_EQUITY=0) — the %s SOL figure\n  above is now the ONLY loss brake. Raise it with arm-caps to trade\n  until the wallet is the stop.' "$DAILY_LOSS_CAP"
     fi)
-  Pause entries:  install -m 600 /dev/null $PAUSE_FILE
+  Buys off:       bash $CURRENT_LINK/macos-launchagent.sh buys off
+  Buys on:        bash $CURRENT_LINK/macos-launchagent.sh buys on
+                  (off opens nothing new; what is held still exits)
   Resume entries: rm -f $PAUSE_FILE   (or pass --resume-entries next time)
   Hard stop:      install -m 600 /dev/null $HARD_STOP_FILE
   Protected env:  $ENV_FILE
