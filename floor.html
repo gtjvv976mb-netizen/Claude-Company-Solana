@@ -13,9 +13,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-17 08:09 UTC">
-<meta name="cc-commit" content="d2bde3c4d09956ae4567ca7bd92552333fe0c79e">
-<script>console.log("Claude Company build 2026-09-17 08:09 UTC")</script>
+<meta name="cc-build" content="2026-09-17 09:11 UTC">
+<meta name="cc-commit" content="2b14b4fadc93d2ce2271b8c21b61f41573f4e677">
+<script>console.log("Claude Company build 2026-09-17 09:11 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
 <style>
@@ -87968,7 +87968,7 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · arms on install"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "d2bde3c4d09956ae4567ca7bd92552333fe0c79e";
+    const releaseCommit = "2b14b4fadc93d2ce2271b8c21b61f41573f4e677";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
     const installerDigest = "1251d7eae8b0fd52a1cbf754896b78860d190a0850326d8f7c8e8018ea4faa49";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
@@ -90903,7 +90903,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "d2bde3c4d09956ae4567ca7bd92552333fe0c79e";
+    const executorReleaseCommit = "2b14b4fadc93d2ce2271b8c21b61f41573f4e677";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();

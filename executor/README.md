@@ -921,6 +921,35 @@ whenever the window is smaller than the full count.
 Everything on it is checkable on-chain: each row is one confirmed sell, and the journal
 holds its signature.
 
+### Mayhem coins, and the half of the market that was invisible
+
+pump.fun keeps **two disjoint pools of fee recipients**, and every coin belongs to exactly
+one. Which pool is the `is_mayhem_mode` byte on the coin's own bonding curve. A coin
+refuses every recipient from the other pool — `NotAuthorized`, error 6000, thrown in the
+program's `fee_recipient.rs`, at a different source line in each direction.
+
+The adapter used to merge the two into a single list of sixteen and always take the first,
+which is always a standard recipient. So **every mayhem launch was refused**, at
+simulation, before anything was signed:
+
+```
+refused at simulation_failed: {"InstructionError":[3,{"Custom":6000}]}
+AnchorError thrown in programs/pump/src/fee_recipient.rs:19. Error Code: NotAuthorized.
+```
+
+Nothing was ever at risk — the refusal happened before signing, and a refused launch costs
+nothing. But it was roughly half of everything the feed produced, and the log gave no hint
+that the other half was working fine.
+
+The sets are now read separately and narrowed by the coin before a recipient is chosen,
+on **both** legs. The exit matters more than the entry: a mayhem coin bought with the right
+recipient and sold with the wrong one is a position that cannot be closed.
+
+The measurement is in `PUMPFUN_FEE_RECIPIENT_POOLS` — the same buy simulated sixteen ways
+against live curves, plus the 30 landed mainnet transactions in the encode fixture, where
+22 paid a standard recipient, 8 paid a mayhem one, and none of the 17 mints ever paid into
+both.
+
 ### What has and has not been proved
 
 The instruction encoders are re-encoded byte for byte against 30 mainnet transactions on

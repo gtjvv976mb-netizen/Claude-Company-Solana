@@ -234,6 +234,8 @@ export const BONDING_CURVE_LAYOUT = Object.freeze({
   tokenTotalSupply: 40,
   complete: 48,
   creator: 49,
+  isMayhemMode: 81,
+  isCashbackCoin: 82,
 });
 
 /** 8 + five u64 + the `complete` byte. The 49-byte graduated account (§3) is exactly
@@ -241,6 +243,9 @@ export const BONDING_CURVE_LAYOUT = Object.freeze({
 export const BONDING_CURVE_MIN_BYTES = 49;
 /** …and this is the length at which `creator` is actually present. */
 export const BONDING_CURVE_WITH_CREATOR_BYTES = 81;
+/** …and this is the length at which `is_mayhem_mode` is, which decides WHICH SET OF FEE
+ *  RECIPIENTS the coin will accept. See PUMPFUN_FEE_RECIPIENT_POOLS. */
+export const BONDING_CURVE_WITH_MAYHEM_BYTES = 82;
 
 /** Global is only decoded as far as its fee field. See §7 for why nothing past here is
  *  read: the static field at 154 is contradicted by the tape, so the rest of this
@@ -592,6 +597,8 @@ export function decodeBondingCurve(account, { feeBps = null, mint = null, requir
   const L = BONDING_CURVE_LAYOUT;
   const completeByte = data[L.complete];
   const hasCreator = data.length >= BONDING_CURVE_WITH_CREATOR_BYTES;
+  const hasMayhem = data.length >= BONDING_CURVE_WITH_MAYHEM_BYTES;
+  const mayhemByte = hasMayhem ? data[L.isMayhemMode] : null;
   const fee = feeBpsOrNull(feeBps, "feeBps");
   return Object.freeze({
     kind: "bonding-curve",
@@ -611,6 +618,13 @@ export function decodeBondingCurve(account, { feeBps = null, mint = null, requir
     complete: completeByte === 1,
     completeByte,
     creator: hasCreator ? readKey(data, L.creator) : null,
+    /* WHICH FEE RECIPIENTS THIS COIN WILL ACCEPT. Not a curiosity: a mayhem coin refuses
+       every standard recipient and a standard coin refuses every mayhem one, both with
+       NotAuthorized, so this one byte decides whether a buy can land at all. `null` means
+       the account is too short to say — treated as standard, which is what a pre-mayhem
+       curve is. See PUMPFUN_FEE_RECIPIENT_POOLS for the measurement. */
+    isMayhemMode: mayhemByte === 1,
+    mayhemByte,
     /* §7: null is "unknown", and every quoting method refuses on it. */
     feeBps: fee,
     feeBpsKnown: fee !== null,
@@ -1085,6 +1099,23 @@ const need = (value, name) => {
  * gives fee_recipient@41, fee_recipients[7]@162, reserved_fee_recipient@483,
  * reserved_fee_recipients[7]@516 and buyback_fee_recipients[8]@741. Sixteen and eight,
  * which is exactly the membership the 13-sample verification observed.
+ *
+ * TWO SETS OF EIGHT, NOT ONE SET OF SIXTEEN — and merging them cost the sniper every
+ * mayhem launch it ever saw (owner's log, 2026-09-17, error 6000 NotAuthorized thrown in
+ * the program's fee_recipient.rs on roughly half of all launches).
+ *
+ * The IDL's "reserved_" prefix reads like a spare tyre. It is not. Measured by simulating
+ * the same buy sixteen ways against live curves on 2026-09-17:
+ *
+ *   · a STANDARD coin accepts all eight of @41/@162… and refuses all eight of @483/@516…
+ *     — NotAuthorized, thrown at fee_recipient.rs:35
+ *   · a MAYHEM coin does the exact opposite — refuses the standard eight at
+ *     fee_recipient.rs:19 and accepts the "reserved" eight
+ *
+ * Two checks, two pools, and which one applies is `is_mayhem_mode` on the coin's own
+ * bonding curve. The sets are therefore returned SEPARATELY and never concatenated: a
+ * caller has to say which coin it is buying, because there is no recipient that works for
+ * both and no way to pick one without knowing.
  */
 export function decodeGlobalFeeRecipients(data) {
   const buf = toBytes(data, "global account");
@@ -1092,14 +1123,74 @@ export function decodeGlobalFeeRecipients(data) {
     throw new PumpfunVenueError("account_missing",
       `the global account is ${buf.length} bytes; the fee-recipient sets end at 997`);
   const at = (off) => base58Encode(buf.subarray(off, off + 32));
-  const feeRecipients = [at(41), at(483)];
-  for (let i = 0; i < 7; i++) feeRecipients.push(at(162 + i * 32), at(516 + i * 32));
+  const standardFeeRecipients = [at(41)];
+  const mayhemFeeRecipients = [at(483)];
+  for (let i = 0; i < 7; i++) {
+    standardFeeRecipients.push(at(162 + i * 32));
+    mayhemFeeRecipients.push(at(516 + i * 32));
+  }
   const buybackFeeRecipients = [];
   for (let i = 0; i < 8; i++) buybackFeeRecipients.push(at(741 + i * 32));
   return Object.freeze({
-    feeRecipients: Object.freeze(feeRecipients),
+    standardFeeRecipients: Object.freeze(standardFeeRecipients),
+    mayhemFeeRecipients: Object.freeze(mayhemFeeRecipients),
+    /* THE UNION, kept for one purpose only: saying "that is a real recipient, but not
+       this coin's". It is never a set to choose from — see feeRecipientsForCurve. */
+    feeRecipients: Object.freeze([...standardFeeRecipients, ...mayhemFeeRecipients]),
     buybackFeeRecipients: Object.freeze(buybackFeeRecipients),
   });
+}
+
+/**
+ * THE MEASUREMENT THAT SPLIT THE SETS, kept because the next reader will otherwise
+ * reasonably assume "reserved_" means "spare" and merge them back.
+ *
+ * Every row below was produced by simulating the SAME buy against a live mainnet curve
+ * with only the fee recipient varied, on 2026-09-17. `pool` is which of the two sets the
+ * coin accepted; `refusedTheOtherAt` is the source line the program threw from when given
+ * the other set, and the fact that it is a DIFFERENT line in each direction is the whole
+ * point: these are two separate authorisation checks, not one check with a longer list.
+ */
+export const PUMPFUN_FEE_RECIPIENT_POOLS = Object.freeze({
+  cluster: "mainnet-beta",
+  measuredAt: "2026-09-17",
+  method: "simulateTransaction, sigVerify false, one buy per recipient, only account[6] varied",
+  samples: Object.freeze([
+    Object.freeze({ mint: "Fp1N98D4s2iQkFe9ehGB8VQBGgc6XRJd4sJ8byURpump", mayhemByte: 1,
+      pool: "mayhem", accepted: 8, refusedTheOtherAt: "fee_recipient.rs:19" }),
+    Object.freeze({ mint: "9yQ66Vtebd32uo3TvcpxjKLUqxkPn4agGppfVuCYpump", mayhemByte: 1,
+      pool: "mayhem", accepted: 8, refusedTheOtherAt: "fee_recipient.rs:19" }),
+    Object.freeze({ mint: "D42KmA7X7uQcjgfQRcBrkCckQkB7QMqYb4dj5RkGpump", mayhemByte: 1,
+      pool: "mayhem", accepted: null, refusedTheOtherAt: null,
+      note: "not simulated — a landed buy_v2 on this mint used GesfTA3X…, a mayhem recipient" }),
+    Object.freeze({ mint: "9AyUZ8ZNHE61S6gx4gDbUd9BoYaNhKVnWF7KLnFfpump", mayhemByte: 0,
+      pool: "standard", accepted: 8, refusedTheOtherAt: "fee_recipient.rs:35" }),
+    Object.freeze({ mint: "BmdZERoJ517sqaKxqrJrbZH2pxnHVHP8DM2P7rys3aHU", mayhemByte: 0,
+      pool: "standard", accepted: 8, refusedTheOtherAt: "fee_recipient.rs:35" }),
+    Object.freeze({ mint: "3fu17Lr4EKezMVkFvkmdmMx57eSaNtUH6kGJkXpSedL7", mayhemByte: 0,
+      pool: "standard", accepted: null, refusedTheOtherAt: null, note: "accepted the standard set" }),
+    Object.freeze({ mint: "DJn7fnnK6BtDjpRLEUByXG21jxhAzX6YBLTaoXDXpump", mayhemByte: 0,
+      pool: "standard", accepted: null, refusedTheOtherAt: null,
+      note: "accepted the standard set against all eight buyback recipients" }),
+  ]),
+  /* `is_mayhem_mode` predicted the pool on 7 of 7, across BOTH curve lengths seen in the
+     wild (125 and 151 bytes), which is what makes it the selector rather than a
+     correlation someone noticed once. */
+  predictorHitRate: "7/7",
+});
+
+/**
+ * The fee recipients THIS COIN will accept — the only set a caller may choose from.
+ *
+ * A curve too short to carry `is_mayhem_mode` is standard, which is what every curve was
+ * before the flag existed.
+ */
+export function feeRecipientsForCurve(curve, sets) {
+  if (!sets || !Array.isArray(sets.standardFeeRecipients) || !Array.isArray(sets.mayhemFeeRecipients))
+    throw new PumpfunVenueError("account_missing",
+      "the Global fee-recipient sets are required, and as two sets: a mayhem coin and a standard " +
+      "coin share no authorised recipient, so a single merged list cannot answer this");
+  return curve?.isMayhemMode === true ? sets.mayhemFeeRecipients : sets.standardFeeRecipients;
 }
 
 /** The quote mint a curve trades in. Zero means SOL; anything else is the stored mint —
@@ -1131,15 +1222,28 @@ function v2Accounts({ side, mint, user, curve, curveReadSlot, buildingForSlot,
       `the curve was read at slot ${curveReadSlot} and this instruction is being built for ` +
       `${buildingForSlot}; re-read the curve rather than assume the creator held still`);
 
-  /* 2. BOTH FEE RECIPIENTS MUST BE MEMBERS. */
+  /* 2. BOTH FEE RECIPIENTS MUST BE MEMBERS — OF THIS COIN'S OWN POOL.
+     The check used to be against the union of both pools, which made it a tautology: the
+     caller picked from that list, so the list could never refuse the pick. It waved
+     through a standard recipient on a mayhem coin every time, and the program answered
+     with NotAuthorized after the transaction was built. The pool is narrowed by the
+     curve first, so the refusal happens here, in a message that names the reason. */
   const sets = globalFeeRecipients;
   if (!sets || !Array.isArray(sets.feeRecipients) || !Array.isArray(sets.buybackFeeRecipients))
     throw new PumpfunVenueError("account_missing",
       "globalFeeRecipients is required — fee_recipient and buyback_fee_recipient are a CHOICE " +
       "from the Global account's sets, not a derivation, and the program refuses a non-member");
-  if (!sets.feeRecipients.includes(need(feeRecipient, "feeRecipient")))
+  const pool = feeRecipientsForCurve(curve, sets);
+  if (!pool.includes(need(feeRecipient, "feeRecipient"))) {
+    const known = sets.feeRecipients.includes(feeRecipient);
     throw new PumpfunVenueError("fee_recipient_unauthorized",
-      `feeRecipient ${feeRecipient} is not one of the ${sets.feeRecipients.length} the Global account names`);
+      `feeRecipient ${feeRecipient} is not one of the ${pool.length} this ` +
+      `${curve.isMayhemMode ? "MAYHEM" : "standard"} coin accepts` +
+      (known
+        ? ` — it is a real recipient, but from the ${curve.isMayhemMode ? "standard" : "mayhem"} set, and the ` +
+          "program answers that with NotAuthorized (error 6000). The two sets share no member."
+        : ` — the Global account does not name it at all`));
+  }
   if (!sets.buybackFeeRecipients.includes(need(buybackFeeRecipient, "buybackFeeRecipient")))
     throw new PumpfunVenueError("fee_recipient_unauthorized",
       `buybackFeeRecipient ${buybackFeeRecipient} is not one of the ${sets.buybackFeeRecipients.length} ` +

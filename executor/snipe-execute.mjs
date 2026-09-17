@@ -60,7 +60,7 @@ import bs58 from "bs58";
 
 import { associatedTokenAddress, ATA_PROGRAM, WSOL } from "./jupiter.mjs";
 import { TOKEN_PROGRAM, TOKEN_2022_PROGRAM } from "./token2022.mjs";
-import { decodeGlobalFeeRecipients } from "./snipe-venue-pumpfun.mjs";
+import { decodeGlobalFeeRecipients, feeRecipientsForCurve } from "./snipe-venue-pumpfun.mjs";
 import { SNIPE_TX_ATTEMPT_PROTOCOL } from "./journal.mjs";
 
 export const SNIPE_EXECUTE_VERSION = "snipe-execute-v1";
@@ -297,6 +297,19 @@ export function createSnipeExecutor({
   };
 
   /**
+   * THE FEE RECIPIENT THIS COIN WILL ACCEPT, which is not the same question as "a fee
+   * recipient the Global account names".
+   *
+   * pump.fun keeps two disjoint pools and each coin belongs to exactly one, by the
+   * `is_mayhem_mode` byte on its own curve. This picked from a merged list and always
+   * landed on the standard set, so every mayhem launch was refused by the program with
+   * NotAuthorized — 0 signed, 0 sent, on roughly half of everything the feed produced
+   * (owner's log, 2026-09-17). Narrow first, then pick.
+   */
+  const pickFeeRecipient = (curve, sets) =>
+    pickRecipient(feeRecipientsForCurve(curve, sets), "fee recipient");
+
+  /**
    * The buy instruction, from the lane's own two-endpoint read: the Global account's fee
    * recipient sets, the mint's token program, and the wallet's ATA. Pure and synchronous;
    * the lane calls it before the entry contract so gate 20 can decode these exact bytes.
@@ -311,7 +324,7 @@ export function createSnipeExecutor({
     if (baseTokenProgram !== TOKEN_PROGRAM && baseTokenProgram !== TOKEN_2022_PROGRAM)
       throw new SnipeExecuteError("prepare_failed", `the mint is owned by ${baseTokenProgram}, not a token program`);
     const sets = decodeGlobalFeeRecipients(bytesOf(global.data));
-    const feeRecipient = pickRecipient(sets.feeRecipients, "fee recipient");
+    const feeRecipient = pickFeeRecipient(curve, sets);
     const buybackFeeRecipient = pickRecipient(sets.buybackFeeRecipients, "buyback fee recipient");
     const associatedBaseUser = associatedTokenAddress(wallet, mint, baseTokenProgram);
     const amountRaw = toBig(baseOutRaw, "baseOutRaw");
@@ -347,7 +360,10 @@ export function createSnipeExecutor({
       mint, user: wallet, curve,
       curveReadSlot: Number.isFinite(Number(curveReadSlot)) ? Number(curveReadSlot) : slot,
       buildingForSlot: Number.isFinite(Number(curveReadSlot)) ? Number(curveReadSlot) : slot,
-      feeRecipient: pickRecipient(sets.feeRecipients, "fee recipient"),
+      /* THE EXIT NEEDS THIS AS MUCH AS THE ENTRY. A mayhem coin bought with the right
+         recipient and sold with the wrong one is a position that cannot be closed — the
+         worst outcome this lane has, and strictly worse than never buying it. */
+      feeRecipient: pickFeeRecipient(curve, sets),
       buybackFeeRecipient: pickRecipient(sets.buybackFeeRecipients, "buyback fee recipient"),
       baseTokenProgram, quoteTokenProgram: TOKEN_PROGRAM,
       associatedBaseUser, associatedBaseUserOwner: wallet, globalFeeRecipients: sets,
