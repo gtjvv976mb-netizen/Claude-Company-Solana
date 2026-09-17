@@ -159,7 +159,17 @@ export const SNIPE_DEFAULTS = Object.freeze({
    *
    * WHAT THIS IS NOT: a claim to have found the optimum. It is 58 trades from one bot
    * over one day — enough to say "18 for 18 is not noise", not enough to tune a constant
-   * to the minute. The dials exist so the next 58 can move it. */
+   * to the minute. The dials exist so the next 58 can move it.
+   *
+   * THE FIRST SIX TRADES UNDER IT, read back the same way later the same day (304 of 304
+   * signatures, nothing sampled): the 600s+ bucket is EMPTY. Nothing reaches the clock
+   * any more, which is this rule doing its job. Nothing else moved — 17% win before, 17%
+   * after, one in six — and the average loser went from -21.5% to -16.7%, which is this
+   * rule cutting losers sooner on a sample of five. Loss per trade more than halved, but
+   * the clip also went 0.35 -> 0.1 SOL, so that is arithmetic and not edge. All four
+   * post-change losers sat in the 120-300s band at -19%: cut earlier, still picked
+   * wrong. Entry selection is where 48 losers in 58 came from, and nothing here touches
+   * it. */
   stallMs: 90_000,
   stallAtX: 1.0,
   /* Observations used to confirm an irreversible arm. Three is the smallest window in

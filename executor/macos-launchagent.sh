@@ -40,7 +40,9 @@ Commands:
 
 Options:
   --executor-dir DIR   Directory containing poller.mjs and launchd-runner.mjs.
-  --env-file FILE      Existing owner-only .cc-executor.env (default: executor dir).
+  --env-file FILE      Existing owner-only .cc-executor.env. Default: found in the
+                       install directory (~/claudeco-executor) even when this script
+                       is run from a release under it.
   --max-sol SOL        arm-caps: maximum SOL per trade (up to 0.4).
   --daily-sol-cap SOL  arm-caps: rolling 24-hour deployment cap (up to 1000 — removed in effect; the wallet binds).
   --daily-loss-cap SOL arm-caps: rolling realized-loss entry brake (up to 0.4).
@@ -111,9 +113,55 @@ if [ "$COMMAND" = "install" ] || [ "$COMMAND" = "load" ] || [ "$COMMAND" = "arm-
   if [ ! -d "$EXECUTOR_DIR" ]; then fail "executor directory does not exist"; fi
   EXECUTOR_DIR="$(cd "$EXECUTOR_DIR" && pwd -P)"
 
-  if [ -z "$ENV_FILE" ]; then ENV_FILE="$EXECUTOR_DIR/.cc-executor.env"; fi
+  # THE ENVIRONMENT FILE DOES NOT LIVE BESIDE THIS SCRIPT, and defaulting as if it
+  # did cost the owner four rounds on 2026-09-17. An install puts the owner's
+  # .cc-executor.env in $HOME/claudeco-executor and the CODE in a release beneath
+  # it, reached through the `current` symlink — so the documented command,
+  #     bash ~/claudeco-executor/current/macos-launchagent.sh install
+  # resolves SCRIPT_DIR to ~/claudeco-executor/releases/<x> (cd + pwd -P follows the
+  # link), and the default env path was a file that has never existed there. The
+  # refusal named no path, so it read as "your environment is broken" rather than
+  # "I looked in the wrong place". `buys` already knew better — it has fallen back
+  # to $HOME/claudeco-executor since it shipped — and that inconsistency IS the bug.
+  #
+  # So: look where an install actually puts it. The candidates are few, ordered and
+  # written out rather than globbed, and every one must resolve UNDER $HOME — which
+  # is what stops an odd checkout from walking up into /Users and reading a file
+  # belonging to somebody else. Nothing here relaxes a check: whatever is found is
+  # still handed to `validate`, which refuses any env file that is not mode 0600 and
+  # owned by this user. --env-file always wins and is never searched for.
+  if [ -z "$ENV_FILE" ]; then
+    # $HOME resolved the same way the candidates are, so a symlinked home directory
+    # cannot make every search path look like it is outside itself.
+    HOME_REAL="$(cd "$USER_HOME" 2>/dev/null && pwd -P || printf '%s' "$USER_HOME")"
+    ENV_TRIED=""
+    # 1 is exactly today's default and is NOT confined to $HOME: an install that
+    # already keeps its environment beside the code, anywhere on the disk, keeps
+    # working unchanged. 2-4 are new places to look, so they are the ones confined.
+    ENV_CANDIDATES=(
+      "$EXECUTOR_DIR/.cc-executor.env|any"                 # a flat install, and every case that already worked
+      "$EXECUTOR_DIR/../.cc-executor.env|home"             # current -> a directory one level down
+      "$EXECUTOR_DIR/../../.cc-executor.env|home"          # releases/<x> and versioned-releases/<commit>
+      "$USER_HOME/claudeco-executor/.cc-executor.env|home" # the documented install dir, wherever the code sits
+    )
+    for entry in "${ENV_CANDIDATES[@]}"; do
+      candidate="${entry%|*}"; confine="${entry##*|}"
+      candidate_dir="$(cd "$(dirname "$candidate")" 2>/dev/null && pwd -P || true)"
+      [ -n "$candidate_dir" ] || continue
+      if [ "$confine" = "home" ]; then
+        case "$candidate_dir/" in "$HOME_REAL"/*) ;; *) continue;; esac
+      fi
+      resolved="$candidate_dir/$(basename "$candidate")"
+      case "$ENV_TRIED" in *"[$resolved]"*) continue;; esac
+      ENV_TRIED="$ENV_TRIED [$resolved]"
+      if [ -f "$resolved" ] && [ ! -L "$resolved" ]; then ENV_FILE="$resolved"; break; fi
+    done
+    if [ -z "$ENV_FILE" ]; then
+      fail "no .cc-executor.env found. Looked in:$ENV_TRIED. Pass --env-file FILE if yours is elsewhere."
+    fi
+  fi
   if [ ! -e "$ENV_FILE" ] || [ -L "$ENV_FILE" ] || [ ! -f "$ENV_FILE" ]; then
-    fail "environment file must be an existing regular non-symlink file"
+    fail "environment file must be an existing regular non-symlink file: $ENV_FILE"
   fi
   ENV_PARENT="$(cd "$(dirname "$ENV_FILE")" && pwd -P)"
   ENV_FILE="$ENV_PARENT/$(basename "$ENV_FILE")"

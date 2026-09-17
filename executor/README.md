@@ -203,6 +203,36 @@ bash executor/macos-launchagent.sh install --executor-dir "$PWD/executor"
 bash executor/macos-launchagent.sh load --executor-dir "$PWD/executor"
 ```
 
+### Where it looks for `.cc-executor.env`
+
+`--env-file` is always obeyed exactly as given. Without it, the script looks for the
+owner's `.cc-executor.env` in four places, in order, and takes the first regular
+non-symlink file it finds:
+
+1. beside the executor (`--executor-dir`, or the directory this script sits in)
+2. one directory above it
+3. two directories above it
+4. `~/claudeco-executor/`
+
+Places 2–4 must resolve **inside `$HOME`** — the script will not walk up out of your
+home directory to find someone else's file. Place 1 is not confined, so an install that
+keeps its environment beside its code anywhere on the disk keeps working. Whatever is
+found is still handed to `validate`, which refuses any environment file that is not
+mode 0600 and owned by you.
+
+This exists because of the layout `install.sh` actually creates. Your environment goes
+in `~/claudeco-executor/` and the code goes in a release **beneath** it, reached through
+the `current` symlink — so
+
+```bash
+bash ~/claudeco-executor/current/macos-launchagent.sh load
+```
+
+runs a script whose own directory is `~/claudeco-executor/releases/<release>`, where an
+environment file has never existed. Before this it defaulted there, refused, and said
+your environment file was missing rather than that it had looked in the wrong place. If
+none of the four has it, the refusal now prints every path it tried.
+
 `install` only writes the plist. The separate `load` command validates the runtime,
 requires the installed plist to match it byte-for-byte, and refuses to start while a
 manually launched poller still owns the executor lock. It does not terminate that
@@ -513,6 +543,44 @@ Solana explorer you trust.
 The legacy `executor.mjs` webhook adapter verifies signed event envelopes for dry-run
 testing only. It cannot sign or broadcast trades. The browser transaction relay is
 also disabled.
+
+## Reclaiming rent from empty token accounts
+
+Every SPL token this wallet has ever held opened a token account, and each one locked
+about **0.002 SOL** of rent to exist. Some venues close that account as part of the sell;
+plenty do not. What they leave behind is money in your wallet that your wallet cannot
+spend, and the pile grows one account at a time.
+
+How much there is depends entirely on what you have traded, so **look before you assume
+it is worth doing**. Two readings of the same reference burner on 2026-09-17, hours
+apart: 82 empty accounts holding ~0.13 SOL in the morning, and 6 holding 0.0091 SOL after
+a run whose venue closed its own accounts on the way out. Both are real; only the first
+was worth a transaction.
+
+```bash
+cd ~/claudeco-executor/current
+node reclaim-rent.mjs                 # look: how many, how much. Sends nothing.
+node reclaim-rent.mjs --send          # close them and take the rent back
+```
+
+Options: `--keypair FILE`, `--rpc URL`, `--state-db FILE`, `--batch N` (default 12),
+`--max N`, `--json`.
+
+**What makes this safe is not the tool.** The SPL Token program refuses to close an
+account that still holds a balance, on chain, whatever this process believed when it
+built the instruction. The worst case of racing a live bot is a **rejected transaction**,
+never a burned token. On top of that the tool skips:
+
+- any account with a non-zero balance — one raw unit counts as held, there is no dust
+  threshold;
+- any mint with an intent in flight in the journal (`signed`, `submitted`, `confirmed`
+  or `ambiguous`), so it cannot close an account out from under a buy mid-signature;
+- wrapped SOL, which the swap path opens and closes inside a trade of its own.
+
+It signs `CloseAccount` and nothing else, and the rent can only go back to the wallet
+that owns the accounts. Safe to run while the bot is running: batches are small, and a
+batch that loses a race is retried rather than the whole run. If the journal is not
+readable it says so rather than quietly proceeding as though nothing were in flight.
 
 ## Transaction safety and recovery
 
@@ -1052,6 +1120,40 @@ money decision, and not one this repository makes for you.
 **None of this claims to have found the optimum.** It is 58 trades from one bot over one
 day: enough to say "18 for 18 is not noise", not enough to tune a constant to the minute.
 The dials exist so the next 58 can move them.
+
+### The first six trades after those changes
+
+Read back the same way later the same day — the whole record again, 304 of 304
+signatures, nothing sampled. Six round trips closed under the socials filter, the stall
+exit and a 0.1 SOL clip:
+
+| | before | after |
+|---|---|---|
+| closed | 58 | 6 |
+| record | 10 up / 48 down | 1 up / 5 down |
+| **win rate** | **17%** | **17%** |
+| net | −1.5793 SOL | −0.0693 SOL |
+| per trade | −0.0272 SOL | −0.0116 SOL |
+| average loser | −21.5% | −16.7% |
+| reached the 600s bucket | **18** | **0** |
+
+**The stall exit does what it was built to do.** The bucket that was 18 trades and zero
+wins is empty; nothing now holds past the 120–300s band. That is the one claim this
+sample supports.
+
+**The socials filter has not moved the win rate.** 17% before, 17% after, one win in six.
+
+**The loss per trade more than halved, and that is arithmetic rather than edge.** The
+clip went from 0.35+ to 0.1; a smaller bet loses less. The average loser improving from
+−21.5% to −16.7% is the stall exit cutting losers sooner, but on five losers that is
+noise, not a finding.
+
+**Six trades says nothing about entries, which is where the problem is.** All four
+post-change losers sat in the 120–300s band at −19%: cut earlier, still picked wrong.
+Neither of these changes touches entry selection, and 48 losers in 58 was an entry
+result. And note the size table above ages badly — the 0.05–0.15 SOL bucket was one
+trade at +0.2188 and is now seven at +0.1495. Still positive, but it was never evidence
+that small size wins.
 
 ### What has and has not been proved
 

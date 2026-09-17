@@ -13,9 +13,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-17 16:12 UTC">
-<meta name="cc-commit" content="356e1ad9d8b0334cbbf49d22025f0f047bdf1453">
-<script>console.log("Claude Company build 2026-09-17 16:12 UTC")</script>
+<meta name="cc-build" content="2026-09-17 17:04 UTC">
+<meta name="cc-commit" content="ffd53b6654332e55c85f87e728a99aa3255fc5ff">
+<script>console.log("Claude Company build 2026-09-17 17:04 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
 <style>
@@ -84075,18 +84075,51 @@ window.__hawkBoardUpdate = () => {
   const W = 1024, H = 597;
   const INK = "#eef2f4", DIM = "#8d99a2", GOOD = "#4ec9a5", BAD = "#e0685c";
   const F = (w, px) => `${w} ${px}px "JetBrains Mono", ui-monospace, monospace`;
-  const snipe = window.__botHeartbeat?.snipe ?? window.__houseBot?.snipe ?? null;
+  /* The ROOT that carried the book, not just the book \u2014 because the age of these
+     numbers is a fact about the pulse, and it belongs on the board beside them. */
+  const root = window.__botHeartbeat?.snipe ? window.__botHeartbeat
+    : window.__houseBot?.snipe ? window.__houseBot : null;
+  const snipe = root?.snipe ?? null;
   const bk = snipe?.book ?? null;
+  /* HOW OLD IS THIS. A board with no clock on it is the failure this file's own
+     comment warns about \u2014 "a board that lies to whoever walks past it" \u2014 and it is
+     not hypothetical: the owner read this wall on 2026-09-17 while his bot had been
+     trading for eight hours without reaching the desk, and the board showed the
+     morning's numbers with nothing to say they were the morning's. Three minutes is
+     the same staleness rule __hawkStatus uses for his lamp. */
+  const seenAt = Number(root?.seenAt) > 0 ? Number(root.seenAt) : null;
+  const ageMs = seenAt ? Math.max(0, Date.now() - seenAt) : null;
+  const STALE_MS = 3 * 60e3;
+  const stale = ageMs !== null && ageMs > STALE_MS;
+  const ago = (ms) => ms < 60e3 ? `${Math.round(ms / 1000)}s`
+    : ms < 3600e3 ? `${Math.round(ms / 60e3)}m`
+    : ms < 86400e3 ? `${(ms / 3600e3).toFixed(1)}h` : `${Math.round(ms / 86400e3)}d`;
 
   x.fillStyle = "#0c1115"; x.fillRect(0, 0, W, H);
-  x.fillStyle = "#151f26"; x.fillRect(0, 0, W, 96);
-  x.strokeStyle = "#2a343b"; x.lineWidth = 3;
+  x.fillStyle = stale ? "#2a1a1c" : "#151f26"; x.fillRect(0, 0, W, 96);
+  x.strokeStyle = stale ? "#5a2f31" : "#2a343b"; x.lineWidth = 3;
   x.beginPath(); x.moveTo(0, 96); x.lineTo(W, 96); x.stroke();
   x.fillStyle = INK; x.font = F(700, 44);
   x.textBaseline = "middle"; x.textAlign = "left";
   x.fillText("HAWK-AI", 34, 49);
   x.fillStyle = "#5f7d96"; x.font = F(500, 24);
   x.fillText("LAUNCH LANE \u00b7 THE BOOK", 286, 52);
+  /* The clock, top right. STALE is said in words and in red, because a number nobody
+     can date is worse than no number \u2014 the reader assumes it is now. */
+  x.textAlign = "right";
+  if (ageMs === null) {
+    x.fillStyle = DIM; x.font = F(500, 22);
+    x.fillText("PULSE UNDATED", W - 34, 52);
+  } else if (stale) {
+    x.fillStyle = BAD; x.font = F(700, 26);
+    x.fillText(`STALE \u00b7 ${ago(ageMs)} OLD`, W - 34, 44);
+    x.fillStyle = "#b0787a"; x.font = F(400, 18);
+    x.fillText("no fresh pulse has reached the desk", W - 34, 70);
+  } else {
+    x.fillStyle = DIM; x.font = F(500, 22);
+    x.fillText(`as of ${ago(ageMs)} ago`, W - 34, 52);
+  }
+  x.textAlign = "left";
 
   if (!bk || (!bk.trades && !(bk.closed || []).length)) {
     x.fillStyle = DIM; x.font = F(500, 30); x.textAlign = "center";
@@ -87904,7 +87937,7 @@ async function withdrawHqInterest() {
 function openWallsteWalkthrough() {
   return window.CCModals.openInstallWalkthrough({
     floorNo: FLOOR_N,
-    installerSha256: "50b366e616369d177022be028ae43739505c415382d5b573e97c10ee910d2192",
+    installerSha256: "75346a02db96e14d147dc1d528c99552a675ba50b970765e1d02fde1301068ca",
   });
 }
 function openHqConditions({ alreadyRequested = false, onRecorded = null } = {}) {
@@ -88146,9 +88179,9 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · arms on install"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "356e1ad9d8b0334cbbf49d22025f0f047bdf1453";
+    const releaseCommit = "ffd53b6654332e55c85f87e728a99aa3255fc5ff";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
-    const installerDigest = "50b366e616369d177022be028ae43739505c415382d5b573e97c10ee910d2192";
+    const installerDigest = "75346a02db96e14d147dc1d528c99552a675ba50b970765e1d02fde1301068ca";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
     /* ONE line, one paste — and now genuinely one line. install.sh has bootstrapped
        itself from $STATIC and read every prompt from /dev/tty for weeks, so piping it
@@ -91081,7 +91114,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "356e1ad9d8b0334cbbf49d22025f0f047bdf1453";
+    const executorReleaseCommit = "ffd53b6654332e55c85f87e728a99aa3255fc5ff";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
@@ -91099,7 +91132,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
      * click to INSTALL must never become one click to trade real money — so the
      * short path buys convenience only in step 2, and steps 4 and 5 stay exactly
      * as deliberate as they were. */
-    const installerSha256 = "50b366e616369d177022be028ae43739505c415382d5b573e97c10ee910d2192";
+    const installerSha256 = "75346a02db96e14d147dc1d528c99552a675ba50b970765e1d02fde1301068ca";
     /* The build substitutes the digest of the very install.sh it published. Unsubstituted
        means a local preview, and a digest a reader cannot rely on is worse than none. */
     const installerShaKnown = /^[0-9a-f]{64}$/i.test(installerSha256);
