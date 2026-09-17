@@ -236,6 +236,7 @@ export const BONDING_CURVE_LAYOUT = Object.freeze({
   creator: 49,
   isMayhemMode: 81,
   isCashbackCoin: 82,
+  quoteMint: 83,
 });
 
 /** 8 + five u64 + the `complete` byte. The 49-byte graduated account (§3) is exactly
@@ -246,6 +247,9 @@ export const BONDING_CURVE_WITH_CREATOR_BYTES = 81;
 /** …and this is the length at which `is_mayhem_mode` is, which decides WHICH SET OF FEE
  *  RECIPIENTS the coin will accept. See PUMPFUN_FEE_RECIPIENT_POOLS. */
 export const BONDING_CURVE_WITH_MAYHEM_BYTES = 82;
+/** …and this is the length at which `quote_mint` is present: 83 + 32. Below it the curve
+ *  predates the field and trades in SOL. */
+export const BONDING_CURVE_WITH_QUOTE_MINT_BYTES = 115;
 
 /** Global is only decoded as far as its fee field. See §7 for why nothing past here is
  *  read: the static field at 154 is contradicted by the tape, so the rest of this
@@ -599,6 +603,11 @@ export function decodeBondingCurve(account, { feeBps = null, mint = null, requir
   const hasCreator = data.length >= BONDING_CURVE_WITH_CREATOR_BYTES;
   const hasMayhem = data.length >= BONDING_CURVE_WITH_MAYHEM_BYTES;
   const mayhemByte = hasMayhem ? data[L.isMayhemMode] : null;
+  const hasQuoteMint = data.length >= BONDING_CURVE_WITH_QUOTE_MINT_BYTES;
+  const rawQuoteMint = hasQuoteMint ? readKey(data, L.quoteMint) : null;
+  /* The zero pubkey in this field means SOL. It base58-encodes identically to the system
+     program id, which is a real collision and not a mistake — see ZERO_PUBKEY. */
+  const storedQuoteMint = rawQuoteMint === null || rawQuoteMint === ZERO_PUBKEY ? WSOL : rawQuoteMint;
   const fee = feeBpsOrNull(feeBps, "feeBps");
   return Object.freeze({
     kind: "bonding-curve",
@@ -629,8 +638,25 @@ export function decodeBondingCurve(account, { feeBps = null, mint = null, requir
     feeBps: fee,
     feeBpsKnown: fee !== null,
     baseDecimals: PUMPFUN_BASE_DECIMALS,
-    quoteMint: WSOL,
-    quoteDecimals: 9,
+    /* THE MINT THIS CURVE ACTUALLY TRADES IN, read rather than assumed.
+       This said `WSOL` unconditionally, and the layout evidence right above it had already
+       recorded quote_mint@83 and that the answer to "may a V2 curve be quoted in something
+       other than SOL" is YES. decodeTradeEvent learned that; this did not — so
+       curveQuoteMint() below, which exists precisely to handle a non-SOL quote, could never
+       see one: it was handed WSOL every time. The instruction then named WSOL as
+       `quote_mint` and derived every quote ATA from it, and the program answered
+       MintDoesNotMatchBondingCurve (6004).
+       Measured on mainnet 2026-09-17: live curves quoted in USDC (EPjFWdd5…) and in ORE
+       (oreoU2P8…) were both in the launch feed within minutes of each other.
+       A ZEROED FIELD MEANS SOL — the same convention curveQuoteMint() already encoded, and
+       confirmed on a SOL-quoted curve read in the same sweep. A curve too short to carry
+       the field predates it and is SOL. */
+    quoteMint: hasQuoteMint ? storedQuoteMint : WSOL,
+    quoteMintStored: hasQuoteMint ? storedQuoteMint : null,
+    quoteIsSol: !hasQuoteMint || storedQuoteMint === WSOL,
+    /* Only meaningful for a SOL quote. Left null rather than 9 on anything else, because a
+       wrong decimal count is a silently wrong number, and USDC is six. */
+    quoteDecimals: !hasQuoteMint || storedQuoteMint === WSOL ? 9 : null,
     bytes: data.length,
     discriminator: disc,
     layoutVariant: hasCreator ? "with-creator" : "no-creator",

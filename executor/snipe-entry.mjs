@@ -122,6 +122,9 @@ export const SNIPE_ENTRY_VERSION = "snipe-entry-v1";
  *  :334-341) — and collapsing them would report the wrong one. So this list is 22 entries
  *  against the spec's 21 numbered lines; nothing else about the order moves.
  */
+/** Wrapped SOL. The only quote mint this lane can pay in — see the `quote_not_sol` gate. */
+export const SOL_QUOTE_MINT = "So11111111111111111111111111111111111111112";
+
 export const SNIPE_GATES = Object.freeze([
   // ── COST 0: in-process, no I/O ───────────────────────────────────────────────────
   "lane_off",
@@ -135,6 +138,7 @@ export const SNIPE_GATES = Object.freeze([
   // ── COST 1: the one getMultipleAccounts the lane makes anyway ────────────────────
   "curve_unreadable",
   "curve_type_unsupported",
+  "quote_not_sol",
   "curve_already_complete",
   "exit_route_unimplemented",
   "mint_refused",
@@ -158,7 +162,7 @@ export const SNIPE_GATES = Object.freeze([
 export const SNIPE_GATE_COST = Object.freeze({
   lane_off: 0, venue_not_enabled: 0, hard_stop: 0, pause_entries: 0,
   daily_capacity: 0, notice_stale: 0, already_holding: 0, already_attempted: 0,
-  curve_unreadable: 1, curve_type_unsupported: 1, curve_already_complete: 1,
+  curve_unreadable: 1, curve_type_unsupported: 1, quote_not_sol: 1, curve_already_complete: 1,
   exit_route_unimplemented: 1, mint_refused: 1,
   impact_over_cap: 2, round_trip_over_cap: 2, stop_floor: 2, size_under_minimum: 2,
   creator_profile: 3, launch_share: 3,
@@ -616,6 +620,36 @@ const GATE_IMPLS = Object.freeze({
     return null;
   },
 
+  /**
+   * A COIN THIS LANE CANNOT PAY FOR.
+   *
+   * pump.fun curves may be quoted in a mint other than SOL — measured on mainnet
+   * 2026-09-17, with live launches quoted in USDC and in ORE arriving in the feed minutes
+   * apart. This lane is denominated in SOL from end to end: the ticket is
+   * `maxSolPerTrade`, the brake is `dailySolCap`, the balance gate reads lamports, and the
+   * journal books the result in lamports. It has no path that spends USDC and the burner
+   * holds none.
+   *
+   * Before this gate the refusal happened on chain instead, and badly: the decoder
+   * reported every curve as SOL-quoted, so the buy named WSOL as `quote_mint`, derived
+   * every quote account from WSOL, and the program answered MintDoesNotMatchBondingCurve
+   * (6004) — an opaque failure on a coin that was never buyable. Refused here, by name,
+   * before an instruction exists.
+   *
+   * This is a REFUSAL and not a TODO. Supporting a non-SOL quote is not a matter of
+   * passing a different mint: it needs the quote token's own program, its decimals, a
+   * balance of it in the wallet, and a sizing and risk vocabulary that is not lamports.
+   */
+  quote_not_sol: (c) => {
+    const quote = c.curveRaw?.quoteMint ?? null;
+    if (quote === null || quote === undefined) return null;      // pre-quote_mint curve: SOL
+    if (c.curveRaw?.quoteIsSol === true) return null;
+    if (quote === SOL_QUOTE_MINT) return null;
+    return { message: `the curve is quoted in ${quote}, not SOL — this lane sizes, caps and books ` +
+      "in lamports and the wallet holds no such token, so there is nothing here it could spend",
+      quoteMint: quote };
+  },
+
   curve_already_complete: (c) => {
     const complete = typeof c.adapter?.isComplete === "function"
       ? c.adapter.isComplete(c.state) === true : c.state.complete === true;
@@ -860,6 +894,10 @@ export function snipeContract({
     ticketSol, ticketLamports, ticketError,
     dailySolCap: Number(cfg.dailySolCap),
     state, curveError, plan, planError,
+    /* The DECODED curve as handed in, beside the arithmetic state derived from it.
+       `snipeCurveState` keeps the numbers; the quote mint is a fact about the coin, not a
+       number, and `quote_not_sol` needs it. */
+    curveRaw: isPlainObject(curve) ? curve : null,
     creator: isPlainObject(creator) ? creator : {},
     launchSharePct: state && state.vQuote0Raw !== null && state.realQuoteRaw !== null
       ? pctOf(state.realQuoteRaw, state.vQuote0Raw) : null,

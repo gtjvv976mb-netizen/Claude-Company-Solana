@@ -950,6 +950,29 @@ against live curves, plus the 30 landed mainnet transactions in the encode fixtu
 22 paid a standard recipient, 8 paid a mayhem one, and none of the 17 mints ever paid into
 both.
 
+### Coins this lane cannot pay for
+
+pump.fun curves may be quoted in a mint other than SOL. Measured on mainnet 2026-09-17:
+live launches quoted in **USDC** and in **ORE** arrived in the feed minutes apart.
+
+WALL-ST-E's launch lane is denominated in SOL end to end — the ticket is
+`SNIPE_MAX_SOL_PER_TRADE`, the brake is `SNIPE_DAILY_SOL_CAP`, the balance gate reads
+lamports, and the journal books the result in lamports. There is no path that spends USDC,
+and the burner holds none.
+
+Those launches are now refused locally, by name, at the new **`quote_not_sol`** gate,
+before an instruction exists. Before it, the curve decoder reported every curve as
+SOL-quoted, so the buy named wrapped SOL as `quote_mint`, derived every quote account from
+it, and the chain answered:
+
+```
+{"InstructionError":[3,{"Custom":6004}]}
+AnchorError caused by account: bonding_curve. Error Code: MintDoesNotMatchBondingCurve.
+```
+
+An opaque on-chain failure, on a coin that was never buyable. The gate makes the reason
+readable and costs nothing.
+
 ### What has and has not been proved
 
 The instruction encoders are re-encoded byte for byte against 30 mainnet transactions on
