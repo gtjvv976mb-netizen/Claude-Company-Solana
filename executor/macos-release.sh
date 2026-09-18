@@ -104,7 +104,8 @@ RUNTIME_PATHS=(
   executor/snipe-execute.mjs executor/snipe-lane.mjs executor/snipe-venue-pumpfun.mjs
   executor/snipe-venue.mjs executor/snipe-curve.mjs executor/snipe-entry.mjs
   executor/snipe-feed.mjs executor/snipe-book.mjs executor/snipe-shadow.mjs
-  executor/snipe-policy.mjs executor/snipe-socials.mjs
+  executor/snipe-policy.mjs executor/snipe-socials.mjs executor/snipe-relay.mjs
+  executor/grpc-wire.mjs executor/snipe-grpc.mjs
   executor/monitor.mjs executor/launchd-runner.mjs executor/macos-launchagent.sh
   executor/macos-release.sh executor/package.json executor/package-lock.json
 )

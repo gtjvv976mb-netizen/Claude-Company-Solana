@@ -906,3 +906,64 @@ export function createSnipeShadow({ capacity = 5_000, sink = null, laneMode = "o
     },
   };
 }
+
+/**
+ * THE LATENCY BUDGET, over the rows this process has recorded.
+ *
+ * The owner, 2026-09-18: "we need faster buy time, the fastest in the market". The first
+ * move in a latency programme is not buying anything — it is being able to SEE the budget,
+ * and this lane has been timing its own six hops on every notice since it shipped and
+ * throwing the numbers away as far as an operator is concerned. You cannot win a race you
+ * cannot time.
+ *
+ * Reports, per hop, the median and p90 of `msFromPrev` — how long that leg took — plus the
+ * same for the notice-to-decision total. Percentiles rather than a mean, because a launch
+ * sniper is killed by its TAIL: one 1500ms metadata fetch in twenty is what puts the median
+ * entry five seconds behind, and a mean hides it behind nineteen fast ones.
+ *
+ * `n` is carried per hop rather than assumed equal: a row refused at gate 0 never reaches
+ * `prepare`, so a hop's sample is smaller than the row count and saying so is the
+ * difference between a measurement and an average of whatever happened to be there.
+ */
+export function latencyBudget(rows, { limit = 200 } = {}) {
+  const recent = (Array.isArray(rows) ? rows : []).slice(-Math.max(1, limit));
+  const byHop = new Map();
+  const totals = [];
+  let clockRegressions = 0;
+  for (const row of recent) {
+    const t = row?.timing;
+    if (!isPlainObject(t)) continue;
+    if (t.clockRegression === true) clockRegressions++;
+    if (finite(t.noticeToDecisionMs)) totals.push(Number(t.noticeToDecisionMs));
+    for (const leg of Array.isArray(t.hops) ? t.hops : []) {
+      if (!isPlainObject(leg) || !isStr(leg.hop) || !finite(leg.msFromPrev)) continue;
+      /* The first hop's msFromPrev is 0 by construction (it is the origin), so it would
+         drag every percentile toward zero if it were counted as a leg. */
+      if (leg.hop === SHADOW_HOPS[0]) continue;
+      if (!byHop.has(leg.hop)) byHop.set(leg.hop, []);
+      byHop.get(leg.hop).push(Number(leg.msFromPrev));
+    }
+  }
+  const pct = (list, p) => {
+    if (!list.length) return null;
+    const s = [...list].sort((a, b) => a - b);
+    return s[Math.min(s.length - 1, Math.floor(p * (s.length - 1)))];
+  };
+  const summary = (list) => Object.freeze({
+    n: list.length, p50: pct(list, 0.5), p90: pct(list, 0.9), max: list.length ? Math.max(...list) : null,
+  });
+  const hops = {};
+  for (const hop of SHADOW_HOPS.slice(1)) hops[hop] = summary(byHop.get(hop) ?? []);
+  /* The hop that costs the most at p90 — which is the one worth attacking, and not always
+     the one that costs the most at the median. */
+  let worst = null;
+  for (const [hop, s] of Object.entries(hops))
+    if (s.n > 0 && s.p90 !== null && (worst === null || s.p90 > hops[worst].p90)) worst = hop;
+  return Object.freeze({
+    rows: recent.length,
+    noticeToDecisionMs: summary(totals),
+    hops: Object.freeze(hops),
+    worstHopAtP90: worst,
+    clockRegressions,
+  });
+}

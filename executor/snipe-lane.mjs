@@ -85,7 +85,7 @@ import { createHash } from "node:crypto";
 import { snipeContract, planSnipeCeiling, SNIPE_GATES } from "./snipe-entry.mjs";
 import { curveExitMarkX, frictionXFor, snipeCurveState, snipeFloor } from "./snipe-curve.mjs";
 import { venueContract } from "./snipe-venue.mjs";
-import { createSnipeShadow, SHADOW_HOPS } from "./snipe-shadow.mjs";
+import { createSnipeShadow, latencyBudget, SHADOW_HOPS } from "./snipe-shadow.mjs";
 import { closeSnipe, ensureSnipeBook, openSnipe, snipeFor, snipeList, updateSnipe } from "./snipe-book.mjs";
 import * as snipePolicy from "./snipe-policy.mjs";
 import { readSocials, SOCIAL_DEFAULTS } from "./snipe-socials.mjs";
@@ -1588,6 +1588,10 @@ export function createSnipeLane({
     report(opts) { return recorder.report(opts); },
     render(opts) { return recorder.render(opts); },
     rows() { return recorder.rows(); },
+    /* THE LATENCY BUDGET this process is actually running at. Exposed on the lane rather
+       than left inside the recorder because the operator asking "why am I five seconds
+       late" cannot read a shadow row, and the answer is a per-hop percentile. */
+    latency(opts) { return latencyBudget(recorder.rows(), opts); },
     openPositions() { return snipeList(S); },
     positionFor(mint) { return snipeFor(S, mint); },
     stats() {

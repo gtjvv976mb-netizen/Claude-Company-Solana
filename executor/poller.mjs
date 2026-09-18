@@ -20,6 +20,11 @@ import {
   TOKEN_2022_PROGRAM, EXECUTION_READINESS_ROUTE, validateOrderEnvelope,
 } from "./jupiter.mjs";
 import { token2022Enabled } from "./token2022.mjs";
+/* Only so a gRPC signature reads as a signature. snipe-grpc.mjs hands back the raw 64
+   bytes and defaults to hex precisely so it can stay dependency-free; this file already
+   pulls bs58 in through jupiter.mjs, and a base58 signature is one you can paste into an
+   explorer when a launch needs explaining. */
+import bs58 from "bs58";
 import {
   RpcBalanceUnavailableError, verifyTrackedBalanceWithFailover,
 } from "./balance-verification.mjs";
@@ -2583,6 +2588,28 @@ function snipeHeartbeat() {
         entryFailures: Number(s.entryFailures) || 0, exitFailures: Number(s.exitFailures) || 0,
         readErrors: Number(s.readErrors) || 0, ticks: Number(s.ticks) || 0,
         signed: Number(s.signed) || 0, sent: Number(s.sent) || 0,
+        reconciled: Number(s.reconciled) || 0,
+      };
+    }
+  } catch {}
+  /* THE LATENCY BUDGET (owner, 2026-09-18: "the fastest in the market"). The lane has
+     timed its own six hops on every notice since it shipped and nothing ever carried the
+     numbers off the machine, so "why are we five seconds late" was a question only a log
+     could answer. Percentiles, not means: a sniper is killed by its tail, and one slow
+     metadata fetch in twenty is exactly what a mean hides. Defensive like every other
+     block here — a lane that throws costs the desk this field, never the pulse. */
+  try {
+    if (lane && typeof lane.latency === "function") {
+      const l = lane.latency({ limit: 200 }) || {};
+      const leg = (x) => (x && Number(x.n) > 0
+        ? { n: Number(x.n), p50: Number(x.p50), p90: Number(x.p90), max: Number(x.max) } : null);
+      out.latency = {
+        rows: Number(l.rows) || 0,
+        noticeToDecisionMs: leg(l.noticeToDecisionMs),
+        hops: Object.fromEntries(Object.entries(l.hops || {})
+          .map(([k, v]) => [String(k).slice(0, 16), leg(v)]).filter(([, v]) => v !== null)),
+        worstHopAtP90: l.worstHopAtP90 ? String(l.worstHopAtP90).slice(0, 16) : null,
+        clockRegressions: Number(l.clockRegressions) || 0,
       };
     }
   } catch {}
@@ -2591,6 +2618,30 @@ function snipeHeartbeat() {
     if (h) out.feed = { state: String(h.state || "").slice(0, 16), ok: h.ok === true,
       live: (h.live || []).slice(0, 8).map(String), dead: (h.dead || []).slice(0, 8).map(String),
       message: String(h.message || "").slice(0, 200) };
+  } catch {}
+  /* WHICH SOURCE ACTUALLY TELLS US FIRST — the measurement that decides whether a faster
+     feed is worth buying, and another one this process has always computed and never
+     shipped. The lane runs two sources: a websocket on the venue's own logs, and a 5s
+     poll of the pump.fun listing as corroboration. If the socket wins nearly every race,
+     the seconds are being lost somewhere else and a gRPC endpoint is the next move. If
+     the POLL is winning, the bot is finding launches by HTTP on a five-second timer and
+     no amount of gRPC fixes that until the socket is understood. `firstShare` is the
+     whole answer and it costs nothing to carry. */
+  try {
+    const l = snipeStatus.feed?.latency?.();
+    if (l && Array.isArray(l.sources)) out.sources = {
+      records: Number(l.records) || 0,
+      corroborated: Number(l.corroborated) || 0,
+      rows: l.sources.slice(0, 6).map((r) => ({
+        id: String(r.id || "").slice(0, 40),
+        kind: String(r.kind || "").slice(0, 16),
+        arrivals: Number(r.arrivals) || 0,
+        firsts: Number(r.firsts) || 0,
+        firstShare: Number.isFinite(Number(r.firstShare)) ? Number(r.firstShare) : null,
+        medianLagMs: Number.isFinite(Number(r.medianLagMs)) ? Math.round(Number(r.medianLagMs)) : null,
+        medianSlotsBehind: Number.isFinite(Number(r.medianSlotsBehind)) ? Number(r.medianSlotsBehind) : null,
+      })),
+    };
   } catch {}
   return out;
 }
@@ -3576,10 +3627,15 @@ setInterval(tick, POLL_MS);
 const SNIPE_LANE_MODE = String(process.env.SNIPE_LANE || "off").trim().toLowerCase();
 if (SNIPE_LANE_MODE !== "off") {
   try {
-    const [{ createSnipeLane, snipeLaneConfig }, { PUMPFUN_VENUE }, feedMod] = await Promise.all([
+    const [{ createSnipeLane, snipeLaneConfig },
+      { PUMPFUN_VENUE, PUMPFUN_PROGRAM_ID, noticesFromLogs }, feedMod,
+      { grpcFromEnv, laserstreamTransport }] = await Promise.all([
       import("./snipe-lane.mjs"),
       import("./snipe-venue-pumpfun.mjs"),
       import("./snipe-feed.mjs"),
+      /* The fast wire, dynamic like every other lane module: `off` has to cost literally
+         nothing, and test-snipe-wiring.mjs holds that line. */
+      import("./snipe-grpc.mjs"),
     ]);
     const laneCfg = snipeLaneConfig(process.env);
     /* THE SIGNING PORT, on a live install only. Everything it needs is the desk's: the
@@ -3591,6 +3647,24 @@ if (SNIPE_LANE_MODE !== "off") {
       if (!EXECUTE) throw new Error("SNIPE_LANE=execute needs a live install (EXECUTE=1); the sniper signs with the desk's wallet and gates");
       if (RPC === SECONDARY_RPC) throw new Error("SNIPE_LANE=execute needs SOLANA_RPC_SECONDARY distinct from SOLANA_RPC: both providers simulate and both send, and one node must not be the whole story");
       const { createSnipeExecutor } = await import("./snipe-execute.mjs");
+      /* THE RELAY FAN-OUT AND THE TIP (owner, 2026-09-18: the fastest in the market).
+         Both read from the environment and both are EMPTY by default, so an install that
+         asks for neither sends exactly as it did before: two RPCs, no tip. A malformed
+         relay list or a tip address that is not base58 throws HERE, at construction,
+         where it stops the lane from arming — rather than at the first launch, where it
+         would be a trade lost to a typo. */
+      const { createRelaySubmitter, relaysFromEnv, tipAccountsFromEnv } =
+        await import("./snipe-relay.mjs");
+      const snipeRelays = relaysFromEnv(process.env);
+      const snipeTipAccounts = tipAccountsFromEnv(process.env);
+      const snipeRelaySubmitter = snipeRelays.length
+        ? createRelaySubmitter({ relays: snipeRelays, log: (m) => log(`[snipe] ${m}`) })
+        : null;
+      if (snipeRelaySubmitter)
+        log(`[snipe] relay fan-out armed: ${snipeRelaySubmitter.relays.join(", ")}`);
+      if (snipeTipAccounts.length)
+        log(`[snipe] tipping enabled across ${snipeTipAccounts.length} account(s), ` +
+          `${Number(process.env.SNIPE_TIP_BASE_LAMPORTS) || 0}-${Number(process.env.SNIPE_TIP_MAX_LAMPORTS) || 0} lamports`);
       /* ITS OWN PAIR for the signing path too, opened on the same two endpoints the live
          desk already proved distinct. The lane's rule (its readers never borrow the desk's
          secondary) holds here for the same reason: nothing the sniper does may depend on
@@ -3598,8 +3672,12 @@ if (SNIPE_LANE_MODE !== "off") {
       snipeExecutor = createSnipeExecutor({
         keypair: kp, journal, venue: PUMPFUN_VENUE,
         connections: [new Connection(RPC, solanaRpcConnectionConfig()), new Connection(SECONDARY_RPC, solanaRpcConnectionConfig())],
+        relaySubmitter: snipeRelaySubmitter,
         cfg: { priorityFeeLamports: laneCfg.priorityFeeLamports, maxNetworkFeeLamports: laneCfg.maxNetworkFeeLamports,
-          maxRentLamports: laneCfg.maxRentLamports },
+          maxRentLamports: laneCfg.maxRentLamports,
+          tipAccounts: snipeTipAccounts,
+          tipBaseLamports: Number(process.env.SNIPE_TIP_BASE_LAMPORTS) || 0,
+          tipMaxLamports: Number(process.env.SNIPE_TIP_MAX_LAMPORTS) || 0 },
         control: () => ({ hardStop: hardStop() === true, pauseEntries: pauseEntries() === true }),
         boundary: ({ side }) => {
           if (side !== "buy") return;
@@ -3641,6 +3719,47 @@ if (SNIPE_LANE_MODE !== "off") {
        silent one. snipe-feed.mjs owns the ledger, dedupe and health; this only names the
        sources. */
     const laneSocket = new Connection(RPC, solanaRpcConnectionConfig());
+    /* THE THIRD SOURCE, and only when the operator has configured one. A Yellowstone Geyser
+       stream is pushed from a validator's own plugin instead of fanned out through an RPC
+       node's subscription machinery; Helius's LaserStream is one, and is included in the
+       plan this desk already pays for.
+
+       It is ADDED, never substituted. The websocket and the poll stay exactly where they
+       are, because the only way to learn whether the fast wire is worth its price is to let
+       it race the cheap ones — `firstShare` in the heartbeat's `sources` block is that
+       answer, and it does not exist if the loser is unplugged.
+
+       And it reuses the venue's OWN log decoder. A Geyser transaction update carries
+       meta.log_messages: the same lines the websocket delivers, so `noticesFromLogs` — which
+       is already pinned against bytes a real pump.fun create emitted — does the parsing on
+       both routes. The new source therefore adds a transport risk and no parsing risk, and
+       a launch found here decodes to exactly the notice the socket would have produced,
+       which is what makes the two comparable at all. */
+    /* A HALF-CONFIGURED ENDPOINT STOPS THE LANE RATHER THAN COSTING IT A SOURCE. grpcFromEnv
+       throws when one of the pair is set without the other, and that throw lands in the
+       block's own catch below — so the desk stays up, the log says "launch lane did not
+       start" with the reason, and the operator who just mistyped a variable finds out at
+       once. The alternative is a lane that runs on two sources while the operator believes
+       it is running on three, which is the same silent degradation this whole subsystem
+       exists to refuse. */
+    const grpcCfg = grpcFromEnv(process.env);
+    const grpcSource = grpcCfg ? feedMod.grpcSubscribeSource({
+      id: "grpc:pumpfun", venueId: PUMPFUN_VENUE.id,
+      programId: PUMPFUN_PROGRAM_ID, commitment: grpcCfg.commitment,
+      transport: laserstreamTransport({
+        endpoint: grpcCfg.endpoint, token: grpcCfg.token,
+        encodeSignature: (b) => (b ? bs58.encode(Buffer.from(b)) : null),
+        log: (m) => log(`[snipe] ${m}`),
+      }),
+      extractMint: (notification, context) => {
+        const [notice] = noticesFromLogs({
+          logs: notification?.logs, signature: notification?.signature ?? null,
+          slot: notification?.slot ?? context?.slot ?? null, receivedAt: Date.now(), source: "grpc",
+        });
+        return notice ? { mint: notice.mint, creator: notice.creator, slot: notice.slot } : null;
+      },
+    }) : null;
+    if (grpcCfg) log(`[snipe] gRPC source armed against ${new URL(grpcCfg.endpoint).host} at ${grpcCfg.commitment}`);
     const laneFeed = feedMod.createSnipeFeed({
       sources: [
         feedMod.sourceFromVenueWatch(PUMPFUN_VENUE, {
@@ -3650,6 +3769,7 @@ if (SNIPE_LANE_MODE !== "off") {
           id: "poll:pumpfun-list", venueId: PUMPFUN_VENUE.id,
           fetchRows: feedMod.pumpfunListingFetcher({ pages: 1 }),
         }),
+        ...(grpcSource ? [grpcSource] : []),
       ],
     });
     const lane = createSnipeLane({

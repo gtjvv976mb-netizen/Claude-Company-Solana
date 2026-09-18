@@ -39,6 +39,18 @@ const TRADING_RUNTIME_FILES = Object.freeze([
      sniper module that fetches from a host the COIN'S DEPLOYER chose. A file with that
      job, loaded by the trading process, belongs in its fingerprint. */
   "snipe-socials.mjs",
+  /* snipe-relay.mjs is imported by snipe-execute.mjs: it builds the TIP instruction that
+     goes inside the signed message and fans the signed bytes out to the operator's block
+     engines. A module that shapes what gets signed and where it is sent is part of this
+     process's identity by any definition, and test-executor-publish.mjs is what caught
+     it missing here. */
+  "snipe-relay.mjs",
+  /* grpc-wire.mjs and snipe-grpc.mjs are the Yellowstone launch source: the code that
+     decides, on the fastest wire this bot has, WHICH transactions become launch notices at
+     all. A decoder that mis-reads a field here does not fail — it produces fewer launches
+     than the market had, which is invisible from every other angle. Both are in the
+     fingerprint so a machine running a different copy of them says so. */
+  "grpc-wire.mjs", "snipe-grpc.mjs",
  "balance-verification.mjs",
   "entry-quote-guard.mjs", "exit-trigger.mjs", "feed-drain.mjs", "sol-usd-oracle.mjs",
   "heartbeat-health.mjs", "sleep-assertion.mjs", "strategy.mjs", "trade-policy.mjs",

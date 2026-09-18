@@ -106,12 +106,16 @@ import { venueContract } from "./snipe-venue.mjs";
 
 export const SNIPE_FEED_VERSION = "snipe-feed-v1";
 
-/** How a source obtains notices. `logs` is a push subscription (the real-time route);
- *  `poll` is an interval HTTP read (the degraded, and honest, fallback); `watch` is a
- *  venue adapter's own AsyncIterable from the snipe-venue contract. The kind travels with
- *  every notice because a latency table that does not say which of these produced a row
- *  is comparing a socket against a 5-second poll and calling it a measurement. */
-export const FEED_SOURCE_KINDS = Object.freeze(["logs", "poll", "watch"]);
+/** How a source obtains notices. `logs` is a push subscription over an RPC node's
+ *  websocket (the real-time route); `poll` is an interval HTTP read (the degraded, and
+ *  honest, fallback); `watch` is a venue adapter's own AsyncIterable from the snipe-venue
+ *  contract; `grpc` is a Yellowstone Geyser stream pushed from a validator's own plugin,
+ *  which skips the RPC node's subscription fan-out entirely. The kind travels with every
+ *  notice because a latency table that does not say which of these produced a row is
+ *  comparing a socket against a 5-second poll and calling it a measurement — and the whole
+ *  reason `grpc` is a kind of its own rather than another `logs` is that the only way to
+ *  learn whether the faster endpoint is worth its price is to see it race the cheap one. */
+export const FEED_SOURCE_KINDS = Object.freeze(["logs", "poll", "watch", "grpc"]);
 
 export const FEED_HEALTH_STATES = Object.freeze(["starting", "live", "degraded", "dead", "stopped"]);
 
@@ -815,9 +819,15 @@ export function createSnipeFeed({
  * then reads curves against them. That parser belongs to the adapter that can prove it.
  */
 export function logsSubscribeSource({
-  id, venueId = null, programId, commitment = "processed", transport, extractMint,
+  id, venueId = null, programId, commitment = "processed", transport, extractMint, kind = "logs",
 } = {}) {
   if (!isNonEmptyString(id)) throw new FeedConfigError("logsSubscribeSource needs an id");
+  /* `logs` and `grpc` are the same SHAPE — a push subscription with an injected transport —
+     and differ only in which wire carried the notice. They stay separate kinds so the
+     source race can price one against the other; they share this builder so the faster wire
+     inherits every guard the slower one already has, rather than growing its own. */
+  if (!["logs", "grpc"].includes(kind))
+    throw new FeedConfigError(`logsSubscribeSource ${id} kind ${JSON.stringify(kind)} must be logs or grpc`);
   if (!isPlausibleMint(programId))
     throw new FeedConfigError(`logsSubscribeSource ${id} programId ${JSON.stringify(programId)} is not a 32-byte base58 key`);
   if (!isPlainObject(transport) || typeof transport.subscribe !== "function")
@@ -826,7 +836,7 @@ export function logsSubscribeSource({
     throw new FeedConfigError(`logsSubscribeSource ${id} needs an explicit extractMint(): no venue log layout is verified in this repo, so this module refuses to guess one`);
 
   return {
-    id, kind: "logs", venueId, programId, commitment,
+    id, kind, venueId, programId, commitment,
     start({ emit, fail }) {
       const handle = transport.subscribe({
         programId, commitment,
@@ -852,6 +862,21 @@ export function logsSubscribeSource({
       return { stop: () => handle?.unsubscribe?.() };
     },
   };
+}
+
+/**
+ * A Yellowstone Geyser stream as a source.
+ *
+ * Structurally identical to `logsSubscribeSource` — the transport contract is the same
+ * `{subscribe({programId, commitment, onNotice, onError})}`, because snipe-grpc.mjs was
+ * written to that shape on purpose — and it carries the kind `grpc` so the source race can
+ * say which wire told us first. `extractMint` is required here for the same reason it is
+ * required there, and on this route it is usually the venue's own log decoder: a Geyser
+ * transaction update carries `meta.log_messages`, so the bytes the parser sees are the
+ * bytes the websocket would have delivered, and the two sources are comparable.
+ */
+export function grpcSubscribeSource(opts = {}) {
+  return logsSubscribeSource({ ...opts, kind: "grpc" });
 }
 
 /**

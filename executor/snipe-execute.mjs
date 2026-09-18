@@ -57,6 +57,7 @@ import {
   VersionedTransaction, SystemProgram,
 } from "@solana/web3.js";
 import bs58 from "bs58";
+import { calibrateTip, pickTipAccount, tipInstruction } from "./snipe-relay.mjs";
 
 import { associatedTokenAddress, ATA_PROGRAM, WSOL } from "./jupiter.mjs";
 import { TOKEN_PROGRAM, TOKEN_2022_PROGRAM } from "./token2022.mjs";
@@ -108,6 +109,12 @@ export const SNIPE_EXECUTE_DEFAULTS = Object.freeze({
   exitSlippageBps: 1_000,
   /* Both providers must put the simulated spend within this of each other. */
   providerAgreementPct: 1,
+  /* THE TIP, and it is OFF unless the operator names an account to pay it to. See
+     snipe-relay.mjs for why no address ships here. Base is what an uncontested launch
+     pays; max is the ceiling a fully contested one reaches and never exceeds. */
+  tipAccounts: Object.freeze([]),
+  tipBaseLamports: 0,
+  tipMaxLamports: 0,
   statusPollMs: 250,
   confirmTimeoutMs: 25_000,
   finalityTimeoutMs: 90_000,
@@ -254,6 +261,12 @@ export function createSnipeExecutor({
   clock = () => Date.now(),
   sleep = sleepDefault,
   log = () => {},
+  /* THE RELAY FAN-OUT, as a port. Absent, this file behaves exactly as it always has:
+     two RPC sends and nothing else. Present, the same signed bytes also go down every
+     block engine the operator configured, in parallel with those sends and never
+     instead of them — submission is an additional bet on whose path reaches a leader
+     first, and its failure must never be able to stop the ordinary send. */
+  relaySubmitter = null,
 } = {}) {
   if (!keypair || typeof keypair.publicKey?.toBase58 !== "function" || !(keypair.secretKey?.length > 0))
     throw new SnipeExecuteError("port_invalid", "a signing keypair is required");
@@ -372,7 +385,37 @@ export function createSnipeExecutor({
     return Object.freeze({ instruction, associatedBaseUser, baseTokenProgram, slot });
   }
 
-  async function buildTransaction(instructions) {
+  /**
+   * The tip, or null. Built HERE because it has to be inside the message that gets
+   * signed — a tip added afterwards is not paid, and a tip in its own transaction is not
+   * paid either.
+   *
+   * Null whenever the operator named no tip account, which is every install by default.
+   * `contention` is whatever the caller knows about how crowded this launch is; with
+   * nothing to go on it is 0 and the tip is the floor.
+   */
+  function tipFor({ contention = 0 } = {}) {
+    const accounts = Array.isArray(conf.tipAccounts) ? conf.tipAccounts : [];
+    const max = Number(conf.tipMaxLamports) || 0;
+    if (!accounts.length || max <= 0) return null;
+    const to = pickTipAccount(accounts);
+    if (!to) return null;
+    try {
+      const lamports = calibrateTip({
+        baseLamports: Number(conf.tipBaseLamports) || 0, maxLamports: max, contention,
+      });
+      if (!(lamports > 0)) return null;
+      return { instruction: tipInstruction({ from: keypair.publicKey, to, lamports }), lamports, to };
+    } catch (error) {
+      /* A refused tip is a log line, never a refused trade. The ceilings in
+         snipe-relay.mjs are the operator's own, and breaching one means the dials are
+         wrong — which is a reason to trade untipped, not a reason to stop. */
+      log(`snipe execute: tip not built (${error?.clause ?? "error"}: ${error?.message ?? error}) — sending untipped`);
+      return null;
+    }
+  }
+
+  async function buildTransaction(instructions, { tip = null } = {}) {
     const { blockhash, lastValidBlockHeight } = await primary.getLatestBlockhash("confirmed");
     const message = new TransactionMessage({
       payerKey: keypair.publicKey, recentBlockhash: blockhash,
@@ -380,6 +423,9 @@ export function createSnipeExecutor({
         ComputeBudgetProgram.setComputeUnitLimit({ units: Number(conf.computeUnitLimit) }),
         ComputeBudgetProgram.setComputeUnitPrice({ microLamports: feeForUnits() }),
         ...instructions,
+        /* LAST, so the simulation that follows covers it: a tip the simulator never saw
+           is a lamport cost nobody checked against the balance. */
+        ...(tip ? [tip.instruction] : []),
       ],
     }).compileToV0Message();
     return { tx: new VersionedTransaction(message), blockhash, lastValidBlockHeight };
@@ -549,11 +595,15 @@ export function createSnipeExecutor({
     }
   }
 
-  async function submit({ intentId, kind, side, mint, instructions, ata, expected, order }) {
+  async function submit({ intentId, kind, side, mint, instructions, ata, expected, order, contention = 0 }) {
     const attemptNo = (journal.latestAttempt(intentId)?.attempt ?? 0) + 1;
+    /* THE TIP RIDES ON THE BUY ONLY. An exit is not in a race with anybody: nobody is
+       bidding to be the one who sells this coin, so a tip on the way out is a transfer
+       that buys nothing. */
+    const tip = side === "buy" ? tipFor({ contention }) : null;
     const [pre, built] = await Promise.all([
       primary.getMultipleAccountsInfo([keypair.publicKey, new PublicKey(ata)], { commitment: "processed" }),
-      buildTransaction(instructions),
+      buildTransaction(instructions, { tip }),
     ]);
     const preLamports = BigInt(pre?.[0]?.lamports ?? 0);
     const preBase = tokenAmountOf(pre?.[1] ?? null, { mint, owner: wallet });
@@ -568,13 +618,31 @@ export function createSnipeExecutor({
       quotedOutputRaw: side === "buy" ? expected.baseOutRaw.toString() : expected.minQuoteOutRaw.toString(),
       minOutputRaw: side === "buy" ? expected.baseOutRaw.toString() : expected.minQuoteOutRaw.toString(),
       order: { ...order, simulatedSpendLamports: sim.spend.toString(), simulatedDelta: sim.delta.toString(),
-        unitsConsumed: sim.units, computeUnitLimit: conf.computeUnitLimit, computeUnitPriceMicroLamports: feeForUnits() },
+        unitsConsumed: sim.units, computeUnitLimit: conf.computeUnitLimit, computeUnitPriceMicroLamports: feeForUnits(),
+        /* ON THE DURABLE RECORD, because a tip is money that left the wallet and a cost
+           that appears in no accounting is a cost nobody can subtract later. */
+        ...(tip ? { tipLamports: tip.lamports, tipAccount: tip.to } : {}) },
       protocol: SNIPE_TX_PROTOCOL,
     });
     counters.signed++;
 
+    /* EVERY PATH AT ONCE. The two RPC sends and every configured relay leave together;
+       the transaction is idempotent by signature, so duplicates cost bandwidth and
+       nothing else. The relay promise is folded into the same allSettled as the sends so
+       a relay that hangs cannot delay them — and it resolves rather than rejects by
+       construction (snipe-relay.mjs), so it can never be the reason a send is reported
+       as refused. */
+    const relayPromise = relaySubmitter && typeof relaySubmitter.submit === "function"
+      ? relaySubmitter.submit(Buffer.from(bytes).toString("base64")).catch(() => null)
+      : null;
     const sends = await Promise.allSettled(connections.map((c) =>
       c.sendRawTransaction(bytes, { skipPreflight: true, preflightCommitment: "processed", maxRetries: 2 })));
+    if (relayPromise) {
+      const relayReport = await relayPromise;
+      if (relayReport && relayReport.attempted > 0)
+        log(`snipe execute ${mint}: relays ${relayReport.results.filter((r) => r.ok).length}/${relayReport.attempted}` +
+          (relayReport.firstOkId ? `, fastest ${relayReport.firstOkId} at ${relayReport.firstOkMs}ms` : " — none accepted"));
+    }
     // Bytes were disclosed the moment the first request left; the journal says so whatever the RPCs answered.
     journal.markSubmitted(intentId, attemptNo);
     counters.sent++;

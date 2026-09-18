@@ -1155,6 +1155,169 @@ result. And note the size table above ages badly — the 0.05–0.15 SOL bucket 
 trade at +0.2188 and is now seven at +0.1495. Still positive, but it was never evidence
 that small size wins.
 
+### What the coins actually did, and why the entry cannot be fixed by going faster
+
+The realised book says what the bot *captured*. It does not say what the coins *did*, and
+those are different questions with different fixes: if a coin runs 3× and you exit at +5%,
+the exit is wrong; if it never moves, the entry is.
+
+So each of the 64 coins was priced off its own curve's trade events after the fill —
+sampled (a median 22 of 49 trades per curve), which makes every "reached X" count a
+**floor**, never a ceiling.
+
+| how high it went after the fill | coins |
+|---|---|
+| 1.05× | 48/64 (75%) |
+| 1.2× | 35/64 (55%) |
+| **1.5×** | **28/64 (44%)** |
+| 2× | 16/64 (25%) |
+| 3× | 4/64 (6%) |
+
+**Forty-four per cent of these coins went up 50%, and the bot realised +50% on five of
+them.** Restricted to peaks that came strictly *after* the fill — the only ones that were
+ever sellable — 12 runs reached 1.5× and the bot took it on 4, realising a mean of −19.1%
+on the 8 it missed. That is what `SNIPE_TAKE_AT_ENTRY_X=1.5` is for, and on this record it
+is worth about +0.24 SOL at a 0.1 SOL ticket.
+
+#### The speed thesis does not survive our own record
+
+The industry answer to a losing sniper is latency: Yellowstone gRPC at 5–20 ms instead of
+`logsSubscribe` at 150–300 ms, Jito bundles, multi-relay submission, landing in slot 0
+where the quoted prize is 20–60% of the upside. This bot is on the slow path by
+construction — `web3LogsTransport` → `connection.onLogs()`, a two-endpoint account read
+before deciding, and a plain `sendRawTransaction`. Measured against the curves: **median 5
+seconds late, median 12 buyers already ahead.**
+
+Being late is real. It is not what is costing the money:
+
+| seconds late | n | won | mean realised |
+|---|---|---|---|
+| under 3s | 9 | **0%** | −18.5% |
+| 3–6s | 25 | 20% | −2.6% |
+| 6–10s | 20 | 10% | −23.4% |
+| 10s+ | 10 | **40%** | **+34.0%** |
+
+The fastest entries were the worst and the slowest were the best. The plausible mechanism
+is the one the rug literature describes: the launches reachable inside three seconds are
+the ones already bundled, and arriving right behind the bundle makes you its exit
+liquidity.
+
+#### Nothing observable at entry orders the outcome
+
+Spearman rank correlation against realised return, n=64. At this sample size |ρ| under
+about 0.25 is indistinguishable from noise:
+
+| signal | ρ |
+|---|---|
+| buyers ahead of us | +0.109 |
+| seconds late | +0.083 |
+| trades on the curve | −0.126 |
+| peak reached after entry (*not an entry signal*) | +0.199 |
+
+**This bot cannot currently pick winners, and buying faster hardware would not change
+that.** The coins that reach 1.5× average +6.8% realised and the ones that do not average
+−15.3% — a real split, and one knowable only after the fact. It is an exit rule, never an
+entry one.
+
+#### So the exit ladder is the whole lever, and it is not enough
+
+Modelled over the same 64 trades, taking at 1.5× whenever the coin got there:
+
+| time stop | late runs caught | total realised |
+|---|---|---|
+| as it happened, no take | — | −361% = −0.361 SOL |
+| 90s / 180s | 8 of 12 | −286% = −0.286 SOL |
+| 300s | 9 | −231% |
+| 600s | 11 | −182% |
+| no clock | 12 | −122% = −0.122 SOL |
+
+Two things have to be said about that table. The longer rows are **optimistic**: they keep
+each non-runner's actual result and do not model the extra bleed of holding it longer, and
+the first reading of this record found the 600s+ bucket was 18 trades and zero wins. And
+the stall exit fires at 90s on anything not above entry, so it pre-empts the clock for
+exactly the late runners the longer stop is meant to catch.
+
+**Every variant in that table still loses money.** The exits stop the bleeding; they do not
+create an edge. An edge has to come from entry selection, and nothing measured here
+provides one.
+
+#### The one honest lead left
+
+`creator_profile` and `launch_share` — creator allocation and how much of the opening quote
+was bought before us — are the two filters the rug literature names, they are already
+implemented as gates, and both are `undefined` by default, so they measure and never kill.
+That default is deliberate: *a number is not evidence until it has been run against a case
+whose answer is already known.* There are now 64 known answers, and the shadow book has
+been recording both measurements the whole time. **Grading those two gates against this
+record is the next real experiment** — not a faster feed, and not a threshold copied from
+a blog.
+
+### The fast wire: a Yellowstone gRPC source
+
+The lane has always had two sources — a websocket `logsSubscribe` on the pump.fun program,
+and a 5-second HTTP poll of the listing as corroboration. There is now a third, off by
+default: a Yellowstone Geyser stream, pushed from a validator's own plugin rather than
+fanned out through an RPC node's subscription machinery. Helius calls theirs **LaserStream**
+and includes it in the Business plan; any Yellowstone endpoint works, because the wire
+protocol is the same.
+
+Two environment variables arm it, and they must be set together:
+
+```bash
+SNIPE_GRPC_URL="https://laserstream-mainnet-<region>.helius-rpc.com"
+SNIPE_GRPC_TOKEN="<your Helius API key>"
+SNIPE_GRPC_COMMITMENT="processed"   # optional; processed is the default, and the only
+                                    # level a sniper can use
+```
+
+Pick the region closest to the machine actually running the bot — the entire reason to buy
+this endpoint is milliseconds, and a transatlantic hop gives back more than the feed saves.
+
+**These are not the desk's credentials and must never be set to them.** `CC_API`,
+`CC_SECRET` and `CC_FLOOR` authenticate this bot to *its own desk*. `SOLANA_RPC`,
+`SOLANA_RPC_SECONDARY` and this pair authenticate it to *a data provider*. They are
+separate credentials with separate blast radii, and the launchd runner passes each through
+by name for exactly that reason.
+
+The source is **added, never substituted.** The websocket and the poll stay where they are,
+because the only way to learn whether the fast wire is worth its price is to let it race
+the cheap ones. That answer is `firstShare` in the heartbeat's `sources` block — the share
+of launches each source told us about *first* — and it does not exist if the loser is
+unplugged. If gRPC takes most of the firsts by a wide margin, the endpoint is earning its
+money. If the 5-second poll is still winning, the problem was never the feed.
+
+Three things about how it is built are worth knowing before trusting it:
+
+- **No new dependencies.** `@grpc/grpc-js` plus `@grpc/proto-loader` is roughly fifty
+  transitive packages, and this repository's production deploy runs `npm ci && npm test` as
+  its build command. So `grpc-wire.mjs` implements the protobuf wire format and gRPC's
+  length-prefixed framing directly on `node:http2`. Both are specifications rather than
+  schemas, and both are proven offline — by round-trip, and by chunk boundaries chosen to
+  be hostile.
+- **The field numbers are copied, not remembered.** Every constant in `snipe-grpc.mjs`'s
+  `FIELDS` table came out of the published `geyser.proto` and `solana-storage.proto`, and
+  each is asserted as a literal in `test-snipe-grpc.mjs` as a tripwire on the next edit.
+  Memory says `account_include` is field 4. It is 3.
+- **The mint parser is not new.** A Geyser transaction update carries `meta.log_messages` —
+  the same lines the websocket delivers — so the venue's own `noticesFromLogs`, already
+  pinned against bytes a real pump.fun create emitted, does the parsing on both routes. The
+  new source adds a *transport* risk and no *parsing* risk, and a launch found here decodes
+  to exactly the notice the socket would have produced, which is what makes them comparable.
+
+What it has **not** done is run against a real endpoint from inside this repository. There
+is no Geyser server in CI and no credential in the tree. So the transport carries a
+self-check: if fifty updates arrive and not one of them names a oneof branch this build
+knows, it fails loudly with `schema_mismatch` rather than sitting there looking healthy and
+delivering nothing. Being wrong is survivable. Being wrong and silent is not — a feed that
+has gone quiet is indistinguishable from a quiet market from every other angle.
+
+And it is worth saying plainly, next to the measurements above: **a faster feed is not a
+fix for this strategy.** On the burner's own 64 trades, entries under 3 seconds won 0% of
+the time for −18.5% while entries 10 seconds and later won 40% for +34.0%, and no entry
+signal ordered the outcome at all. What this source buys is the *ability to test* the
+latency hypothesis against the cheap sources it races. It does not buy an edge, and nothing
+here should be read as claiming it does.
+
 ### What has and has not been proved
 
 The instruction encoders are re-encoded byte for byte against 30 mainnet transactions on

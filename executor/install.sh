@@ -940,7 +940,7 @@ if [ "$MODE" = "live" ]; then
     echo "live --expected-commit must exactly match the published commit $SOURCE_COMMIT" >&2
     exit 1
   fi
-  for source_file in poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs reclaim-rent.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs network-fee-budget.mjs snipe-lane.mjs snipe-venue-pumpfun.mjs snipe-venue.mjs snipe-curve.mjs snipe-entry.mjs snipe-feed.mjs snipe-book.mjs snipe-shadow.mjs snipe-policy.mjs snipe-socials.mjs snipe-execute.mjs dexscreener-consensus.mjs desk-mirror.mjs package.json package-lock.json; do
+  for source_file in poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs reclaim-rent.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs network-fee-budget.mjs snipe-lane.mjs snipe-venue-pumpfun.mjs snipe-venue.mjs snipe-curve.mjs snipe-entry.mjs snipe-feed.mjs snipe-book.mjs snipe-shadow.mjs snipe-policy.mjs snipe-socials.mjs snipe-relay.mjs grpc-wire.mjs snipe-grpc.mjs snipe-execute.mjs dexscreener-consensus.mjs desk-mirror.mjs package.json package-lock.json; do
     if [ -n "$(git -C "$source_root" status --porcelain -- "executor/$source_file")" ]; then
       echo "live source file executor/$source_file differs from commit $SOURCE_COMMIT" >&2
       exit 1
@@ -1697,7 +1697,7 @@ rollback_install() {
 trap rollback_install EXIT
 
 echo "▶ fetching the executor and shared policy…"
-RUNTIME_FILES=(poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs reclaim-rent.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs network-fee-budget.mjs snipe-lane.mjs snipe-venue-pumpfun.mjs snipe-venue.mjs snipe-curve.mjs snipe-entry.mjs snipe-feed.mjs snipe-book.mjs snipe-shadow.mjs snipe-policy.mjs snipe-socials.mjs snipe-execute.mjs dexscreener-consensus.mjs desk-mirror.mjs)
+RUNTIME_FILES=(poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs reclaim-rent.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs network-fee-budget.mjs snipe-lane.mjs snipe-venue-pumpfun.mjs snipe-venue.mjs snipe-curve.mjs snipe-entry.mjs snipe-feed.mjs snipe-book.mjs snipe-shadow.mjs snipe-policy.mjs snipe-socials.mjs snipe-relay.mjs grpc-wire.mjs snipe-grpc.mjs snipe-execute.mjs dexscreener-consensus.mjs desk-mirror.mjs)
 SOURCE_FILES=("${RUNTIME_FILES[@]}" package.json package-lock.json)
 # launchd adopts a DIRECTORY, not a command line: macos-launchagent.sh resolves
 # launchd-runner.mjs and poller.mjs out of the --executor-dir it is handed, and
@@ -1891,6 +1891,14 @@ fi
     SET_BY_FLAG="$SET_BY_FLAG WALLSTE_ALLOW_BATTERY_ENTRIES"
   fi
   if [ "$UPGRADE" -eq 1 ]; then
+    # THIS LIST AND launchd-runner.mjs's ALLOWED_ENV ARE ONE DECISION IN TWO PLACES, and
+    # forgetting the second half is silent by construction. A dial the runner allows but
+    # this loop does not name survives exactly until the next upgrade, which rebuilds this
+    # file from scratch — so the operator sets it, watches it work, upgrades, and is then
+    # running without it having been told anything. That is how SNIPE_RELAYS, the three
+    # tip dials and the three SNIPE_GRPC_* keys were added to the runner in 2026-09 and
+    # left out of here; test-snipe-relay.mjs and test-snipe-grpc.mjs now pin both halves.
+    # Values are never echoed by this loop, which is why a credential may ride it.
     for dial in ENTRY_MODE ENTRY_MODE_ACK FIXED_SOL F_DEFAULT F_NAME_MAX BOOK_HEAT_MAX MIN_CONVICTION \
       DAILY_LOSS_PCT_OF_EQUITY \
       MAX_OPEN_POSITIONS TRAIL_PCT MAX_AGE_HOURS \
@@ -1898,6 +1906,8 @@ fi
       SNIPE_REQUIRE_SOCIALS SNIPE_SOCIALS_TIMEOUT_MS SNIPE_STALL_MS SNIPE_STALL_AT_X SNIPE_TIME_STOP_MS \
       SNIPE_TAKE_AT_ENTRY_X SNIPE_STOP_FRAC SNIPE_HOLD_MAX_MS SNIPE_PRIORITY_FEE_LAMPORTS \
       SNIPE_MAX_PRICE_IMPACT_PCT SNIPE_MAX_ROUND_TRIP_LOSS_PCT \
+      SNIPE_RELAYS SNIPE_TIP_ACCOUNTS SNIPE_TIP_BASE_LAMPORTS SNIPE_TIP_MAX_LAMPORTS \
+      SNIPE_GRPC_URL SNIPE_GRPC_TOKEN SNIPE_GRPC_COMMITMENT \
       JUPITER_EXCLUDE_DEXES WALLSTE_ALLOW_BATTERY_ENTRIES \
       MARK_MS POLL_MS RECONCILE_MS SOL_USD_CACHE_MAX_AGE_MS MAX_ENTRY_MARK_AGE_MIN; do
       case " $SET_BY_FLAG " in *" $dial "*) continue;; esac
