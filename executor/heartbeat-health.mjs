@@ -51,6 +51,10 @@ const TRADING_RUNTIME_FILES = Object.freeze([
      than the market had, which is invisible from every other angle. Both are in the
      fingerprint so a machine running a different copy of them says so. */
   "grpc-wire.mjs", "snipe-grpc.mjs",
+  /* shadow-sink.mjs is written by the trading process itself, on every launch the lane
+     evaluates. A machine running a different copy of it is a machine whose research
+     book means something different, so it belongs in the fingerprint. */
+  "shadow-sink.mjs",
  "balance-verification.mjs",
   "entry-quote-guard.mjs", "exit-trigger.mjs", "feed-drain.mjs", "sol-usd-oracle.mjs",
   "heartbeat-health.mjs", "sleep-assertion.mjs", "strategy.mjs", "trade-policy.mjs",

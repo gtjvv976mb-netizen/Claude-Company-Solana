@@ -3629,13 +3629,15 @@ if (SNIPE_LANE_MODE !== "off") {
   try {
     const [{ createSnipeLane, snipeLaneConfig },
       { PUMPFUN_VENUE, PUMPFUN_PROGRAM_ID, noticesFromLogs }, feedMod,
-      { grpcFromEnv, laserstreamTransport }] = await Promise.all([
+      { grpcFromEnv, laserstreamTransport }, shadowMod, sinkMod] = await Promise.all([
       import("./snipe-lane.mjs"),
       import("./snipe-venue-pumpfun.mjs"),
       import("./snipe-feed.mjs"),
       /* The fast wire, dynamic like every other lane module: `off` has to cost literally
          nothing, and test-snipe-wiring.mjs holds that line. */
       import("./snipe-grpc.mjs"),
+      import("./snipe-shadow.mjs"),
+      import("./shadow-sink.mjs"),
     ]);
     const laneCfg = snipeLaneConfig(process.env);
     /* THE SIGNING PORT, on a live install only. Everything it needs is the desk's: the
@@ -3772,12 +3774,35 @@ if (SNIPE_LANE_MODE !== "off") {
         ...(grpcSource ? [grpcSource] : []),
       ],
     });
+    /* THE SHADOW BOOK, ON DISK. Until now createSnipeShadow() was constructed inside the
+       lane with its default `sink: null`, so every measurement it took lived in a bounded
+       Map and died with the process — every upgrade, every crash, every reboot. The cost
+       was exact and only visible in hindsight: 64 traded launches with known outcomes and
+       no retained measurements, so `creator_profile` and `launch_share` — the two rulers
+       that might give this bot the entry edge it demonstrably lacks — could not be graded
+       against a single known answer.
+
+       The book records EVERY launch the lane evaluates, refused ones included, and samples
+       each one's forward path whether or not we bought. That is the unselected sample the
+       scorecard needs, and at the lane's evaluation rate it is thousands of graded rows a
+       day. `node grade-entry-gates.mjs` reads it back.
+
+       A sink that throws is caught and counted by createSnipeShadow as `sinkErrors`: a row
+       that cannot be persisted is a row missing from a report, never a decision that
+       failed. Nothing about trading depends on this file existing. */
+    const shadowBook = shadowMod.createSnipeShadow({
+      capacity: laneCfg.shadowCapacity,
+      laneMode: laneCfg.lane,
+      sink: sinkMod.createShadowSink({ file: sinkMod.shadowBookPath(STATE_DB) }),
+    });
+    log(`[snipe] shadow book persisting to ${sinkMod.shadowBookPath(STATE_DB)}`);
     const lane = createSnipeLane({
       venue: PUMPFUN_VENUE,
       readers: laneReaders,
       cfg: laneCfg,
       feed: laneFeed,
       executor: snipeExecutor,
+      shadow: shadowBook,
       /* WHAT THE WALLET HOLDS, so the lane can tell a sell that FAILED from a position
          that has already GONE. Wired only on a live install, because only then is there a
          signing wallet whose balance means anything; in observe mode the lane latches and

@@ -13,9 +13,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;700&display=swap">
 
-<meta name="cc-build" content="2026-09-18 15:55 UTC">
-<meta name="cc-commit" content="d2798dbe8da5ee6e76583558932b84e9a1e092c5">
-<script>console.log("Claude Company build 2026-09-18 15:55 UTC")</script>
+<meta name="cc-build" content="2026-09-19 08:13 UTC">
+<meta name="cc-commit" content="5646b1c6f9a881aa36a6ce88cea37c184bdfbde9">
+<script>console.log("Claude Company build 2026-09-19 08:13 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
 <style>
@@ -87937,7 +87937,7 @@ async function withdrawHqInterest() {
 function openWallsteWalkthrough() {
   return window.CCModals.openInstallWalkthrough({
     floorNo: FLOOR_N,
-    installerSha256: "36d57fbbf8c491c640f10c865af4283d3216cc6c7eeb207819c1cc16bbfefb75",
+    installerSha256: "63cca8149d1426044d843e160291a2ecea675a4c412ad4dba524a6b382c41b83",
   });
 }
 function openHqConditions({ alreadyRequested = false, onRecorded = null } = {}) {
@@ -88179,9 +88179,9 @@ function buildControls(settings) {
     installBox.appendChild(mk("div", "dp-h", "Install WALL-ST-E · arms on install"));
     installBox.appendChild(mk("div", "dp-note",
       "One line on the machine that will run the bot. The installer reads the executor feed secret privately, stores credentials and the burner key in mode-0600 files, and starts without trading."));
-    const releaseCommit = "d2798dbe8da5ee6e76583558932b84e9a1e092c5";
+    const releaseCommit = "5646b1c6f9a881aa36a6ce88cea37c184bdfbde9";
     const hasPinnedExecutorRelease = /^[0-9a-f]{40}$/i.test(releaseCommit);
-    const installerDigest = "36d57fbbf8c491c640f10c865af4283d3216cc6c7eeb207819c1cc16bbfefb75";
+    const installerDigest = "63cca8149d1426044d843e160291a2ecea675a4c412ad4dba524a6b382c41b83";
     const installerDigestKnown = /^[0-9a-f]{64}$/i.test(installerDigest);
     /* ONE line, one paste — and now genuinely one line. install.sh has bootstrapped
        itself from $STATIC and read every prompt from /dev/tty for weeks, so piping it
@@ -91114,7 +91114,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
     secretCard.appendChild(docs);
     setupFold.body.appendChild(secretCard);
 
-    const executorReleaseCommit = "d2798dbe8da5ee6e76583558932b84e9a1e092c5";
+    const executorReleaseCommit = "5646b1c6f9a881aa36a6ce88cea37c184bdfbde9";
     const releaseIsPinned = /^[0-9a-f]{40}$/i.test(executorReleaseCommit);
     const runtimeMatchesRelease = releaseIsPinned &&
       String(health?.runtimeCommit || "").toLowerCase() === executorReleaseCommit.toLowerCase();
@@ -91132,7 +91132,7 @@ async function loadWallsteDashboard({ background = false } = {}) {
      * click to INSTALL must never become one click to trade real money — so the
      * short path buys convenience only in step 2, and steps 4 and 5 stay exactly
      * as deliberate as they were. */
-    const installerSha256 = "36d57fbbf8c491c640f10c865af4283d3216cc6c7eeb207819c1cc16bbfefb75";
+    const installerSha256 = "63cca8149d1426044d843e160291a2ecea675a4c412ad4dba524a6b382c41b83";
     /* The build substitutes the digest of the very install.sh it published. Unsubstituted
        means a local preview, and a digest a reader cannot rely on is worse than none. */
     const installerShaKnown = /^[0-9a-f]{64}$/i.test(installerSha256);

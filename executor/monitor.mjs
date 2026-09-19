@@ -607,7 +607,20 @@ function parseArgs(argv) {
   return options;
 }
 
-const isCli = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+/* RESOLVE THE SYMLINK, or the watchdog silently does not run. `import.meta.url` is the
+   REALPATH (Node resolves module URLs through symlinks) while argv[1] is whatever was
+   typed, and this repo's documented paths go through `~/claudeco-executor/current`, which
+   is a symlink into the release tree. `path.resolve` does not follow one, so invoking this
+   through `current/` fell through to "imported, do nothing" and printed nothing at all —
+   which for a health check reads as a clean bill. grade-entry-gates.mjs shipped with the
+   same flaw and the owner hit it on 2026-09-19; this one was documented with an absolute
+   release path and so had not been, yet. */
+const isCli = (() => {
+  if (!process.argv[1]) return false;
+  const mine = fileURLToPath(import.meta.url);
+  try { return fs.realpathSync(process.argv[1]) === mine; }
+  catch { return path.resolve(process.argv[1]) === mine; }
+})();
 if (isCli) {
   try {
     const report = await inspectExecutor(parseArgs(process.argv.slice(2)));
