@@ -429,7 +429,12 @@ export function classifySource(source, nowMs, cfg = {}) {
   const deadAfter = cfg.deadAfterSilentMs ?? FEED_DEFAULTS.deadAfterSilentMs;
   const maxErrors = cfg.maxConsecutiveErrors ?? FEED_DEFAULTS.maxConsecutiveErrors;
 
-  const since = source.lastNoticeAtMs ?? source.startedAtMs ?? null;
+  /* PROOF OF LIFE IS EITHER A NOTICE OR A SUCCESSFUL POLL. A pre-filtered poll source can
+     answer every poll correctly and still emit nothing — the momentum source under an armed
+     floor keeps 0 of 70 rows for long stretches — and judging it on notices alone reported
+     it DEAD while it was working, the one confusion its drop tally exists to rule out. */
+  const lastProof = Math.max(source.lastNoticeAtMs ?? -Infinity, source.lastAliveAtMs ?? -Infinity);
+  const since = Number.isFinite(lastProof) ? lastProof : (source.startedAtMs ?? null);
   const silentMs = since == null ? null : nowMs - since;
   const base = {
     id: source.id, kind: source.kind, venueId: source.venueId ?? null,
@@ -438,6 +443,7 @@ export function classifySource(source, nowMs, cfg = {}) {
     firsts: source.firsts ?? 0, rejected: source.rejected ?? 0, unparsed: source.unparsed ?? 0,
     errors: source.errors ?? 0, consecutiveErrors: source.consecutiveErrors ?? 0,
     lastError: source.lastError ?? null, restarts: source.restarts ?? 0,
+    lastAliveAtMs: source.lastAliveAtMs ?? null, pulses: source.pulses ?? 0,
   };
   const verdict = (state, reason) => Object.freeze({ ...base, state, reason });
 
@@ -608,7 +614,7 @@ export function createSnipeFeed({
       id: source.id, kind: source.kind, venueId: source.venueId ?? null, source,
       state: "starting", startedAtMs: null, lastNoticeAtMs: null, handle: null, fatal: false,
       notices: 0, accepted: 0, firsts: 0, rejected: 0, unparsed: 0, errors: 0, consecutiveErrors: 0,
-      lastError: null, lastErrorAtMs: null, restarts: 0,
+      lastError: null, lastErrorAtMs: null, restarts: 0, lastAliveAtMs: null, pulses: 0,
     });
   }
 
@@ -692,9 +698,20 @@ export function createSnipeFeed({
     if (onHealth) { try { onHealth(health()); } catch { /* ditto */ } }
   }
 
+  /** A source that answered — a poll that returned an array — without necessarily having
+   *  anything to emit. Liveness, and nothing else: it neither queues nor dedupes. */
+  function alive(sourceId) {
+    const st = states.get(sourceId);
+    if (!st || stopped) return;
+    st.lastAliveAtMs = clock();
+    st.pulses++;
+    st.consecutiveErrors = 0;
+  }
+
   const ctxFor = (id) => Object.freeze({
     emit: (payload) => admit(id, payload),
     fail: (error, opts) => fail(id, error, opts),
+    alive: () => alive(id),
     clock, schedule, cancel, cfg: conf,
   });
 
@@ -820,6 +837,21 @@ export function createSnipeFeed({
  */
 export function logsSubscribeSource({
   id, venueId = null, programId, commitment = "processed", transport, extractMint, kind = "logs",
+  /* THE OTHER 99% OF THIS SUBSCRIPTION, OPTIONALLY OBSERVED.
+   *
+   * A program filter delivers every transaction that touched the program, and nearly all of
+   * them are trades rather than creates: the `unparsed` branch below counts them and throws
+   * the bytes away. That traffic is a complete, already-paid-for volume feed for every
+   * curve on the venue, which is exactly what snipe-volume.mjs measures a spike against.
+   *
+   * So: an optional observer, handed every notification before it is parsed. It is NOT a
+   * second source of notices and cannot become one — its return value is discarded and it
+   * is given no `emit`. It MUST NOT THROW: a throw here is swallowed rather than failing
+   * the source, because a secondary measurement must never be able to blind the launch
+   * feed, and an observer is therefore required to keep its own error counter (createTradeTap
+   * does) so a tap that is quietly recording nothing shows up in a report instead of
+   * looking like a venue with no volume. */
+  observe = null,
 } = {}) {
   if (!isNonEmptyString(id)) throw new FeedConfigError("logsSubscribeSource needs an id");
   /* `logs` and `grpc` are the same SHAPE — a push subscription with an injected transport —
@@ -834,13 +866,19 @@ export function logsSubscribeSource({
     throw new FeedConfigError(`logsSubscribeSource ${id} needs a transport with subscribe()`);
   if (typeof extractMint !== "function")
     throw new FeedConfigError(`logsSubscribeSource ${id} needs an explicit extractMint(): no venue log layout is verified in this repo, so this module refuses to guess one`);
+  if (observe !== null && typeof observe !== "function")
+    throw new FeedConfigError(`logsSubscribeSource ${id} observe must be a function or null, got ${typeof observe}`);
 
   return {
     id, kind, venueId, programId, commitment,
+    observes: observe !== null,
     start({ emit, fail }) {
       const handle = transport.subscribe({
         programId, commitment,
         onNotice: (notification, context) => {
+          /* First, and inside its own catch: the observer sees the notification whether or
+             not it parses as a launch, and cannot affect whether it does. */
+          if (observe) { try { observe(notification, context); } catch { /* see `observe` above */ } }
           let parsed = null;
           try { parsed = extractMint(notification, context); }
           catch (error) { fail(error); return; }
@@ -905,7 +943,7 @@ export function pollSource({
 
   return {
     id, kind: "poll", venueId, intervalMs,
-    start({ emit, fail, schedule, cancel }) {
+    start({ emit, fail, schedule, cancel, alive }) {
       let timer = null, done = false;
       const tick = async () => {
         timer = null;
@@ -913,6 +951,9 @@ export function pollSource({
         try {
           const rows = await fetchRows();
           if (!Array.isArray(rows)) throw new Error(`fetchRows() returned ${rows === null ? "null" : typeof rows}, not an array`);
+          /* The endpoint answered. Said before the rows are emitted, so a poll whose every row
+             was filtered upstream still counts as a working source. */
+          if (typeof alive === "function") alive();
           for (const row of rows) {
             let notice = null;
             try { notice = mapRow(row); } catch { notice = null; }
@@ -1046,14 +1087,34 @@ export function pumpfunRowToNotice(row) {
  * same endpoint the desk already reads. `fetchJson` is injected so the test runs offline;
  * the default reaches the network only when the returned function is actually called.
  */
+export const PUMPFUN_LIST_SORTS = Object.freeze(["created_timestamp", "last_trade_timestamp", "market_cap"]);
+
 export function pumpfunListingFetcher({
   pages = 1, timeoutMs = 9_000, origin = PUMPFUN_LIST_ORIGIN,
   fetchJson = defaultFetchJson,
+  /* WHICH END OF THE MARKET TO LOOK AT (2026-09-26).
+   *
+   * `created_timestamp` is the launch sniper's view: newest first, the population this desk
+   * has traded 64 times for -0.361 SOL. `last_trade_timestamp` is the other question — what
+   * is being traded RIGHT NOW, regardless of when it was born — and it is how the momentum
+   * source finds coins that already have the demand the market floor insists on. Created-order
+   * paging cannot reach them: at roughly 29 launches a minute, an hour of history is some
+   * 1,700 rows, and this endpoint caps out at twelve pages of 70.
+   *
+   * Every value here was verified against the live endpoint (HTTP 200, rows carrying mint,
+   * creator, created_timestamp, last_trade_timestamp, complete and usd_market_cap) rather
+   * than assumed from documentation, because a sort the server silently ignores would hand
+   * this source the created-order list while it reported it was reading activity. */
+  sort = "created_timestamp", order = "DESC",
 } = {}) {
+  if (!PUMPFUN_LIST_SORTS.includes(sort))
+    throw new FeedConfigError(`pumpfunListingFetcher sort ${JSON.stringify(sort)} is not one of ${PUMPFUN_LIST_SORTS.join(", ")}`);
+  if (!["DESC", "ASC"].includes(order))
+    throw new FeedConfigError(`pumpfunListingFetcher order ${JSON.stringify(order)} must be DESC or ASC`);
   const wanted = Math.max(1, Math.min(12, Math.floor(pages) || 1));
   return async function fetchRows() {
     const urls = Array.from({ length: wanted }, (_, i) =>
-      `${origin}/coins?offset=${i * PUMPFUN_PAGE_ROWS}&limit=${PUMPFUN_PAGE_ROWS}&sort=created_timestamp&order=DESC&includeNsfw=true`);
+      `${origin}/coins?offset=${i * PUMPFUN_PAGE_ROWS}&limit=${PUMPFUN_PAGE_ROWS}&sort=${sort}&order=${order}&includeNsfw=true`);
     const results = await Promise.allSettled(urls.map((url) => fetchJson(url, { timeoutMs })));
     const rows = [];
     let failures = 0;

@@ -940,7 +940,7 @@ if [ "$MODE" = "live" ]; then
     echo "live --expected-commit must exactly match the published commit $SOURCE_COMMIT" >&2
     exit 1
   fi
-  for source_file in poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs reclaim-rent.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs network-fee-budget.mjs snipe-lane.mjs snipe-venue-pumpfun.mjs snipe-venue.mjs snipe-curve.mjs snipe-entry.mjs snipe-feed.mjs snipe-book.mjs snipe-shadow.mjs snipe-policy.mjs snipe-socials.mjs snipe-relay.mjs grpc-wire.mjs snipe-grpc.mjs shadow-sink.mjs grade-entry-gates.mjs snipe-execute.mjs dexscreener-consensus.mjs desk-mirror.mjs package.json package-lock.json; do
+  for source_file in poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs reclaim-rent.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs network-fee-budget.mjs snipe-lane.mjs snipe-venue-pumpfun.mjs snipe-venue.mjs snipe-curve.mjs snipe-entry.mjs snipe-feed.mjs snipe-book.mjs snipe-shadow.mjs snipe-policy.mjs snipe-volume.mjs snipe-market.mjs fee-lane.mjs pumpfun-fees.mjs snipe-socials.mjs snipe-relay.mjs grpc-wire.mjs snipe-grpc.mjs shadow-sink.mjs grade-entry-gates.mjs snipe-execute.mjs dexscreener-consensus.mjs desk-mirror.mjs package.json package-lock.json; do
     if [ -n "$(git -C "$source_root" status --porcelain -- "executor/$source_file")" ]; then
       echo "live source file executor/$source_file differs from commit $SOURCE_COMMIT" >&2
       exit 1
@@ -1697,7 +1697,7 @@ rollback_install() {
 trap rollback_install EXIT
 
 echo "▶ fetching the executor and shared policy…"
-RUNTIME_FILES=(poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs reclaim-rent.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs network-fee-budget.mjs snipe-lane.mjs snipe-venue-pumpfun.mjs snipe-venue.mjs snipe-curve.mjs snipe-entry.mjs snipe-feed.mjs snipe-book.mjs snipe-shadow.mjs snipe-policy.mjs snipe-socials.mjs snipe-relay.mjs grpc-wire.mjs snipe-grpc.mjs shadow-sink.mjs grade-entry-gates.mjs snipe-execute.mjs dexscreener-consensus.mjs desk-mirror.mjs)
+RUNTIME_FILES=(poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs reclaim-rent.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs network-fee-budget.mjs snipe-lane.mjs snipe-venue-pumpfun.mjs snipe-venue.mjs snipe-curve.mjs snipe-entry.mjs snipe-feed.mjs snipe-book.mjs snipe-shadow.mjs snipe-policy.mjs snipe-volume.mjs snipe-market.mjs fee-lane.mjs pumpfun-fees.mjs snipe-socials.mjs snipe-relay.mjs grpc-wire.mjs snipe-grpc.mjs shadow-sink.mjs grade-entry-gates.mjs snipe-execute.mjs dexscreener-consensus.mjs desk-mirror.mjs)
 SOURCE_FILES=("${RUNTIME_FILES[@]}" package.json package-lock.json)
 # launchd adopts a DIRECTORY, not a command line: macos-launchagent.sh resolves
 # launchd-runner.mjs and poller.mjs out of the --executor-dir it is handed, and
@@ -1906,6 +1906,17 @@ fi
       SNIPE_REQUIRE_SOCIALS SNIPE_SOCIALS_TIMEOUT_MS SNIPE_STALL_MS SNIPE_STALL_AT_X SNIPE_TIME_STOP_MS \
       SNIPE_TAKE_AT_ENTRY_X SNIPE_STOP_FRAC SNIPE_HOLD_MAX_MS SNIPE_PRIORITY_FEE_LAMPORTS \
       SNIPE_MAX_PRICE_IMPACT_PCT SNIPE_MAX_ROUND_TRIP_LOSS_PCT \
+      SNIPE_MIN_SOL_PER_TRADE SNIPE_MAX_NETWORK_FEE_LAMPORTS SNIPE_MAX_NETWORK_FEE_PCT \
+      SNIPE_MAX_RENT_LAMPORTS SNIPE_NETWORK_FEE_RESERVE_SOL SNIPE_MAX_FEE_SHARE_OF_STOP \
+      SNIPE_SIGNATURE_FEE_LAMPORTS SNIPE_RENT_FEE_LAMPORTS SNIPE_NOTICE_MAX_MS \
+      SNIPE_VENUE_FEE_BPS SNIPE_FORWARD_SAMPLES SNIPE_FORWARD_INTERVAL_MS \
+      SNIPE_SHADOW_CAPACITY SNIPE_CHARGE_DAILY_CAP SNIPE_DISAGREE_STREAK_MAX \
+      SNIPE_CREATOR_EXIT_FRAC \
+      SNIPE_MAX_CREATOR_SHARE_PCT SNIPE_MAX_LAUNCH_SHARE_PCT SNIPE_MIN_VOLUME_SPIKE \
+      SNIPE_MARKET_FLOOR SNIPE_MIN_AGE_HOURS SNIPE_MIN_LIQUIDITY_USD SNIPE_MIN_VOLUME_24H_USD \
+      SNIPE_MIN_MCAP_USD SNIPE_MAX_VOLUME_TO_LIQUIDITY SNIPE_MIN_TXNS_24H SNIPE_MAX_SELL_SHARE \
+      SNIPE_MAX_PRICE_CHANGE_24H_PCT SNIPE_MIN_TOP_POOL_LIQUIDITY_USD SNIPE_REMOTE_FILTERS \
+      FEE_CLAIM FEE_CLAIM_CREATOR FEE_CLAIM_ACK FEE_CLAIM_INTERVAL_MS FEE_CLAIM_MIN_NET_LAMPORTS \
       SNIPE_RELAYS SNIPE_TIP_ACCOUNTS SNIPE_TIP_BASE_LAMPORTS SNIPE_TIP_MAX_LAMPORTS \
       SNIPE_GRPC_URL SNIPE_GRPC_TOKEN SNIPE_GRPC_COMMITMENT \
       JUPITER_EXCLUDE_DEXES WALLSTE_ALLOW_BATTERY_ENTRIES \
@@ -2088,6 +2099,21 @@ SECRET=""; JUPITER_KEY=""; LIVE_ACK=""; LIVE_CAPS_ACK=""; CAPS_ACK_EXPECTED=""; 
 UPGRADE_VALUE=""
 unset SECRET JUPITER_KEY LIVE_ACK LIVE_CAPS_ACK CAPS_ACK_EXPECTED REPLY CRED_VALUE UPGRADE_VALUE
 
+# ONE PATH FOR THE CONTROLLER, AND IT IS THE VERSIONED ONE.
+#
+# This banner printed two: `buys` through $CURRENT_LINK and `status`/`unload` through the
+# release directory. They are not interchangeable, and the difference is not cosmetic —
+# `cd` + `pwd -P` in macos-launchagent.sh resolves `current` through to releases/<release>,
+# so a `load` run that way renders a plist naming that path while the INSTALLED plist names
+# versioned-releases/<commit>. The byte-for-byte comparison then fails, every time, by
+# construction. On 2026-09-18 that command was given to the owner as a lightweight restart
+# and took the bot down with entries unpaused.
+#
+# `buys` happens to work either way, because it only touches a sentinel file and the env
+# search above handles both depths. But an operator who sees two paths reasonably concludes
+# they are equivalent and eventually types the wrong one with `load`. So the banner prints
+# the release directory for everything, which is correct for every subcommand.
+CONTROLLER_DIR="${DARWIN_EXECUTOR_DIR:-$CURRENT_LINK}"
 cat <<DONE
 
 ════════════════════════════════════════════════════════════════
@@ -2102,8 +2128,8 @@ cat <<DONE
     if [ "$NO_EQUITY_BRAKE" -eq 1 ]; then
       printf '\n  Equity brake OFF (DAILY_LOSS_PCT_OF_EQUITY=0) — the %s SOL figure\n  above is now the ONLY loss brake. Raise it with arm-caps to trade\n  until the wallet is the stop.' "$DAILY_LOSS_CAP"
     fi)
-  Buys off:       bash $CURRENT_LINK/macos-launchagent.sh buys off
-  Buys on:        bash $CURRENT_LINK/macos-launchagent.sh buys on
+  Buys off:       bash $CONTROLLER_DIR/macos-launchagent.sh buys off
+  Buys on:        bash $CONTROLLER_DIR/macos-launchagent.sh buys on
                   (off opens nothing new; what is held still exits)
   Resume entries: rm -f $PAUSE_FILE   (or pass --resume-entries next time)
   Hard stop:      install -m 600 /dev/null $HARD_STOP_FILE

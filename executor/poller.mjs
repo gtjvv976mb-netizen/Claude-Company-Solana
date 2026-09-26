@@ -39,7 +39,7 @@ import {
   MIRROR_MARK_MS, evaluateMirror, mirrorLatchExpiry, mirrorPriceable,
   reconcileGate, reconcileVerdict, refreshDeskLevels,
 } from "./desk-mirror.mjs";
-import { consensusMark } from "./dexscreener-consensus.mjs";
+import { consensusMark, pairsFor as dexPairsFor } from "./dexscreener-consensus.mjs";
 import { executorHeartbeatHealth, executorRuntimeFingerprint } from "./heartbeat-health.mjs";
 import {
   validateEntryPreflightContext, validateExecutableEntryOrder,
@@ -2449,10 +2449,21 @@ function sendHeartbeat() {
          the feed's health, the open snipes and the port's counts — so a floor can see the
          lane it armed, and support can see the one that never started. */
       snipe: snipeHeartbeat(),
+      /* THE REVENUE LINE, IN THE SAME PULSE AND AS ITS OWN BLOCK. Never merged into `ledger`
+         or into the sniper's book: bagworkagent.fun's headline adds claimed fees to trading
+         P&L, which is how a bot losing every round trip displays +15.6 SOL, and a block that
+         travels separately cannot be summed by accident at the far end. */
+      fees: feeHeartbeat(),
       ts: Date.now(),
     }),
   }).then((r) => {
-    if (r.ok) { heartbeatMisses = 0; lastHeartbeatAckAt = Date.now(); return; }
+    if (r.ok) {
+      heartbeatMisses = 0; lastHeartbeatAckAt = Date.now();
+      /* The desk answers with the floor's saved filter panel. Applied only when the owner
+         opted in (SNIPE_REMOTE_FILTERS=1); a body that will not parse costs nothing. */
+      if (snipeStatus.remote) r.json().then((b) => snipeStatus.remote?.apply(b?.strategy)).catch(() => {});
+      return;
+    }
     noteHeartbeatMiss(`HTTP ${r.status}`);
   }).catch((error) => noteHeartbeatMiss(error?.name === "TimeoutError" ? "timed out after 5s" : String(error?.message ?? error)));
 }
@@ -2500,6 +2511,11 @@ const FILL_REPORT_WINDOW_MS = 7 * 24 * 3600e3;
    cannot be built loses detail and never stops the tick. Nothing here carries a key, an
    endpoint, or a wallet — the desk already knows the burner from the heartbeat's own
    `wallet` field, and a sniper row is a mint, a size and two levels. */
+/* THE FEE LANE'S HANDLE, for the heartbeat. Declared beside the sniper's for the same reason:
+   the lane is constructed far below, and the pulse has to be able to report "configured but
+   never started" — which is a different fact from "off" and the one an operator needs. */
+const feeStatus = { mode: String(process.env.FEE_CLAIM || "off").trim().toLowerCase(), lane: null, error: null };
+
 const snipeStatus = {
   mode: String(process.env.SNIPE_LANE || "off").trim().toLowerCase(),
   state: "off",            // off | starting | up | faulted | disabled | failed-to-start
@@ -2508,6 +2524,7 @@ const snipeStatus = {
   faults: 0, retryAt: 0,   // the backoff, while faulted with a position open
   lastFillAt: 0,           // the last confirmed buy or sell the port reported
   lane: null, feed: null,  // references, read by the builder below and never serialized
+  flowTap: null, momentum: null, remote: null,
 };
 const setSnipeState = (state, error) => {
   snipeStatus.state = state;
@@ -2517,6 +2534,34 @@ const setSnipeState = (state, error) => {
     snipeStatus.lastErrorAt = error == null ? 0 : Date.now();
   }
 };
+/** The fee lane's block. Defensive like the sniper's: a lane that throws from stats() costs
+ *  the desk a field, never the pulse.
+ *
+ *  `configured` and `running` are separate booleans on purpose. A lane that was asked for and
+ *  did not start is the single most useful thing this block can report, and "mode: dry, no
+ *  numbers" would look identical to a lane that started and found empty vaults. */
+function feeHeartbeat() {
+  if (feeStatus.mode === "off") return { mode: "off", running: false };
+  const out = { mode: feeStatus.mode, configured: true, running: false, error: feeStatus.error, stats: null };
+  if (!feeStatus.lane) return out;
+  try {
+    const st = feeStatus.lane.stats();
+    out.running = true;
+    out.stats = {
+      live: st.live === true,
+      passes: st.passes, claimed: st.claimed, failed: st.failed, skipped: st.skipped,
+      /* THE REVENUE, and nothing else. No trading figure travels in this block. */
+      solClaimed: Number(st.solClaimed.toFixed(9)),
+      /* What is waiting in the vaults as of the last read that could say — NOT revenue. */
+      claimableSol: st.claimableSol === null || st.claimableSol === undefined ? null : Number(st.claimableSol.toFixed(9)),
+      claimableAt: Number(st.claimableAtMs) > 0 ? Number(st.claimableAtMs) : null,
+      skippedBy: st.skippedBy,
+      bookErrors: st.bookErrors,
+    };
+  } catch (error) { out.error = String(error?.message ?? error).slice(0, 200); }
+  return out;
+}
+
 /** The block the heartbeat carries. Built defensively: a lane that throws from
  *  openPositions() or stats() costs the desk a field, not the pulse. */
 function snipeHeartbeat() {
@@ -2540,14 +2585,11 @@ function snipeHeartbeat() {
    * Defensive like every other field here: a journal that throws costs the desk this block,
    * never the pulse. */
   try {
-    const rows = journal.snipeExits({ limit: 200 });
-    let realized = 0, wins = 0, losses = 0, unknown = 0;
-    for (const r of rows) {
-      if (r.realizedLamports === null) { unknown++; continue; }
-      const sol = Number(r.realizedLamports) / 1e9;
-      realized += sol;
-      if (sol > 0) wins++; else losses++;
-    }
+    const rows = journal.snipeExits({ limit: 20 });
+    /* THE TALLY IS THE WHOLE RECORD, NOT THE LAST 200. See journal.snipeExitTotals: a
+       lifetime count beside a recent sum let a desk that lost money overall read as a
+       profitable one, and the agent ladder is judged on these numbers. */
+    const t = journal.snipeExitTotals();
     out.book = {
       /* Newest first, and capped well under the sanitizer's own ceiling. */
       closed: rows.slice(0, 20).map((r) => ({
@@ -2559,14 +2601,16 @@ function snipeHeartbeat() {
         sizeSol: r.basisLamports === null ? null
           : Number((Number(r.basisLamports) / 1e9).toFixed(9)),
       })),
-      /* TWO NUMBERS, BECAUSE THEY ARE TWO FACTS. `trades` is every closed trade there has
-         ever been; `counted` is how many of them the tallies and the total below actually
-         cover. They are equal until the lane outruns the read's ceiling, and the page says
-         so plainly when they diverge rather than passing a window off as the record. */
-      trades: journal.snipeExitCount(),
-      counted: rows.length,
-      wins, losses, unknown,
-      realizedSol: Number(realized.toFixed(9)),
+      /* `trades` is every closed trade there has ever been; `counted` is how many of them
+         the tallies below cover — every one, now that they are an aggregate, so the page's
+         "counting the N most recent" never has to appear. `readable` is the subset with a
+         result on the ledger, the only honest denominator for a win rate, and `realizedSol`
+         is NULL when that subset is empty: a sum over nothing is not a break-even, and a
+         zero here cleared the ladder's "at least 0 SOL" rung on a record nobody could read. */
+      trades: t.trades,
+      counted: t.trades,
+      wins: t.wins, losses: t.losses, unknown: t.unknown, readable: t.readable,
+      realizedSol: t.realizedLamports === null ? null : Number((t.realizedLamports / 1e9).toFixed(9)),
     };
   } catch {}
   const lane = snipeStatus.lane;
@@ -2589,8 +2633,41 @@ function snipeHeartbeat() {
         readErrors: Number(s.readErrors) || 0, ticks: Number(s.ticks) || 0,
         signed: Number(s.signed) || 0, sent: Number(s.sent) || 0,
         reconciled: Number(s.reconciled) || 0,
+        marketReadsSkipped: Number(s.marketReadsSkipped) || 0,
+      };
+      /* THE VOLUME TAPE, FROM BOTH ENDS. The tap counts what arrived off the wire and the tape
+         counts what it holds; before this they were computed and never left the process, so a
+         tape recording nothing (no SNIPE_GRPC_*, or a TradeEvent that stopped decoding) looked
+         in every shadow row exactly like "fresh launch, no baseline yet". */
+      const f = s.flow || {};
+      const tap = snipeStatus.flowTap?.stats?.() || null;
+      out.flow = {
+        tapped: tap !== null,
+        mints: Number(f.mints) || 0, observed: Number(f.observed) || 0, rejected: Number(f.rejected) || 0,
+        evictedMints: Number(f.evictedMints) || 0,
+        notifications: tap ? Number(tap.notifications) || 0 : null,
+        trades: tap ? Number(tap.trades) || 0 : null,
+        recorded: tap ? Number(tap.recorded) || 0 : null,
+        tapErrors: tap ? Number(tap.errors) || 0 : null,
+        lastError: tap?.lastError ? String(tap.lastError).slice(0, 160) : null,
       };
     }
+  } catch {}
+  /* THE DESK'S FILTER PANEL, AS THIS BOT SEES IT: whether it accepts one at all, which saved
+     version is running, and what it refused. The page reads this instead of assuming. */
+  try { const rr = snipeStatus.remote?.report?.(); if (rr) out.remote = rr; } catch {}
+  /* THE MOMENTUM SOURCE'S PRE-FILTER TALLY — what arrived, what survived, and the clause for
+     every row that did not. "0 of 70 survived, 51 bonded, 19 too young" and "the endpoint is
+     empty" need opposite responses, and until this was carried only the second could be
+     told apart from the first by reading code. */
+  try {
+    const m = snipeStatus.momentum?.stats?.();
+    if (m) out.momentum = {
+      polls: Number(m.polls) || 0, arrived: Number(m.arrived) || 0, survived: Number(m.survived) || 0,
+      capped: Number(m.capped) || 0, keep: Number(m.keep) || 0, idle: Number(m.idle) || 0,
+      dropped: Object.fromEntries(Object.entries(m.dropped || {}).slice(0, 8)
+        .map(([k, v]) => [String(k).slice(0, 24), Number(v) || 0])),
+    };
   } catch {}
   /* THE LATENCY BUDGET (owner, 2026-09-18: "the fastest in the market"). The lane has
      timed its own six hops on every notice since it shipped and nothing ever carried the
@@ -3593,6 +3670,111 @@ log(`resuming ${openList().length} position(s) from cursor ${S.cursor}`);
 await tick();
 setInterval(tick, POLL_MS);
 
+/* ── THE FEE LANE: THE BUSINESS, AS OPPOSED TO THE MARKETING ─────────────────────────
+ *
+ * Measured across 26 of bagworkagent.fun's agents and 362 closed trades: trading -0.077 SOL,
+ * creator fees +14.515 SOL, level rewards +0.620. Not one of their agents makes money trading.
+ * Every SOL of profit is the pump.fun creator fee on the coin the agent itself launched.
+ *
+ * So this is a lane of its own, on its own timer, deliberately independent of both the desk
+ * and the sniper: it earns whether or not either of them is running, and neither can take it
+ * down. It writes to its OWN BOOK — a different file from the trading journal — because their
+ * `pnlSol` adds claimed fees to trading P&L and that addition is how a bot that loses every
+ * round trip displays +15.6 SOL. See fee-lane.mjs.
+ *
+ * OFF, then DRY, then live. FEE_CLAIM=dry reads the vaults every pass and records what it
+ * WOULD have claimed, signing nothing; that is the mode to run first, because the rows it
+ * writes are the evidence arming should rest on. Nothing here can sign at all yet — `submit`
+ * is null — and that is on purpose: a claim pays only a coin's own creator, so until a mint
+ * exists whose creator is this wallet there is no vault to sign against, and a money-moving
+ * path with nothing real to verify against is exactly how the Number(null) bug shipped.
+ */
+const FEE_CLAIM_MODE = String(process.env.FEE_CLAIM || "off").trim().toLowerCase();
+if (FEE_CLAIM_MODE !== "off") {
+  try {
+    if (!["dry", "live"].includes(FEE_CLAIM_MODE))
+      throw new Error(`FEE_CLAIM=${JSON.stringify(FEE_CLAIM_MODE)} is not one of off, dry, live`);
+    if (FEE_CLAIM_MODE === "live")
+      throw new Error("FEE_CLAIM=live is not honoured, and this is now a settled design rather than a gap.\n\n"
+        + "A coin's creator fee is paid to the wallet that CREATED the coin, which is not this burner and should not "
+        + "be. The burner's whole security story is that the only key on this disk is one generated here and funded "
+        + "deliberately; a real creator wallet sitting beside it would widen the blast radius of everything else on "
+        + "this machine for the sake of a claim that happens a few times a month. bagworkagent.fun's server holds "
+        + "its agents' keys and signs for them. This one does not, and neither does the bot.\n\n"
+        + "So the split is: this lane READS the vaults on a timer and reports what is claimable, and the OWNER signs "
+        + "the claim in their own wallet at /fees.html, which builds it from the same layout proved against three "
+        + "landed mainnet transactions. Run FEE_CLAIM=dry.");
+    const [feeMod, feesMod, sinkMod] = await Promise.all([
+      import("./fee-lane.mjs"), import("./pumpfun-fees.mjs"), import("./shadow-sink.mjs"),
+    ]);
+    const feeCreator = String(process.env.FEE_CLAIM_CREATOR || (EXECUTE ? kp.publicKey.toBase58() : "")).trim() || null;
+    if (!feeCreator)
+      throw new Error("FEE_CLAIM needs a creator wallet: set FEE_CLAIM_CREATOR, or run on a live install where the "
+        + "desk's own wallet is the creator of the coin whose fees are being claimed");
+    /* A MISTYPED CREATOR IS REFUSED HERE, not discovered as an "unreadable" row every half hour
+       forever. The vault derivation throws on it, the lane catches that as a failed read, and
+       the operator would have read a permanent RPC problem into a typo. */
+    try { new PublicKey(feeCreator); }
+    catch { throw new Error(`FEE_CLAIM_CREATOR=${JSON.stringify(feeCreator)} is not a Solana address`); }
+    /* Validated numbers or a refusal naming the value — see feeLaneConfigFromEnv. */
+    const feeEnv = feeMod.feeLaneConfigFromEnv(process.env);
+
+    /* A MISSING ACCOUNT IS A DEFINITE ZERO; AN UNREADABLE ONE IS NOT.
+     *
+     * getBalance answers 0 for an address that holds nothing and has never existed, which is
+     * the truth for a desk that has not launched a coin yet — "there is nothing there", not
+     * "nobody knows". A THROW is the second case, and readClaimable turns it into null. Those
+     * two facts must not be folded together: one means skip quietly forever, the other means
+     * retry, and a lane that confused them would stop claiming at the first RPC hiccup and
+     * never say why. */
+    const feeLane = feeMod.createFeeLane({
+      creator: feeCreator,
+      wallet: EXECUTE ? kp.publicKey.toBase58() : null,
+      cfg: {
+        live: false,
+        intervalMs: feeEnv.intervalMs,
+        minNetLamports: feeEnv.minNetLamports,
+        priorityFeeLamports: Number(process.env.SNIPE_PRIORITY_FEE_LAMPORTS || 0),
+      },
+      readClaimable: (creator) => feesMod.readClaimable({
+        creator,
+        readLamports: async (address) => conn.getBalance(new PublicKey(String(address)), "confirmed"),
+        readTokenAmount: async (address) => {
+          const info = await conn.getParsedAccountInfo(new PublicKey(String(address)), "confirmed");
+          /* No account is no tokens — a definite zero. A balance that will not parse is null,
+             because a claim sized on a number nobody could read is a claim on a guess. */
+          if (!info?.value) return 0;
+          const amount = info.value?.data?.parsed?.info?.tokenAmount?.amount;
+          return /^\d+$/.test(String(amount ?? "")) ? Number(amount) : null;
+        },
+      }),
+      /* A claim is a signature, so the desk's own HARD STOP governs it exactly as it governs a
+         trade. PAUSE ENTRIES does not: it stops new exposure, and a claim takes money in. */
+      control: () => ({ hardStop: hardStop() === true }),
+      book: sinkMod.createShadowSink({ file: sinkMod.feeBookPath(STATE_DB) }),
+      /* NO SUBMITTER, PERMANENTLY. The module takes one as a port so its live path can be driven by a
+         test, and the desk deliberately supplies none: the creator key is not on this machine and the
+         owner signs at /fees.html. See the FEE_CLAIM=live refusal above. */
+      submit: null,
+      log: (msg) => log(`[fees] ${msg}`),
+    });
+    feeStatus.lane = feeLane;
+    log(`[fees] lane ${feeLane.version} DRY for creator ${feeCreator}: reading both vaults every `
+      + `${Math.round(feeLane.intervalMs / 60_000)} min, booking to ${sinkMod.feeBookPath(STATE_DB)}, signing nothing`);
+    const feeTick = async () => {
+      try { await feeLane.tick(); }
+      catch (err) { log(`[fees] pass failed — ${err?.message || err}`); }
+    };
+    await feeTick();
+    setInterval(feeTick, feeLane.intervalMs).unref?.();
+  } catch (err) {
+    /* IT CANNOT TAKE THE DESK DOWN, the same rule the launch lane runs under. A revenue line
+       that stops the bot that trades is worse than no revenue line. */
+    feeStatus.error = String(err?.message || err).slice(0, 200);
+    log(`[fees] fee lane did not start: ${err?.message || err}`);
+  }
+}
+
 /* ── THE LAUNCH LANE, OBSERVE-ONLY AND OFF UNLESS ASKED FOR ──────────────────────────
  *
  * A second lane in this process, watching pump.fun launches and recording what it WOULD
@@ -3627,9 +3809,9 @@ setInterval(tick, POLL_MS);
 const SNIPE_LANE_MODE = String(process.env.SNIPE_LANE || "off").trim().toLowerCase();
 if (SNIPE_LANE_MODE !== "off") {
   try {
-    const [{ createSnipeLane, snipeLaneConfig },
-      { PUMPFUN_VENUE, PUMPFUN_PROGRAM_ID, noticesFromLogs }, feedMod,
-      { grpcFromEnv, laserstreamTransport }, shadowMod, sinkMod] = await Promise.all([
+    const [{ createSnipeLane, snipeLaneConfig, remoteFilterConfig },
+      { PUMPFUN_VENUE, PUMPFUN_PROGRAM_ID, noticesFromLogs, eventsFromLogs }, feedMod,
+      { grpcFromEnv, laserstreamTransport }, shadowMod, sinkMod, volumeMod, marketMod] = await Promise.all([
       import("./snipe-lane.mjs"),
       import("./snipe-venue-pumpfun.mjs"),
       import("./snipe-feed.mjs"),
@@ -3638,6 +3820,8 @@ if (SNIPE_LANE_MODE !== "off") {
       import("./snipe-grpc.mjs"),
       import("./snipe-shadow.mjs"),
       import("./shadow-sink.mjs"),
+      import("./snipe-volume.mjs"),
+      import("./snipe-market.mjs"),
     ]);
     const laneCfg = snipeLaneConfig(process.env);
     /* THE SIGNING PORT, on a live install only. Everything it needs is the desk's: the
@@ -3744,6 +3928,27 @@ if (SNIPE_LANE_MODE !== "off") {
        once. The alternative is a lane that runs on two sources while the operator believes
        it is running on three, which is the same silent degradation this whole subsystem
        exists to refuse. */
+    /* THE VOLUME TAPE AND ITS TAP — the owner's spike criterion, 2026-09-26.
+     *
+     * One tape, constructed here and handed to BOTH the tap that fills it and the lane that
+     * measures it, because two tapes would produce identical log lines and no measurement.
+     *
+     * The tap rides on the gRPC source, which is subscribed to the pump.fun PROGRAM: every
+     * buy and sell on every curve already arrives on that wire and snipe-feed.mjs already
+     * counts them as `unparsed` and drops them. Each carries a TradeEvent whose decoder is
+     * verified against real mainnet bytes, including `realQuoteRaw` — the curve's SOL
+     * reserve right after that trade. So the spike is measured from traffic this process is
+     * already receiving: no new subscription, no new request, no new key, and not one
+     * millisecond added to the path that buys.
+     *
+     * Without SNIPE_GRPC_* the tape still exists and still takes the lane's own curve reads;
+     * it simply has too few points to form a ratio, the gate records `null`, and since
+     * SNIPE_MIN_VOLUME_SPIKE is unset by default nothing is refused on an unknown. */
+    const flowTape = volumeMod.createFlowTape();
+    const flowTap = volumeMod.createTradeTap({
+      tape: flowTape,
+      tradesFrom: (notification) => eventsFromLogs(notification?.logs, { kind: "trade" }),
+    });
     const grpcCfg = grpcFromEnv(process.env);
     const grpcSource = grpcCfg ? feedMod.grpcSubscribeSource({
       id: "grpc:pumpfun", venueId: PUMPFUN_VENUE.id,
@@ -3760,8 +3965,81 @@ if (SNIPE_LANE_MODE !== "off") {
         });
         return notice ? { mint: notice.mint, creator: notice.creator, slot: notice.slot } : null;
       },
+      observe: (notification) => flowTap.observe(notification),
     }) : null;
-    if (grpcCfg) log(`[snipe] gRPC source armed against ${new URL(grpcCfg.endpoint).host} at ${grpcCfg.commitment}`);
+    if (grpcCfg) log(`[snipe] gRPC source armed against ${new URL(grpcCfg.endpoint).host} at ${grpcCfg.commitment}`
+      + "; every trade on it feeds the volume tape");
+    /* THE MOMENTUM SOURCE (2026-09-26) — the other end of the market, and the reason the
+       market floor exists.
+     *
+     * The three sources above all answer one question: what launched just now. That is the
+     * population this desk has traded 64 times for -0.361 SOL, and its own numbers say the
+     * problem is structural — a coin nobody has traded yet has no demand to measure. This
+     * source asks the opposite question: what is being traded RIGHT NOW, whatever its age.
+     *
+     * It is ADDED, never substituted. The launch sources stay exactly as they are, the feed's
+     * source race still prices one against the other, and with SNIPE_MARKET_FLOOR=off this
+     * source's rows are judged by the same gates as any launch — so turning the floor on and
+     * off changes what is bought without changing what is heard.
+     *
+     * Its rows are pre-filtered on the facts they already carry (still on the curve, old
+     * enough, market cap over the bar) before anything is fetched for them, because the floor's
+     * fourth fact costs a request per candidate. What it drops is counted by clause: a source
+     * quietly returning two rows out of seventy looks identical to a dead market and to a
+     * broken filter, and those need opposite responses. */
+    const marketFloor = laneCfg.marketFloor;
+    /* A SPIKE FLOOR NEEDS COINS OLD ENOUGH TO HAVE A BASELINE, AND A TAPE THAT HEARD THEM.
+       A spike is 30 seconds of flow against the 5 minutes before it, so a launch notice — judged
+       within 30 seconds of its birth — can never be measured, by construction. With
+       SNIPE_MIN_VOLUME_SPIKE set, the candidates that CAN be measured come from the momentum
+       source (coins already trading), so it is mounted for the spike dial as well as for the
+       floor; and their history comes only from the gRPC trade tap, so a spike dial without
+       SNIPE_GRPC_* stops the lane here, by name, instead of refusing every candidate at
+       volume_spike in a log that reads like a market where nothing moved. */
+    const spikeArmed = laneCfg.minVolumeSpike !== undefined && laneCfg.minVolumeSpike !== null;
+    if (spikeArmed && !grpcSource)
+      throw new Error(`SNIPE_MIN_VOLUME_SPIKE=${laneCfg.minVolumeSpike} needs the gRPC trade tap to fill the volume tape `
+        + "(SNIPE_GRPC_ENDPOINT + SNIPE_GRPC_TOKEN). Without it no candidate can have a 5-minute baseline, so every "
+        + "one would be refused at volume_spike. Set the gRPC pair, or unset SNIPE_MIN_VOLUME_SPIKE.");
+    /* FILTERS THE DESK MAY CHANGE WHILE THIS RUNS (SNIPE_REMOTE_FILTERS=1). When the owner has
+       opted in, the parts that serve a filter are mounted up front — the momentum source and
+       the market reader — so switching a floor on from the page does not need a restart. The
+       momentum source sits idle (polling nothing) while no filter that wants its candidates is
+       armed, so mounting it early changes nothing until then. */
+    const remoteFilters = laneCfg.remoteFilters === true;
+    let liveLane = null;
+    const currentFilters = () => (liveLane ? liveLane.filters() : laneCfg);
+    const spikeSet = (f) => f.minVolumeSpike !== undefined && f.minVolumeSpike !== null;
+    const momentumWanted = marketMod.floorIsArmed(marketFloor) || spikeArmed || remoteFilters;
+    /* THE FLOOR AND THE FEED CAN CANCEL EACH OTHER OUT, PARTLY. The momentum source reports
+       coins the launch sources may already have heard, so one younger than the feed's dedupe
+       window is still remembered from its own launch and is dropped as a duplicate before any
+       gate runs. Older candidates arrive normally, so this is a band lost rather than a dead
+       source — said at startup with both numbers, not refused. */
+    const dedupeClash = marketMod.floorIsArmed(marketFloor) || spikeArmed ? marketMod.momentumDedupeConflict({
+      minAgeHours: marketFloor?.minAgeHours ?? null,
+      dedupeTtlMs: feedMod.FEED_DEFAULTS.dedupeTtlMs,
+    }) : null;
+    if (dedupeClash) log(`[snipe] WARNING: ${dedupeClash.message}`);
+    const momentumFetch = momentumWanted
+      ? marketMod.momentumFetcher({
+          /* With no floor (the spike dial alone) the pre-filter drops only what this desk
+             cannot trade at all — bonded coins — and judges nothing else. */
+          floor: () => currentFilters().marketFloor ?? {},
+          active: () => marketMod.floorIsArmed(currentFilters().marketFloor) || spikeSet(currentFilters()),
+          fetchRows: feedMod.pumpfunListingFetcher({ pages: 2, sort: "last_trade_timestamp" }),
+        })
+      : null;
+    /* The floor's DexScreener half, as the port the lane takes. `pairsFor` is the desk's own
+       function — the same one the mirror evaluator prices with — so there is one HTTP client
+       for this API in the install and not two. */
+    const marketReader = marketMod.floorIsArmed(marketFloor) || remoteFilters
+      ? marketMod.createMarketReader({ pairsFor: (mint) => dexPairsFor(mint) })
+      : null;
+    if (momentumFetch) log(`[snipe] momentum source armed: pump.fun activity listing, pre-filtered against the floor`
+      + `${spikeArmed ? `; SNIPE_MIN_VOLUME_SPIKE=${laneCfg.minVolumeSpike} is judged on these candidates — a launch notice has no baseline to spike against` : ""}`);
+    if (!grpcSource) log("[snipe] volume tape: no trade tap (SNIPE_GRPC_* unset) — volume_spike will be recorded as unmeasured on every row");
+
     const laneFeed = feedMod.createSnipeFeed({
       sources: [
         feedMod.sourceFromVenueWatch(PUMPFUN_VENUE, {
@@ -3772,6 +4050,13 @@ if (SNIPE_LANE_MODE !== "off") {
           fetchRows: feedMod.pumpfunListingFetcher({ pages: 1 }),
         }),
         ...(grpcSource ? [grpcSource] : []),
+        ...(momentumFetch ? [feedMod.pollSource({
+          id: "poll:pumpfun-momentum", venueId: PUMPFUN_VENUE.id,
+          fetchRows: momentumFetch,
+          /* Slower than the launch poll on purpose: these coins are hours old, so a five
+             second cadence would spend requests to learn nothing new. */
+          intervalMs: 30_000,
+        })] : []),
       ],
     });
     /* THE SHADOW BOOK, ON DISK. Until now createSnipeShadow() was constructed inside the
@@ -3803,6 +4088,12 @@ if (SNIPE_LANE_MODE !== "off") {
       feed: laneFeed,
       executor: snipeExecutor,
       shadow: shadowBook,
+      /* The same tape the tap above fills. */
+      flowTape,
+      /* The market floor's reader. Null when no floor is configured, and createSnipeLane
+         REFUSES an armed floor with no reader rather than refusing every candidate for want
+         of a measurement — which in a log is indistinguishable from an empty market. */
+      marketReader,
       /* WHAT THE WALLET HOLDS, so the lane can tell a sell that FAILED from a position
          that has already GONE. Wired only on a live install, because only then is there a
          signing wallet whose balance means anything; in observe mode the lane latches and
@@ -3853,6 +4144,55 @@ if (SNIPE_LANE_MODE !== "off") {
     /* Hand the heartbeat its references, and say the lane is starting. From here every
        transition — up, faulted, disabled — is written to snipeStatus as it happens. */
     snipeStatus.lane = lane; snipeStatus.feed = laneFeed;
+    liveLane = lane;
+    /* THE DESK'S FILTER PANEL, applied to this running lane. The desk answers every heartbeat
+       with the floor's saved strategy; this applies the entry filters in it — and only those,
+       see snipe-lane.mjs LIVE_FILTER_ENV — when its version changes, and reports back which
+       version is running, what was accepted and what was refused and why. The page shows that
+       report rather than assuming a save reached the bot. The owner's env file stays the base:
+       a filter cleared on the page reverts to the env value, never to "no filter". */
+    const baseEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith("SNIPE_")));
+    const remoteState = { enabled: remoteFilters, version: null, appliedAt: null, accepted: {}, rejected: [], error: null };
+    snipeStatus.remote = {
+      apply(strategy) {
+        if (!remoteFilters || !strategy || typeof strategy !== "object" || Array.isArray(strategy)) return;
+        const version = Number(strategy.version) || 0;
+        if (version === remoteState.version) return;
+        try {
+          const dials = strategy.env && typeof strategy.env === "object" && !Array.isArray(strategy.env) ? { ...strategy.env } : {};
+          const refusedHere = [];
+          if (!grpcSource && dials.SNIPE_MIN_VOLUME_SPIKE !== undefined && dials.SNIPE_MIN_VOLUME_SPIKE !== null) {
+            refusedHere.push({ name: "SNIPE_MIN_VOLUME_SPIKE",
+              reason: "this bot has no gRPC trade tap (SNIPE_GRPC_*), so no candidate could ever be measured" });
+            delete dials.SNIPE_MIN_VOLUME_SPIKE;
+          }
+          const r = remoteFilterConfig({ baseEnv, remote: dials });
+          const applied = r.ok ? lane.applyFilters(r.cfg) : { ok: false, reason: r.rejected.map((x) => `${x.name}: ${x.reason}`).join("; ") };
+          remoteState.version = version;
+          remoteState.rejected = [...refusedHere, ...r.rejected].slice(0, 20);
+          if (!applied.ok) { remoteState.error = String(applied.reason).slice(0, 200); return; }
+          remoteState.error = null;
+          remoteState.accepted = r.accepted;
+          remoteState.appliedAt = Date.now();
+          const clash = marketMod.momentumDedupeConflict({
+            minAgeHours: lane.filters().marketFloor?.minAgeHours ?? null, dedupeTtlMs: feedMod.FEED_DEFAULTS.dedupeTtlMs });
+          if (clash && (applied.changed ?? []).length) log(`[snipe] WARNING: ${clash.message}`);
+          for (const x of remoteState.rejected) log(`[snipe] desk filter refused — ${x.name}: ${x.reason}`);
+        } catch (error) {
+          remoteState.version = version;
+          remoteState.error = String(error?.message ?? error).slice(0, 200);
+        }
+      },
+      report() {
+        return {
+          enabled: remoteState.enabled, version: remoteState.version, appliedAt: remoteState.appliedAt,
+          accepted: Object.keys(remoteState.accepted), rejected: remoteState.rejected, error: remoteState.error,
+        };
+      },
+    };
+    if (remoteFilters) log("[snipe] SNIPE_REMOTE_FILTERS=1: the desk's filter panel may change this lane's ENTRY FILTERS "
+      + "(never its money caps, exits or mode); changes arrive with the heartbeat, about once a minute");
+    snipeStatus.flowTap = grpcSource ? flowTap : null; snipeStatus.momentum = momentumFetch;
     setSnipeState("starting", null);
     const snipeTickMs = Number(process.env.SNIPE_TICK_MS || 1_000);
     /* A FAULT MUST NEVER ABANDON AN OPEN POSITION.

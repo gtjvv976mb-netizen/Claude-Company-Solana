@@ -105,6 +105,8 @@ RUNTIME_PATHS=(
   executor/snipe-venue.mjs executor/snipe-curve.mjs executor/snipe-entry.mjs
   executor/snipe-feed.mjs executor/snipe-book.mjs executor/snipe-shadow.mjs
   executor/snipe-policy.mjs executor/snipe-socials.mjs executor/snipe-relay.mjs
+  executor/snipe-volume.mjs executor/snipe-market.mjs executor/fee-lane.mjs
+  executor/pumpfun-fees.mjs
   executor/grpc-wire.mjs executor/snipe-grpc.mjs
   executor/shadow-sink.mjs executor/grade-entry-gates.mjs
   executor/monitor.mjs executor/launchd-runner.mjs executor/macos-launchagent.sh
@@ -153,7 +155,44 @@ case "$COMMAND" in
     chmod 700 "$RELEASES_DIR"
     FINAL_RELEASE="$RELEASES_DIR/$EXPECTED_COMMIT"
     if [ -e "$FINAL_RELEASE" ] || [ -L "$FINAL_RELEASE" ]; then
-      fail "release already exists: $FINAL_RELEASE"
+      # WHAT THIS ACTUALLY MEANS, because the bare sentence cost an evening.
+      #
+      # A versioned release is named after its commit, so this fires whenever the installer
+      # is re-run at a commit already installed — which is the single most natural thing an
+      # operator does after an install that looked like it half-worked. "release already
+      # exists" reads like corruption, so the reflex is to run it again, and re-running is
+      # the one thing that cannot help: every attempt fails here, rolls the previous release
+      # back, and 2026-09-18 that loop was diagnosed for half an hour as a readiness problem
+      # in the runner rather than as this line doing exactly what it says.
+      #
+      # It is a REFUSAL rather than a no-op on purpose: overwriting a release that launchd
+      # may currently be running is how a live bot gets its code changed underneath it. But
+      # a refusal that does not say what to do instead is a refusal that gets fought.
+      #
+      # AND WHEN IT FIRES FROM install.sh, THE BOT IS STOPPED. install.sh refuses to run at all
+      # while the LaunchAgent is loaded (darwin_preflight_label), so by the time this line is
+      # reached the agent is down — unloaded by the previous attempt's rollback, or by hand to
+      # get past the preflight. The first version of this message told the owner there was
+      # nothing to be done, and named the controller one directory too high (the clone root, not
+      # its executor/), so the one command that would have restarted the bot failed with "No such
+      # file" and the bot stayed stopped with open positions nobody was managing.
+      fail "$(printf 'this commit is already installed at %s
+' "$FINAL_RELEASE")$(printf '
+That release does not need reinstalling: a versioned release is named after its commit, so
+re-running the installer at the SAME commit always lands here. It is refused rather than
+overwritten because launchd may be running that code.
+
+If you ran install.sh, YOUR BOT IS NOT RUNNING RIGHT NOW: the installer only gets this far
+with the LaunchAgent unloaded. Start this commit with:
+
+  bash %s/executor/macos-launchagent.sh load
+  bash %s/executor/macos-launchagent.sh status
+
+Other cases:
+  - you want to install a DIFFERENT commit -> check out that commit and re-run
+  - this release really is damaged         -> remove it deliberately, with the agent
+                                              unloaded first, then re-run
+' "$FINAL_RELEASE" "$FINAL_RELEASE")"
     fi
     STAGE_PARENT="$(mktemp -d "$RELEASES_DIR/.staging.XXXXXXXX")"
     STAGED_REPO="$STAGE_PARENT/source"

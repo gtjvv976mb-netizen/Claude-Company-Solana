@@ -54,6 +54,18 @@ export const DEFAULT_MAX_BYTES = 64 * 1024 * 1024;
 /** Where the book lives, given the state database's path. Beside it, named after it, the
  *  same convention the pause and hard-stop sentinels already use. */
 export const shadowBookPath = (stateDb) => `${String(stateDb)}.shadow.jsonl`;
+/**
+ * THE FEE BOOK — a SEPARATE FILE, and the separation is the point.
+ *
+ * bagworkagent.fun's own `pnlSol` adds claimed creator fees to trading P&L, which is how a bot
+ * that loses -0.077 SOL across 362 trades displays +15.6. That is not a display bug; it is the
+ * mechanism by which a losing strategy survives contact with its owner.
+ *
+ * So fee revenue is not a flag on a shared row and not a column somebody could sum by
+ * accident. It is a different file from the journal the trading path writes, because a rule
+ * enforced by physics survives edits that a rule written in a comment does not.
+ */
+export const feeBookPath = (stateDb) => `${String(stateDb)}.fees.jsonl`;
 
 const isPlainObject = (v) => v != null && typeof v === "object" && !Array.isArray(v);
 

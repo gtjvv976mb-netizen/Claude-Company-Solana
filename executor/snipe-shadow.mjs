@@ -537,6 +537,17 @@ export const SNIPE_PROXIES = Object.freeze({
     measured: (r) => finite(r.gate?.measured?.launch_share),
     flags: (r) => Number(r.gate.measured.launch_share) >= 100,
   }),
+  /* THE OWNER'S SIGNAL, INVERTED SO THE SCORECARD CAN SCORE IT. He asked for a spike to be
+     a reason to BUY; the positive class here is a launch NOBODY FOLLOWED, so the ruler has
+     to predict that. Flagging the absence of a spike is the same claim stated the way this
+     scorecard measures: if a flat tape reliably marks the coins nobody follows, then its
+     opposite reliably marks the ones people do, and a floor on the spike is worth arming.
+     A spike below 1 is net inflow slower than the coin's own baseline. */
+  volume_spike: Object.freeze({
+    rule: "net inflow is running BELOW the coin's own baseline (no spike)",
+    measured: (r) => finite(r.gate?.measured?.volume_spike),
+    flags: (r) => Number(r.gate.measured.volume_spike) < 1,
+  }),
 });
 
 /* The proxy set and the lane's proxy gates must name the same things, or the scorecard is

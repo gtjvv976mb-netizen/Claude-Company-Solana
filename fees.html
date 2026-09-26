@@ -1,0 +1,323 @@
+<title>Claude Co — Creator fees</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="assets/favicon.png" type="image/png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Claude Company">
+<meta name="theme-color" content="#08050f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<meta name="cc-build" content="2026-09-26 19:03 UTC">
+<meta name="cc-commit" content="27c28b58e731c8adc22fc5f72fbeb8b178fbff02">
+<script>console.log("Claude Company build 2026-09-26 19:03 UTC")</script>
+<script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
+<script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
+<style>
+/* One job, one page. Same night palette as the tower, because this is a room in the
+   same building. */
+:root{
+  --cream:#e6ddf5; --teal:#9945ff; --amber:#d1a84f; --glass:#5ee9b5;
+  --bg:#08050f; --panel:#120c20; --panel-2:#1a1230; --line:#2b1f45;
+  --dim:#9a90b5; --loss:#e0685f; --win:#5ee9b5;
+  --serif:"Instrument Serif",Georgia,serif;
+  --sans:Archivo,system-ui,-apple-system,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--cream);font-family:var(--sans);font-size:15px;line-height:1.55;
+  -webkit-font-smoothing:antialiased}
+a{color:var(--glass)}
+.wrap{max-width:820px;margin:0 auto;padding:28px 16px 80px}
+h1{font-family:var(--serif);font-size:38px;font-weight:400;margin:0 0 4px}
+.sub{color:var(--dim);margin:0 0 26px;max-width:62ch}
+h2{font-family:var(--serif);font-weight:400;font-size:23px;margin:32px 0 8px}
+.lede{color:var(--dim);margin:0 0 14px;max-width:64ch}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:12px}
+.big{font-family:var(--mono);font-size:34px;font-variant-numeric:tabular-nums;margin:2px 0 2px}
+.big.none{color:var(--dim)} .big.pos{color:var(--win)}
+.k{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px;margin-top:6px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);word-break:break-all}
+th{color:var(--dim);font-weight:500;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+button{font-family:var(--sans);font-size:15px;font-weight:600;padding:11px 20px;border-radius:8px;
+  border:1px solid var(--glass);background:transparent;color:var(--glass);cursor:pointer}
+button:hover:not(:disabled){background:rgba(94,233,181,.1)}
+button:disabled{opacity:.4;cursor:not-allowed;border-color:var(--line);color:var(--dim)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
+.status{font-family:var(--mono);font-size:12.5px;color:var(--dim)}
+.status.err{color:var(--loss)} .status.ok{color:var(--win)}
+.note{border-left:2px solid var(--amber);padding-left:12px;color:var(--dim);font-size:13.5px;max-width:64ch;margin-top:14px}
+input{font-family:var(--mono);font-size:12.5px;padding:8px 10px;border-radius:6px;border:1px solid var(--line);
+  background:#0d0818;color:var(--cream);min-width:min(420px,100%)}
+footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);color:var(--dim);font-size:13px}
+</style>
+
+<div class="wrap">
+  <h1>Creator fees</h1>
+  <p class="sub">pump.fun pays a coin's creator fee to the wallet that created the coin. This page reads
+  what has accrued and builds the claim — <strong>you</strong> sign it, in your own wallet. Nothing on
+  this server holds a key, and neither does the bot.</p>
+
+  <div class="row">
+    <input id="creator" spellcheck="false" placeholder="creator wallet address">
+    <button id="read">Read the vaults</button>
+  </div>
+  <div class="status" id="readStatus"></div>
+
+  <h2>Claimable</h2>
+  <div class="card">
+    <div class="k">After the rent that cannot move</div>
+    <div class="big none" id="claimable">—</div>
+    <div class="status" id="verdict"></div>
+  </div>
+  <table id="detail"></table>
+
+  <h2>Claim it</h2>
+  <p class="lede">Your wallet builds and submits the transaction. The page only supplies the
+  instructions — four of them when both sides hold something: collect from the bonding curve, open a
+  wrapped-SOL account, collect from pump-amm into it, then close it so the lamports arrive spendable.</p>
+  <div class="row">
+    <button id="connect">Connect wallet</button>
+    <button id="claim" disabled>Sign the claim</button>
+  </div>
+  <div class="row" id="wallets"></div>
+  <div class="status" id="claimStatus"></div>
+
+  <p class="note" id="note"></p>
+  <footer>The claim's account layout is derived, never hardcoded, and is checked against three
+  transactions that landed on mainnet. The two programs spell the same seed differently —
+  <code>creator-vault</code> on the bonding curve, <code>creator_vault</code> on pump-amm — and both
+  derive a perfectly valid address, so the wrong one owns nothing and a claim against it silently
+  takes zero.</footer>
+</div>
+
+<script type="module">
+import * as W3 from "https://esm.sh/@solana/web3.js@1.95.3";
+
+const API = window.__API_BASE__ || "";
+const $ = (id) => document.getElementById(id);
+const api = async (p) => {
+  const r = await fetch(API + p, { headers: { accept: "application/json" } });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body?.error || `HTTP ${r.status}`);
+  return body;
+};
+const say = (id, text, cls = "") => { const e = $(id); e.textContent = text; e.className = "status " + cls; };
+const SOL = 1_000_000_000;
+/* A NULL IS A DASH, NEVER A ZERO. Every figure here can be "the node did not answer", and a zero
+   in that case is a claim about a number nobody took. */
+const sol = (lamports) => (lamports === null || lamports === undefined || !Number.isFinite(Number(lamports))
+  ? null : `${(Number(lamports) / SOL).toFixed(9)} SOL`);
+
+/* ?creator=… so a link can be shared, and $CLAUDECO's own creator as the default, since that is the
+   coin this desk actually has. */
+const CLAUDECO_CREATOR = "3J57tqAJqRmSBn1ZYDu9JpMMyTfBHdcGGwECiPQeiji3";
+$("creator").value = new URLSearchParams(location.search).get("creator") || CLAUDECO_CREATOR;
+
+let latest = null;          // the last vault reading
+let wallet = null;          // { kind, w, account?, address }
+
+/* BASE64 TO BYTES, IN THE BROWSER'S OWN TERMS. The first version of this page called
+   `Buffer.from(ix.data, "base64")`, and Buffer is Node's — esm.sh's web3.js keeps its own copy
+   module-private and never puts one on window. So the claim threw "Buffer is not defined"
+   before any wallet was asked, in every browser, on the only claim path this desk ships. */
+const fromBase64 = (b64) => Uint8Array.from(atob(String(b64 ?? "")), (c) => c.charCodeAt(0));
+const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const b58 = (bytes) => {
+  if (typeof bytes === "string") return bytes;
+  const u = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes ?? []);
+  let n = 0n; for (const x of u) n = n * 256n + BigInt(x);
+  let out = ""; while (n > 0n) { out = B58[Number(n % 58n)] + out; n /= 58n; }
+  for (const x of u) { if (x !== 0) break; out = "1" + out; }
+  return out;
+};
+
+/* ── which wallet? — the discovery tower.html uses, because it is the one that works ──────
+   A Wallet Standard wallet does not sit in a list on window. It REGISTERS: the page listens
+   for `wallet-standard:register-wallet` and announces itself with `wallet-standard:app-ready`,
+   and each wallet then calls `register(wallet)`. The first version of this page read
+   `navigator.wallets` as if it held wallet objects — it holds registration callbacks, when it
+   exists at all — so no standard-only wallet was ever found. Legacy injected providers are the
+   fallback, exactly as on the tower. */
+const FOUND = new Map();
+const registry = { register: (...ws) => {
+  for (const w of ws) {
+    const chains = w?.chains ?? [];
+    if (w?.features?.["standard:connect"] && w.features["solana:signAndSendTransaction"]
+      && chains.some((c) => String(c).startsWith("solana:")))
+      FOUND.set(w.name, { kind: "standard", w });
+  }
+  return () => {};
+} };
+window.addEventListener("wallet-standard:register-wallet", (e) => { try { e.detail(registry); } catch {} });
+const scanWallets = () => {
+  try { window.dispatchEvent(new CustomEvent("wallet-standard:app-ready", { detail: registry })); } catch {}
+  const has = (re) => [...FOUND.keys()].some((n) => re.test(n));
+  if (window.solana?.isPhantom && !has(/phantom/i)) FOUND.set("Phantom", { kind: "legacy", w: window.solana });
+  if (window.solflare?.isSolflare && !has(/solflare/i)) FOUND.set("Solflare", { kind: "legacy", w: window.solflare });
+  if (window.backpack && !has(/backpack/i)) FOUND.set("Backpack", { kind: "legacy", w: window.backpack });
+  return FOUND.size;
+};
+scanWallets();
+setTimeout(scanWallets, 300);
+setTimeout(scanWallets, 1200);          // late injectors
+
+/* ONE RULE FOR THE SIGN BUTTON, evaluated in one place. It used to be decided twice — once
+   after a read and once after a connect — and the two disagreed: connecting after a read
+   enabled it with one vault unreadable (and then claimed only half), and reading after a
+   connect enabled it for a wallet that was not the creator. Every path now calls this. */
+function refreshClaimButton() {
+  const addr = wallet?.address ?? null;
+  const v = latest;
+  /* THE WALLET MUST BE THE CREATOR. Only the creator's signature can send this, so a mismatch
+     is said before somebody taps approve and watches it fail on chain — whichever order the
+     read and the connect happened in. */
+  const mismatch = Boolean(wallet && v && addr !== v.creator);
+  const mismatchWhy = mismatch ? `connected ${addr}, but the fees belong to ${v.creator} — only that wallet can claim them` : null;
+  let why = null;
+  if (!v) why = "read the vaults first";
+  else if (!v.readable || v.includeCurve === null || v.includeAmm === null)
+    why = "a vault could not be read — an unreadable side is not an empty one, so nothing is offered";
+  else if (!(v.claimableLamports > 0)) why = "nothing to claim";
+  else if (!wallet) why = "connect the creator's wallet";
+  else if (mismatch) why = mismatchWhy;
+  $("claim").disabled = why !== null;
+  if (wallet) say("claimStatus", mismatch ? mismatchWhy : `connected ${addr}`, mismatch ? "err" : "ok");
+  return why;
+}
+
+async function read(opts) {
+  const creator = $("creator").value.trim();
+  const fresh = opts?.fresh === true;
+  say("readStatus", "reading both vaults…");
+  $("read").disabled = true;
+  try {
+    const v = await api(`/api/fees/claimable?creator=${encodeURIComponent(creator)}${fresh ? "&fresh=1" : ""}`);
+    latest = v;
+    const amount = sol(v.claimableLamports);
+    $("claimable").textContent = amount ?? "—";
+    $("claimable").className = "big " + (amount === null ? "none" : "pos");
+    $("verdict").textContent = v.verdict?.reason ?? "";
+    const tr = (label, addr, value) => {
+      const row = document.createElement("tr");
+      for (const [tag, text, cls] of [["th", label], ["td", addr ?? ""], ["td", value ?? "—", "num"]]) {
+        const c = document.createElement(tag); c.textContent = text; if (cls) c.className = cls; row.appendChild(c);
+      }
+      return row;
+    };
+    $("detail").replaceChildren(
+      tr("Curve vault", v.curveVault, sol(v.curveLamports)),
+      tr("…of which rent that cannot move", "", sol(v.rentReserveLamports)),
+      tr("pump-amm vault", v.ammVaultAta, sol(v.ammLamports)));
+    const partial = v.partial === true || (v.readable && (v.includeCurve === null || v.includeAmm === null));
+    say("readStatus", !v.readable
+      ? "neither vault could be read — that is not the same fact as an empty vault, so nothing is offered"
+      : partial ? "one vault could not be read, so the claim is held until both can be — try Read again"
+        : `read at ${new Date().toISOString().slice(11, 19)}${v.cachedMs ? ` (cached ${Math.round(v.cachedMs / 1000)}s)` : ""}`,
+      v.readable && !partial ? "ok" : "err");
+    $("note").textContent = v.verdict?.worth === false
+      ? "Worth knowing: fees keep accruing whether or not you claim, so waiting costs nothing but the "
+        + "time. The only thing a claim loses is the network fee, which is why this page tells you the net."
+      : "";
+  } catch (e) {
+    latest = null;
+    say("readStatus", e.message, "err");
+  } finally {
+    $("read").disabled = false;
+    refreshClaimButton();
+  }
+}
+
+function chooseWallet() {
+  const list = [...FOUND.entries()];
+  if (list.length <= 1) return Promise.resolve(list[0]?.[1] ?? null);
+  return new Promise((resolve) => {
+    const box = $("wallets");
+    box.replaceChildren();
+    for (const [name, entry] of list) {
+      const b = document.createElement("button");
+      b.textContent = name;
+      b.onclick = () => { box.replaceChildren(); resolve(entry); };
+      box.appendChild(b);
+    }
+  });
+}
+
+async function connect() {
+  say("claimStatus", "looking for a wallet…");
+  try {
+    if (!FOUND.size) { scanWallets(); await new Promise((r) => setTimeout(r, 350)); scanWallets(); }
+    const entry = await chooseWallet();
+    if (!entry) throw new Error("no Solana wallet found — if one is installed, unlock it and press Connect again");
+    if (entry.kind === "legacy") {
+      const res = await entry.w.connect();
+      wallet = { kind: "legacy", w: entry.w, address: res?.publicKey?.toString?.() ?? entry.w.publicKey?.toString?.() ?? null };
+    } else {
+      const res = await entry.w.features["standard:connect"].connect();
+      const account = (res?.accounts ?? entry.w.accounts ?? [])
+        .find((a) => (a.chains ?? []).some((c) => String(c).startsWith("solana:"))) ?? (res?.accounts ?? [])[0];
+      if (!account) throw new Error("the wallet connected but offered no account");
+      wallet = { kind: "standard", w: entry.w, account, address: account.address };
+    }
+    if (!wallet.address) throw new Error("the wallet connected but did not say which address");
+    refreshClaimButton();
+  } catch (e) { wallet = null; refreshClaimButton(); say("claimStatus", e.message, "err"); }
+}
+
+async function claim() {
+  /* Re-checked here as well as on the button: a disabled attribute is a hint, not a guard. */
+  if (refreshClaimButton() !== null) return;
+  $("claim").disabled = true;
+  try {
+    say("claimStatus", "building the claim…");
+    const ticket = await api(`/api/fees/claim-ticket?creator=${encodeURIComponent(latest.creator)}`
+      + `&curve=${latest.includeCurve ? 1 : 0}&amm=${latest.includeAmm ? 1 : 0}`);
+    const { blockhash } = await api("/api/pay/blockhash");
+    if (!blockhash) throw new Error("no blockhash — try again in a moment");
+
+    const owner = new W3.PublicKey(latest.creator);
+    const tx = new W3.Transaction({ feePayer: owner, recentBlockhash: blockhash });
+    for (const ix of ticket.instructions) {
+      tx.add(new W3.TransactionInstruction({
+        programId: new W3.PublicKey(ix.programId),
+        keys: ix.keys.map((k) => ({ pubkey: new W3.PublicKey(k.pubkey), isSigner: k.isSigner, isWritable: k.isWritable })),
+        data: fromBase64(ix.data),
+      }));
+    }
+    say("claimStatus", `sign in your wallet — ${ticket.instructions.length} instructions`);
+    let signature;
+    if (wallet.kind === "legacy") {
+      ({ signature } = await wallet.w.signAndSendTransaction(tx));
+    } else {
+      const feat = wallet.w.features["solana:signAndSendTransaction"];
+      const [out] = await feat.signAndSendTransaction({
+        account: wallet.account, chain: "solana:mainnet",
+        transaction: tx.serialize({ requireAllSignatures: false, verifySignatures: false }),
+      });
+      signature = b58(out.signature);
+    }
+    say("claimStatus", `sent. ${signature}`, "ok");
+    /* Re-read rather than assume: what landed is what the vaults now say, and an estimate booked as
+       a result is how a revenue line starts drifting from the wallet. The read goes around the
+       desk's short cache, so the number after a claim is the chain's and not the one before it. */
+    setTimeout(() => read({ fresh: true }), 4000);
+  } catch (e) {
+    refreshClaimButton();
+    say("claimStatus", e.message, "err");
+  }
+}
+
+$("read").addEventListener("click", () => read());
+$("connect").addEventListener("click", connect);
+$("claim").addEventListener("click", claim);
+read();
+</script>

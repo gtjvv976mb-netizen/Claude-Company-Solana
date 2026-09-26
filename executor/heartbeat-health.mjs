@@ -35,6 +35,19 @@ const TRADING_RUNTIME_FILES = Object.freeze([
   "snipe-lane.mjs", "snipe-venue.mjs", "snipe-venue-pumpfun.mjs", "snipe-curve.mjs",
   "snipe-entry.mjs", "snipe-book.mjs", "snipe-shadow.mjs", "snipe-policy.mjs",
   "snipe-feed.mjs", "snipe-execute.mjs",
+  /* snipe-volume.mjs measures the volume spike the entry gate judges. Imported at module
+     scope by snipe-lane.mjs, so it is loaded whenever the lane is, and a change to the file
+     that decides what counts as a wave worth riding belongs in the fingerprint. */
+  "snipe-volume.mjs",
+  /* snipe-market.mjs decides which coins the bot may buy at all — the single biggest
+     determinant of what it trades. A change to it belongs in the fingerprint. */
+  "snipe-market.mjs",
+  /* fee-lane.mjs decides when this wallet signs a claim. A file that moves money belongs in
+     the fingerprint whether or not it is armed today. */
+  "fee-lane.mjs",
+  /* pumpfun-fees.mjs builds the instruction that moves the fee money. Every account it names
+     is derived, so a change to a seed is a change to where the money goes. Fingerprinted. */
+  "pumpfun-fees.mjs",
   /* snipe-socials.mjs decides which launches the lane may buy at all, and it is the one
      sniper module that fetches from a host the COIN'S DEPLOYER chose. A file with that
      job, loaded by the trading process, belongs in its fingerprint. */

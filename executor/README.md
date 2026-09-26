@@ -233,6 +233,30 @@ environment file has never existed. Before this it defaulted there, refused, and
 your environment file was missing rather than that it had looked in the wrong place. If
 none of the four has it, the refusal now prints every path it tried.
 
+#### `load` must be run from the versioned release path, never through `current`
+
+This is worth its own heading because getting it wrong takes the bot down, and the command
+above is the shape people copy.
+
+`macos-launchagent.sh` resolves its own directory with `cd` + `pwd -P`, which follows the
+`current` symlink through to `releases/<release>`. So a `load` run that way renders a plist
+naming **that** path, while the plist launchd already has installed names
+`versioned-releases/<commit>`. `load` then compares the two byte for byte, finds them
+different, and refuses — **every time, by construction.** It is not a flaky check and
+re-running cannot help.
+
+```bash
+# the form that works on a live install
+bash ~/claudeco-executor/versioned-releases/<full-commit-sha>/executor/macos-launchagent.sh load
+```
+
+`readlink ~/claudeco-executor/current` and the `ProgramArguments` in
+`~/Library/LaunchAgents/com.claudeco.wallste.plist` will tell you which paths your install
+actually uses. On 2026-09-18 the `current` form was given to this desk's owner as a
+lightweight restart; the load failed as described and the bot stayed down, with entries
+unpaused, until it was loaded from the versioned path. `buys`, `status` and `unload` are
+unaffected either way — only the commands that render and compare a plist care.
+
 `install` only writes the plist. The separate `load` command validates the runtime,
 requires the installed plist to match it byte-for-byte, and refuses to start while a
 manually launched poller still owns the executor lock. It does not terminate that
@@ -1317,6 +1341,371 @@ the time for −18.5% while entries 10 seconds and later won 40% for +34.0%, and
 signal ordered the outcome at all. What this source buys is the *ability to test* the
 latency hypothesis against the cheap sources it races. It does not buy an edge, and nothing
 here should be read as claiming it does.
+
+### The fee lane — the business, as opposed to the marketing
+
+Measured across 26 of bagworkagent.fun's agents and 362 closed trades, their best performer to
+their worst:
+
+| source | total |
+|---|---:|
+| Trading | **−0.077 SOL** |
+| Creator fees | **+14.515 SOL** |
+| Level rewards | +0.620 SOL |
+
+21% win rate. Their #1 agent displays +15.6 SOL and is −0.105 on trading. **Not one agent in
+that system makes money trading.** Every SOL of profit is the pump.fun creator fee on the coin
+the agent itself launched: the trading makes the coin worth watching, the watching makes volume,
+the volume makes the fee. The bot is the marketing. This lane is the business.
+
+```bash
+FEE_CLAIM=dry                  # read both vaults every 30 min, record what it WOULD claim
+FEE_CLAIM_CREATOR=<wallet>     # defaults to the desk's own wallet on a live install
+```
+
+It runs on its own timer, deliberately independent of both the desk and the sniper: it earns
+whether or not either is running, and it cannot take either down.
+
+#### The number this desk refuses to produce
+
+Their `pnlSol` **adds claimed fees to trading P&L.** That is how a bot losing every round trip
+displays +15.6 SOL, and it is not a display bug — it is the mechanism by which a losing strategy
+survives contact with its owner. Nobody switches off a bot showing +15.6.
+
+So fee revenue is written to **its own file** — `<state-db>.fees.jsonl`, separate from the
+journal the trading path writes. Not a flag on a shared row, not a column somebody could sum by
+accident: a different file, because a rule enforced by physics survives edits that a rule
+written in a comment does not. `feeSummary()` reports the two figures side by side and has no
+`total`, no `pnl` and no `net` field. The test asserts their absence by name.
+
+#### It will not claim what it cannot keep
+
+The claim instructions carry no amount, so claiming an empty vault costs a signature and a
+priority fee to move zero — and would then be booked as revenue of zero while the fee left the
+wallet. Every decision is made on lamports **net of what the transaction costs**, against a
+default floor of 0.002 SOL (roughly twenty times a claim's own fees), and a skip prints the whole
+arithmetic: gross, the rent that cannot move, the fees, the net, and the floor.
+
+Three distinctions the lane keeps that a simpler one would collapse:
+
+- **Unreadable is not empty.** An unreadable vault skips with clause `unreadable` and retries;
+  an empty one skips with a measured zero. A lane that confused them would stop claiming at the
+  first RPC hiccup and never say why.
+- **Rent is not revenue.** The curve's creator vault is a data-less system account, so its last
+  650,240 lamports cannot move. That number was **measured on mainnet**
+  (`getMinimumBalanceForRentExemption(0)`), not remembered — it was written as 890,880 from
+  memory first, and the chain was asked before it shipped. The pump-amm side gets no such
+  deduction, because the claim closes that token account and its rent comes back in the same
+  transaction. (One operational consequence: the wallet must be able to cover ~0.0015 SOL of
+  token-account rent for the length of one transaction, even though it returns.)
+- **What landed is not what was estimated.** The submitter reports the lamports the wallet
+  actually gained; the estimate is kept beside it, never in place of it. A claim whose amount
+  cannot be reported is booked as unknown and **counted**, so `feeSol` can never quietly be a
+  subset of what arrived while looking like all of it.
+
+`HARD STOP` refuses a claim — a claim is a signature, and the owner's instruction has no
+exception for the profitable path. `PAUSE ENTRIES` does not: it stops new exposure, and a claim
+takes money in.
+
+#### Why `FEE_CLAIM=live` is refused, permanently
+
+It is refused by name, and this is a settled design rather than a gap.
+
+A coin's creator fee is paid to the wallet that **created the coin** — for `$CLAUDECO` that is
+`3J57tqAJqRmSBn1ZYDu9JpMMyTfBHdcGGwECiPQeiji3`, not the burner this installer generates. The
+burner's entire security story is that the only key on that disk is one generated there and funded
+deliberately; a real creator wallet sitting beside it would widen the blast radius of everything
+else on the machine for the sake of a claim that happens a few times a month.
+
+bagworkagent.fun's server holds its agents' keys and signs for them. This desk does not, and
+neither does the bot. The split is:
+
+| who | does what |
+|---|---|
+| the bot | **reads** both vaults on a timer and reports what is claimable |
+| the desk | **builds** the unsigned claim, from the layout proved against three landed transactions |
+| the owner | **signs** once, in their own wallet, at `/fees.html` |
+
+So `FEE_CLAIM=dry` is not a rehearsal mode — it is the mode this lane runs in for good. Set
+`FEE_CLAIM_CREATOR` to the creator wallet you want watched (it need not be this machine's wallet,
+and for the house coin it is not), and the claimable figure rides the heartbeat to the desk and onto
+the agent page.
+
+```bash
+FEE_CLAIM=dry
+FEE_CLAIM_CREATOR=3J57tqAJqRmSBn1ZYDu9JpMMyTfBHdcGGwECiPQeiji3
+```
+
+All three are **validated at startup** and refused by name: a creator that is not a Solana
+address, an interval that is not a whole number of milliseconds of at least 60000, or a floor
+that is not a whole number of lamports. (`FEE_CLAIM_INTERVAL_MS=30m` used to parse as NaN, which
+`setInterval` treats as ~1 ms — an RPC flood on the connection the trading path shares.) A read
+where one vault answered and the other did not is `unreadable`, never "the half that answered
+is all there is".
+
+What the agent page shows is two separate things: **claimed** — what landed, which is a dash on
+this desk because the owner signs and the desk does not record it — and **waiting**, what the
+last read found in the vaults. Waiting is not revenue and is never summed into anything.
+
+The claim itself is two clicks at `solana.claudedotcompany.com/fees.html`: connect the creator
+wallet, sign. The page refuses to offer a claim from any other wallet, because only the creator's
+signature can send it and finding that out on chain is a worse way to learn it.
+
+### The market floor — the biggest change to what this bot buys
+
+bagworkagent.fun's agents will not touch a token under an hour old, under $30,000 of
+liquidity, under $50,000 of 24-hour volume, or under a $50,000 market cap. Those four numbers
+are theirs, read out of their own running configuration, and they are worth copying for one
+reason: **they refuse almost exactly the population HAWK-AI currently buys.**
+
+This desk's own record says that population loses money. 64 real trades, −0.361 SOL, 5
+winners. Entries under three seconds won 0% of the time for −18.5%; entries at ten seconds and
+later won 40% for +34.0%. No entry signal ordered the outcome, and fees were about 45% of the
+average loss. Every one of those numbers says the same thing: a coin nobody has traded yet has
+no demand to measure, so there is nothing to be right about. A floor is the opposite bet — it
+refuses to be first and insists on evidence.
+
+```bash
+SNIPE_MARKET_FLOOR=curve      # the two of their four a bonding curve can meet — RUN THIS ONE
+```
+
+| Variable | Their value | `curve` | Purpose |
+|---|---:|---:|---|
+| `SNIPE_MIN_AGE_HOURS` | 1 | 1 | The coin must have existed this long |
+| `SNIPE_MIN_LIQUIDITY_USD` | 30000 | — | Real SOL in the curve — what a seller can actually get out |
+| `SNIPE_MIN_VOLUME_24H_USD` | 50000 | 50000 | Traded volume over the last day |
+| `SNIPE_MIN_MCAP_USD` | 50000 | — | Market capitalisation |
+
+#### Why not `bagwork`: two of their numbers are out of reach on a curve
+
+`SNIPE_MARKET_FLOOR=bagwork` loads their four numbers literally, and **on this desk it admits
+nothing.** Their floor was written for coins that bonded long ago; this desk can only buy on a
+bonding curve, and a standard curve graduates at **85.005 SOL** of real reserve — about **$10,300**
+at the SOL price measured on 2026-09-26 ($121.69). Their $30,000 liquidity bar needs SOL above
+~$353 for *any* curve to meet it. Their $50,000 cap is reached only by the last buy before a coin
+leaves the curve for good (~410.9 SOL of cap at graduation).
+
+Measured the same day over the 70 most recently traded coins: 25 were on a curve, the deepest
+held 68 SOL, the richest was a $36k cap, and none of the five over an hour old cleared $50k of cap.
+Volume is different — on-curve coins did $110,756 (2.4 h old), $97,857 (10.2 h) and $69,878 of
+24-hour volume — so the two thresholds a curve *can* meet carry the bet, and that is the `curve`
+preset. `bagwork` stays, literal, for the day this desk can trade a bonded pool, and the lane
+prints a startup WARNING naming every threshold no curve can reach and the SOL price it would need.
+
+Each dial overrides one threshold of the preset. **A dial set on its own arms a floor of
+exactly that dial** and nothing else — inheriting three thresholds you never typed is how a
+bot ends up refusing on a number nobody chose.
+
+#### Where each fact honestly comes from
+
+Nothing here adds a request to the path that buys.
+
+- **age** — the venue's own `created_timestamp`, off the listing row.
+- **liquidity** — the curve's real quote reserve × SOL/USD. For a bonding curve this is not a
+  proxy for depth, it *is* the depth. The lane already read the curve. It also counts as a pool
+  for `SNIPE_MIN_TOP_POOL_LIQUIDITY_USD`: DexScreener lists on-curve pumpfun pairs with no
+  liquidity field at all, so a top-pool figure from pairs alone was unknown for every coin this
+  desk can buy.
+- **market cap** — the venue's own `usd_market_cap`, off the same row; DexScreener's when the row
+  carries none (a launch notice has no row). When the two disagree by more than 3x the **smaller**
+  is judged and the disagreement is stamped on the facts.
+- **SOL/USD** — derived from the same DexScreener response, WSOL-quoted pools only, as the
+  median of `priceUsd / priceNative`. No oracle call, no cache. Wire `solUsdReader` to use the
+  desk's verified Pyth price instead; a supplied price always wins, and which one was used is
+  reported on the facts, because a depth figure is only as good as its denominator.
+- **24h volume** — DexScreener, the only source for it, and the one request this costs. Paid
+  only for candidates that already cleared the three free facts — and never for a coin whose
+  age alone already fails the floor, which with an age floor armed is every launch notice
+  (~29 a minute that used to be fetched for nothing; the lane counts them as `marketReadsSkipped`).
+
+**Unknown is never zero.** `Number(null)` is `0`, and this desk has shipped that bug once
+already — a creator-fee vault read that failed came back as a confident "empty". Here it would
+be worse in both directions: an unreadable liquidity reading as $0 refuses everything, and an
+unreadable 24h volume reading as $0 does too, so the floor would *look* like it was working
+while measuring nothing. So every fact is `null` when unknown, a threshold judging a null
+**refuses**, and the refusal names the missing fact rather than the threshold. An armed floor
+with no reader wired is refused at construction, because a lane that refuses every candidate
+for want of a measurement reads in a log exactly like a market with nothing in it.
+
+#### Five this desk adds
+
+Their floor is four thresholds on four numbers, and **every one of those numbers can be
+manufactured by whoever launched the coin.** A deployer can wash a coin between two wallets all
+day and volume, market cap and price all move. These refuse the *shape* of a manufactured
+market rather than its size, and all five read off facts the four above already fetched. All
+off by default — they are hypotheses, where BAGWORK's four are evidence.
+
+| Variable | Refuses | Why |
+|---|---|---|
+| `SNIPE_MAX_VOLUME_TO_LIQUIDITY` | $5m of volume on $30k of depth | That is a treadmill, not a market |
+| `SNIPE_MIN_TXNS_24H` | Big volume, few trades | A dollar figure is one wallet's decision; a trade count is many people's |
+| `SNIPE_MAX_SELL_SHARE` | Three of four trades being sells | The demand is somebody else's exit, and you are the liquidity |
+| `SNIPE_MAX_PRICE_CHANGE_24H_PCT` | A coin already up 5x today | Their own `maxSpike5m: 0.2` at the timeframe a floor cares about |
+| `SNIPE_MIN_TOP_POOL_LIQUIDITY_USD` | $30k spread over twenty dust pools | You trade in one pool, not in the sum. Their floor sums |
+
+#### The momentum source
+
+A floor alone would refuse everything, because all three existing sources answer one question:
+*what launched just now.* So a fourth source asks the opposite — **what is being traded right
+now, whatever its age** — by polling pump.fun's activity-sorted listing
+(`sort=last_trade_timestamp`, verified against the live endpoint rather than assumed). It is
+**added, never substituted**: the launch sources stay exactly as they are and the source race
+still prices one against the other, so turning the floor on and off changes what is bought
+without changing what is heard.
+
+Its rows are pre-filtered on the facts they already carry before anything is fetched for them,
+and what it drops is counted by clause — a source quietly returning two rows out of seventy
+looks identical to a dead market and to a broken filter, and those need opposite responses.
+Age and market cap are treated differently on purpose: unknown age is dropped, because the
+floor exists so this bot stops buying coins whose age it does not know, while unknown market
+cap is kept, because the gate can still measure it from DexScreener.
+
+The drop tally rides the heartbeat as `snipe.momentum` (arrived, survived, and the count per
+clause), and a poll that **answers** counts as proof the source is alive even when the
+pre-filter keeps nothing — before that, a correctly-working source under an armed floor was
+reported `DEAD` after five minutes of keeping 0 of 70 rows.
+
+Its candidates are listing rows, which carry their metadata link as `metadata_uri`; the socials
+filter reads that field too. It used to read only a create event's `uri`, so with the filter on
+(the default) every momentum candidate was refused at `no_socials` before the floor ever saw it.
+
+#### One interaction worth knowing about
+
+The momentum source reports coins the launch sources **already saw at t=0**, so whether one of
+its candidates is emitted at all depends on whether the feed has forgotten it yet — and that is
+the dedupe window, 30 minutes, chosen years ago for an unrelated reason (it must outlive any
+position the lane can hold, or a mint re-enters as a fresh launch while it is still open).
+
+The shipped pairing works: a one-hour age floor against a thirty-minute window means every
+candidate has aged out. But it works **by coincidence** — two constants chosen for unrelated
+reasons that happen to sit the right way round. With `SNIPE_MIN_AGE_HOURS=0.25`, a candidate aged
+between 15 and 30 minutes that a launch source already heard is still held in the ledger from
+its own launch and dropped as a duplicate *before any gate runs*. Older candidates arrive
+normally, so what is lost is a band, not the source. With no age floor at all (a volume-only
+floor, or the spike dial on its own) the band is the whole first half hour.
+
+So the lane prints a **startup WARNING** naming the band and the value to raise the age floor to.
+It is a warning rather than a refusal because the source still delivers everything older — an
+earlier version refused the whole lane over it, claiming the source "would deliver nothing",
+which overstated it.
+
+#### The honest limit
+
+BAGWORK trade coins that bonded long ago, on AMM pools. **This desk cannot.** The only buy and
+sell layouts proved against mainnet here are pump.fun's bonding curve v2, and a bonded coin
+trades somewhere this repo cannot yet encode — so the momentum source drops `complete: true`
+rows rather than paying for a market read to refuse them at `curve_already_complete`.
+
+The floor is therefore applied where it can be honoured: coins **still on their curve**, which
+is the overlap between "has proven demand" and "this bot can actually buy it". That overlap is
+real — the venue's own listing showed a coin 247 hours old still on its curve — but it is
+narrower than theirs, and closing the gap means proving a pump-amm buy layout against landed
+transactions the way `pumpfun-fees.mjs` proved the fee claim. That is the next piece of
+execution work, not a config change.
+
+### Changing the filters from the agent page
+
+Like a bagworkagent.fun agent, the bot can be retuned from its page while it runs. Opt in once,
+on the Mac, and restart:
+
+```bash
+SNIPE_REMOTE_FILTERS="1"
+```
+
+From then on, the floor owner signed in at `claudedotcompany.com/agent.html?floor=<N>` sees a filter
+panel. Saving it sends the **live** filters to the bot with its next heartbeat (about a minute), and
+the bot applies them to the running lane **without a restart**. The page's status line reads the
+bot's own report — "Running on your bot since 18:42" appears only once the bot says it is running
+that saved version, and anything it refused is named with the reason.
+
+**What the page can change** — only *what to buy*: the market-floor preset and its nine thresholds,
+the volume spike, the socials requirement, and the creator/launch share caps (`LIVE_FILTER_ENV` in
+`snipe-lane.mjs` is the list, and the bot enforces it; the desk cannot widen it).
+
+**What it can never change** — trade size, daily cap, stop, take-profit, hold, price impact, fees,
+the lane mode, or this opt-in itself. Those stay in the env file, and the size and daily cap still
+need the typed sentence. The page shows them as env lines to copy. So the most a stolen website
+session can do is make the bot more or less picky, inside the money caps you typed on the Mac.
+
+The env file stays the base: a filter cleared on the page falls back to the env value, never to
+"no filter". Every value the desk sends is re-validated on the bot exactly as the env file is, and
+a bad one is refused on its own while the rest apply.
+
+### The volume spike
+
+> *"When volume spikes on a token, that's a sign to get in and ride the wave."* — the owner,
+> 2026-09-26.
+
+It is a real signal, and this desk can measure it without a single new data source. A
+pump.fun bonding curve holds its SOL in `realQuoteRaw`; the **change** in that number over
+time is money moving. `snipe-volume.mjs` keeps a bounded per-mint tape of those readings and
+measures net inflow over the last 30 seconds against the five minutes before it, as a ratio.
+
+Where the samples come from matters, because the lane's own curve reads cannot supply them:
+it reads a curve once per notice, so at the moment the gate runs there is exactly one point
+and no ratio. The stream already has the answer. The Geyser subscription filters on the
+pump.fun **program**, not on creates, so every buy and sell on every curve is already
+arriving — `snipe-feed.mjs` was counting them as `unparsed` and dropping them. Each carries a
+`TradeEvent` whose decoder is already pinned against real mainnet bytes. So the tape is fed
+from traffic this process was already receiving and throwing away: no new subscription, no
+new request, no new key, and nothing added to the path that buys. Without `SNIPE_GRPC_*` the
+tape still exists but has too few points to form a ratio, and says so.
+
+One sample on that tape is a two-second **bucket**, not a trade, and that detail is load
+bearing: a coin doing five trades a second would otherwise fill a bounded tape with 48
+seconds of history, evict its own baseline, and be refused for being unmeasurable — a
+volume gate blind in proportion to volume. Within a bucket the newest reading replaces the
+previous one, which loses nothing, because every number here is a difference between two
+reserve levels.
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `SNIPE_MIN_VOLUME_SPIKE` | unset | Net inflow must be at least this multiple of the coin's own baseline. Unset means **measure only** |
+
+**A launch can never be measured, by construction.** A spike is 30 seconds of flow against the 5
+minutes before it, and a launch notice is judged within 30 seconds of the coin's birth — there is
+no before. So the spike is judged on coins that are **already trading**: setting
+`SNIPE_MIN_VOLUME_SPIKE` mounts the momentum source (the same one the market floor uses) whether or
+not a floor is armed, and every launch notice is then refused at `volume_spike` for want of a
+baseline, which is exactly the "stop sniping, ride the wave" the owner asked for. Their history
+comes only from the gRPC trade tap, so the dial **refuses to start without `SNIPE_GRPC_*`** rather
+than refusing every candidate in a log that reads like a market where nothing moved. The tap's
+and the tape's own counters ride the heartbeat as `snipe.flow`.
+
+The rate is inflow over the **window**, not over the gap between two readings: a coin that trades
+in bursts has readings far apart, and dividing by the gap called a slowing coin a 2.7x spike and
+read a 90x wave as 7.9x. Pair it with `SNIPE_MARKET_FLOOR=curve` so the candidates are an hour old
+and every one of them has a full baseline on the tape.
+
+**A brand-new curve has no baseline, and that is the whole trap.** Divide by it and every
+fresh launch reads as an infinite spike — so a naive version of this gate fires on every new
+launch while calling itself a volume signal. On this burner's own 64 trades that is the
+losing book: entries under 3 seconds won 0% of the time for −18.5%, entries at 10 seconds and
+later won 40% for +34.0%. So an absent or flat baseline reports `null`, never Infinity and
+never a large stand-in, and with a threshold configured an unmeasurable spike **refuses** —
+unverified is not safe, the same rule the other two proxy gates follow.
+
+Two more things it is honest about rather than papering over. It measures **net** inflow, not
+gross volume: a coin churned a thousand SOL each way has enormous volume and near-zero net
+flow, and reads quiet here. And a falling reserve reports a **negative** number rather than
+being clamped to zero, because "everyone is leaving" and "nothing is happening" are the two
+facts a holder most needs to tell apart.
+
+Like `creator_profile` and `launch_share`, it ships **unset**: measured on every candidate,
+recorded in the shadow book, scored by `grade-entry-gates.mjs` against candidates whose outcome
+is already known. On a book of launches it measures nothing, so the grader leaves it out of the
+verdict by name (`NOT IN THE VERDICT: volume_spike`) instead of holding the "no edge" reading open
+forever. Arm it only once a scorecard has justified a number:
+
+```bash
+SNIPE_MIN_VOLUME_SPIKE=2     # demand twice the coin's own baseline
+```
+
+Worth knowing while choosing that number: bagworkagent.fun's agents encode the *opposite*
+half of the same idea — `maxChange5m: 0.12`, `maxSpike5m: 0.2`. They require some momentum
+and then refuse anything already extended, because buying after the wave has broken is how
+you become the exit liquidity for whoever caught it. `SNIPE_MAX_LAUNCH_SHARE_PCT` is this
+desk's cap of that shape and it sits beside this floor.
 
 ### What has and has not been proved
 

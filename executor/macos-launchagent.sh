@@ -140,8 +140,18 @@ if [ "$COMMAND" = "install" ] || [ "$COMMAND" = "load" ] || [ "$COMMAND" = "arm-
     # working unchanged. 2-4 are new places to look, so they are the ones confined.
     ENV_CANDIDATES=(
       "$EXECUTOR_DIR/.cc-executor.env|any"                 # a flat install, and every case that already worked
-      "$EXECUTOR_DIR/../.cc-executor.env|home"             # current -> a directory one level down
-      "$EXECUTOR_DIR/../../.cc-executor.env|home"          # releases/<x> and versioned-releases/<commit>
+      # ONE LEVEL UP is a code directory sitting directly inside the install dir — an install
+      # that keeps its code in, say, ~/claudeco-executor/code/ with the environment beside it.
+      # It is NOT the `current` case: `cd` + `pwd -P` above resolves that symlink through to
+      # releases/<release>, so `current` is two levels down and is caught by the next line.
+      # This line's comment used to attribute the `current` case to one-level-up, an off-by-one
+      # that makes a reader conclude the env search is broken for symlinked installs when it is
+      # not. It is not reproduced here verbatim on purpose: a wrong sentence kept in the source
+      # as an example is a wrong sentence a future grep will find.
+      "$EXECUTOR_DIR/../.cc-executor.env|home"
+      # TWO LEVELS UP is where the real installs live: releases/<release> (which is what
+      # `current` resolves to) and versioned-releases/<commit> both sit two deep.
+      "$EXECUTOR_DIR/../../.cc-executor.env|home"
       "$USER_HOME/claudeco-executor/.cc-executor.env|home" # the documented install dir, wherever the code sits
     )
     for entry in "${ENV_CANDIDATES[@]}"; do

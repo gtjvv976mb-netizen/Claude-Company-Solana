@@ -89,8 +89,19 @@ import { createSnipeShadow, latencyBudget, SHADOW_HOPS } from "./snipe-shadow.mj
 import { closeSnipe, ensureSnipeBook, openSnipe, snipeFor, snipeList, updateSnipe } from "./snipe-book.mjs";
 import * as snipePolicy from "./snipe-policy.mjs";
 import { readSocials, SOCIAL_DEFAULTS } from "./snipe-socials.mjs";
+import { createFlowTape } from "./snipe-volume.mjs";
+import {
+  MARKET_FLOOR_KEYS, MARKET_FLOOR_PRESET_VALUES, ageAloneRefuses, curveReachability, floorIsArmed, marketReadFor,
+  resolveMarketFloor,
+} from "./snipe-market.mjs";
 
 export const SNIPE_LANE_VERSION = "snipe-lane-v1";
+
+/** The market-floor presets SNIPE_MARKET_FLOOR admits. "bagwork" is the four thresholds
+ *  bagworkagent.fun's own agents run, copied literally; "curve" is the two of those four a
+ *  bonding curve can physically meet, and the one to run on this desk — bagwork's liquidity
+ *  and market-cap bars sit above anything a curve holds (snipe-market.mjs, CURVE_FLOOR). */
+export const MARKET_FLOOR_PRESETS = Object.freeze(Object.keys(MARKET_FLOOR_PRESET_VALUES));
 
 /** The only two modes this file admits. `execute` is listed so a caller can NAME it and
  *  be refused by name; there is no signing path here to run it on. */
@@ -106,6 +117,12 @@ export const SNIPE_LANE_CLAUSES = Object.freeze([
   "single_endpoint",
   "duplicate_endpoint",
   "control_unchecked",
+  /* A market floor is configured and no reader was wired to honour it. Named here for the
+     same reason cap_over_operator_max is: a refusal that ships without a clause reports
+     under whatever code happened to be nearby. */
+  "market_reader_missing",
+  /* A spike threshold is configured and nothing feeds the tape it would be measured on. */
+  "volume_tape_unfed",
   /* A money dial above the operator ceiling. Added 2026-09-11 with the ceiling itself —
      the clause list is frozen precisely so a new refusal cannot ship without being named,
      and this one refused correctly while reporting the wrong error until it was. */
@@ -219,6 +236,37 @@ export const SNIPE_LANE_DEFAULTS = Object.freeze({
      answer. src/launch-shadow.js states the discipline; snipe-shadow.mjs scores them. */
   maxCreatorSharePct: undefined,
   maxLaunchSharePct: undefined,
+  /* THE OWNER'S VOLUME-SPIKE FLOOR (2026-09-26). Net inflow over the last 30s against the
+     5 minutes before it, as a ratio. Undefined by default like the other two proxies: it
+     is measured on every notice, recorded in the shadow book and scored by
+     grade-entry-gates.mjs, and it kills nothing until the owner sets a number he has seen
+     a scorecard for. Set SNIPE_MIN_VOLUME_SPIKE=2 to demand twice the baseline. */
+  minVolumeSpike: undefined,
+  /* THE MARKET FLOOR (2026-09-26) — bagworkagent.fun's floor, and the biggest change to what
+     this bot buys. "off" by default, and that default is not timidity: the launch lane's
+     entire population is minutes old, so an accidentally-armed floor would refuse every
+     notice and look exactly like a broken feed. `SNIPE_MARKET_FLOOR=bagwork` loads their four
+     measured numbers wholesale; the nine dials below override individual thresholds, and any
+     dial set on its own arms a floor of EXACTLY what was asked for and nothing else. See
+     snipe-market.mjs for where each fact comes from and why this desk adds five more. */
+  marketFloorPreset: "off",
+  /* WHETHER THE DESK MAY CHANGE THE ENTRY FILTERS OF A RUNNING LANE (owner, 2026-09-26: "can I
+     change the filters on the spot, like the BAGWORK agents can"). Off unless the owner opts in
+     on this machine, because the desk is a server this machine does not control — see
+     LIVE_FILTER_ENV for exactly what it may and may not touch. */
+  remoteFilters: false,
+  minAgeHours: undefined,
+  minLiquidityUsd: undefined,
+  minVolume24hUsd: undefined,
+  minMcapUsd: undefined,
+  maxVolumeToLiquidity: undefined,
+  minTxns24h: undefined,
+  maxSellShare: undefined,
+  maxPriceChange24hPct: undefined,
+  minTopPoolLiquidityUsd: undefined,
+  /* The resolved floor the gate actually reads, assembled by snipeLaneConfig from the preset
+     and the dials. Null means no floor, and `market_floor` then passes without looking. */
+  marketFloor: null,
   /* Consecutive two-endpoint disagreements before blindness is treated as hostility and
      the position leaves. THREE, matching snipe-policy's confirmWindow, and for the same
      reason: it is the smallest run in which a single outlier cannot be the whole story.
@@ -334,6 +382,18 @@ export const SNIPE_ENV = Object.freeze({
   SNIPE_CHARGE_DAILY_CAP: Object.freeze({ key: "chargeDailyCap", parse: "flag" }),
   SNIPE_MAX_CREATOR_SHARE_PCT: Object.freeze({ key: "maxCreatorSharePct", parse: "number" }),
   SNIPE_MAX_LAUNCH_SHARE_PCT: Object.freeze({ key: "maxLaunchSharePct", parse: "number" }),
+  SNIPE_MIN_VOLUME_SPIKE: Object.freeze({ key: "minVolumeSpike", parse: "number" }),
+  SNIPE_MARKET_FLOOR: Object.freeze({ key: "marketFloorPreset", parse: "preset" }),
+  SNIPE_REMOTE_FILTERS: Object.freeze({ key: "remoteFilters", parse: "flag" }),
+  SNIPE_MIN_AGE_HOURS: Object.freeze({ key: "minAgeHours", parse: "number" }),
+  SNIPE_MIN_LIQUIDITY_USD: Object.freeze({ key: "minLiquidityUsd", parse: "number" }),
+  SNIPE_MIN_VOLUME_24H_USD: Object.freeze({ key: "minVolume24hUsd", parse: "number" }),
+  SNIPE_MIN_MCAP_USD: Object.freeze({ key: "minMcapUsd", parse: "number" }),
+  SNIPE_MAX_VOLUME_TO_LIQUIDITY: Object.freeze({ key: "maxVolumeToLiquidity", parse: "number" }),
+  SNIPE_MIN_TXNS_24H: Object.freeze({ key: "minTxns24h", parse: "number" }),
+  SNIPE_MAX_SELL_SHARE: Object.freeze({ key: "maxSellShare", parse: "number" }),
+  SNIPE_MAX_PRICE_CHANGE_24H_PCT: Object.freeze({ key: "maxPriceChange24hPct", parse: "number" }),
+  SNIPE_MIN_TOP_POOL_LIQUIDITY_USD: Object.freeze({ key: "minTopPoolLiquidityUsd", parse: "number" }),
   SNIPE_DISAGREE_STREAK_MAX: Object.freeze({ key: "disagreeStreakMax", parse: "number" }),
   SNIPE_CREATOR_EXIT_FRAC: Object.freeze({ key: "creatorExitFrac", parse: "number" }),
   SNIPE_TAKE_AT_ENTRY_X: Object.freeze({ key: "takeAtEntryX", parse: "number" }),
@@ -396,6 +456,14 @@ export function snipeLaneConfig(env = {}) {
           "reviewed code change in all five copies, not an environment setting.",
           { name, value: n, max: spec.max });
       out[spec.key] = n;
+    } else if (spec.parse === "preset") {
+      /* Named presets only. A misspelled preset is refused rather than silently becoming
+         "off", because a floor that is not there is indistinguishable from a floor that
+         passed everything — and this is the switch that decides what the bot buys. */
+      if (!MARKET_FLOOR_PRESETS.includes(text.toLowerCase()))
+        throw new SnipeLaneError("mode_invalid",
+          `${name}=${JSON.stringify(text)} is not one of ${MARKET_FLOOR_PRESETS.join(", ")}`, { name, value: text });
+      out[spec.key] = text.toLowerCase();
     } else if (spec.parse === "string") {
       /* Compared, never interpreted: the arming sentence is matched byte for byte against
          the one the lane composes for the signing wallet, so it is kept exactly as typed. */
@@ -418,7 +486,94 @@ export function snipeLaneConfig(env = {}) {
       + "SNIPE_LIVE_ACK, the sentence the lane prints for your wallet and caps, on a live (EXECUTE=1) "
       + "install; a boolean cannot carry the numbers the acknowledgement exists to make you type.",
       { lane: out.lane, snipeExecute: env.SNIPE_EXECUTE ?? null });
+
+  /* THE FLOOR, ASSEMBLED ONCE. The preset supplies a whole set of measured numbers; a dial
+     overrides one of them. A dial set with no preset arms a floor of exactly that dial —
+     surprising the other way round would be worse, since inheriting three thresholds the
+     operator never typed is how a bot ends up refusing on a number nobody chose. */
+  const dialed = {};
+  for (const key of MARKET_FLOOR_KEYS) if (out[key] !== undefined) dialed[key] = out[key];
+  const preset = MARKET_FLOOR_PRESET_VALUES[out.marketFloorPreset] ?? {};
+  const asked = { ...preset, ...dialed };
+  if (Object.keys(asked).length) {
+    const floor = {};
+    for (const key of MARKET_FLOOR_KEYS) floor[key] = asked[key] === undefined ? null : asked[key];
+    out.marketFloor = resolveMarketFloor(floor);
+  } else out.marketFloor = null;
+
   return Object.freeze(out);
+}
+
+/**
+ * THE FILTERS THE DESK MAY CHANGE ON A RUNNING LANE — and, by omission, everything it may not.
+ *
+ * bagworkagent.fun lets an owner retune an agent from its page and the agent picks it up. This
+ * desk can do the same for one class of setting only: WHAT TO BUY. Every entry here can only
+ * make the lane more or less selective about which coin it enters; none of them changes how
+ * much it spends, how much it may lose, how it exits, or whether it signs at all.
+ *
+ * NOT here, deliberately, and they stay env-only behind the owner's typed sentence:
+ *   SNIPE_MAX_SOL_PER_TRADE, SNIPE_DAILY_SOL_CAP  — money, bound into SNIPE_LIVE_ACK
+ *   SNIPE_STOP_FRAC, SNIPE_TAKE_AT_ENTRY_X, SNIPE_HOLD_MAX_MS, ...  — exits, checked by the
+ *     arming checklist at construction; a stop the desk could move is a stop a stolen session
+ *     could move
+ *   SNIPE_MAX_PRICE_IMPACT_PCT and the fee dials — how a fill is priced, not what is bought
+ *   SNIPE_LANE, SNIPE_REMOTE_FILTERS itself — a server cannot arm the lane or grant itself this
+ *
+ * So the worst a stolen desk session can do is make the bot pickier, or less picky, within the
+ * money caps the owner typed on this machine.
+ */
+export const LIVE_FILTER_ENV = Object.freeze([
+  "SNIPE_MARKET_FLOOR", "SNIPE_MIN_AGE_HOURS", "SNIPE_MIN_LIQUIDITY_USD", "SNIPE_MIN_VOLUME_24H_USD",
+  "SNIPE_MIN_MCAP_USD", "SNIPE_MAX_VOLUME_TO_LIQUIDITY", "SNIPE_MIN_TXNS_24H", "SNIPE_MAX_SELL_SHARE",
+  "SNIPE_MAX_PRICE_CHANGE_24H_PCT", "SNIPE_MIN_TOP_POOL_LIQUIDITY_USD",
+  "SNIPE_MIN_VOLUME_SPIKE", "SNIPE_REQUIRE_SOCIALS",
+  "SNIPE_MAX_CREATOR_SHARE_PCT", "SNIPE_MAX_LAUNCH_SHARE_PCT",
+]);
+/** The config keys those names resolve to, plus the floor object they assemble into. */
+export const LIVE_FILTER_KEYS = Object.freeze([
+  ...LIVE_FILTER_ENV.map((name) => SNIPE_ENV[name].key), "marketFloor",
+]);
+
+/**
+ * The lane configuration a desk-sent filter set asks for, validated exactly as the env file is.
+ *
+ * `baseEnv` is what the owner put on this machine; `remote` is `{ SNIPE_NAME: value }` from the
+ * desk. A remote value OVERRIDES the base for that name; a name the desk leaves out, or sends as
+ * null, falls back to the base — so clearing a filter on the page reverts to the env file, never
+ * to "no filter at all" behind the owner's back.
+ *
+ * Every remote entry is judged ON ITS OWN first, so one bad value is named and refused while the
+ * rest still apply — a whole panel refused over one typo would read on the page as "the bot
+ * ignored me". A name outside LIVE_FILTER_ENV is refused by name, whatever it is.
+ */
+export function remoteFilterConfig({ baseEnv = {}, remote = {} } = {}) {
+  const rejected = [];
+  const accepted = {};
+  const entries = remote && typeof remote === "object" && !Array.isArray(remote) ? Object.entries(remote) : [];
+  for (const [name, value] of entries) {
+    if (!LIVE_FILTER_ENV.includes(name)) {
+      rejected.push(Object.freeze({ name, reason: "not a filter the desk may change — set it in the env file on the Mac" }));
+      continue;
+    }
+    if (value === null || value === undefined || String(value).trim() === "") continue;   // revert to base
+    const text = typeof value === "boolean" ? (value ? "1" : "0") : String(value).trim();
+    try { snipeLaneConfig({ [name]: text }); accepted[name] = text; }
+    catch (error) { rejected.push(Object.freeze({ name, reason: String(error?.message ?? error).slice(0, 200) })); }
+  }
+  const merged = { ...baseEnv };
+  for (const name of LIVE_FILTER_ENV) delete merged[name];
+  for (const name of LIVE_FILTER_ENV) {
+    if (accepted[name] !== undefined) merged[name] = accepted[name];
+    else if (baseEnv[name] !== undefined) merged[name] = baseEnv[name];
+  }
+  let cfg = null;
+  try { cfg = snipeLaneConfig(merged); }
+  catch (error) {
+    return Object.freeze({ ok: false, cfg: null, accepted: Object.freeze({}), rejected: Object.freeze([...rejected,
+      Object.freeze({ name: "(combined)", reason: String(error?.message ?? error).slice(0, 200) })]) });
+  }
+  return Object.freeze({ ok: true, cfg, accepted: Object.freeze(accepted), rejected: Object.freeze(rejected) });
 }
 
 /**
@@ -823,8 +978,34 @@ export function createSnipeLane({
      question — how many units of this mint does the signing wallet hold. Absent, nothing
      changes and the lane latches and retries exactly as before. */
   holdingsReader = null,
+  /* THE VOLUME TAPE — the owner's spike criterion, 2026-09-26: "when volume spikes on a
+     token, that's a sign to get in and ride the wave."
+
+     Handed in rather than created here whenever somebody else is filling it, which in
+     practice is always: the useful samples come from the launch subscription's own trade
+     traffic (snipe-volume.mjs, `createTradeTap`), and that tap is mounted on the feed
+     source in the poller, not in here. The lane still constructs one when none is given so
+     that `measure` is never a null check at three call sites — an empty tape answers
+     `not_enough_samples`, the gate treats unknown as not-a-spike, and with no threshold set
+     that is a recorded measurement and nothing else. */
+  flowTape = null,
+  /* THE MARKET READ, AS A PORT — the DexScreener half of the market floor. Injected like
+     every other outside call here so a test can drive an empty pair list, a hang, or a pool
+     with no liquidity field (which that API really does return) without a network. Absent,
+     and the floor refuses whatever it was asked to judge rather than passing it: see
+     snipe-market.mjs on why unverified is not safe in both directions. */
+  marketReader = null,
+  /* SOL IN DOLLARS, AS AN OPTIONAL OVERRIDE. Without it the price is derived from the same
+     DexScreener response the depth came out of (snipe-market.mjs, solUsdFromPairs) — free,
+     self-consistent, and WSOL-quoted pools only. Wire this to hand the floor the desk's own
+     verified oracle instead; a supplied price always wins, and which one was used is reported
+     on the facts, because a liquidity figure is only as good as its denominator. */
+  solUsdReader = null,
 } = {}) {
-  const conf = Object.freeze({ ...SNIPE_LANE_DEFAULTS, ...cfg });
+  /* `let`, and only for applyFilters() below: the entry filters are the one part of this
+     configuration a running lane may have replaced. Everything else is read from the same
+     object and never changes after construction. */
+  let conf = Object.freeze({ ...SNIPE_LANE_DEFAULTS, ...cfg });
   if (!SNIPE_LANE_MODES.includes(conf.lane))
     throw new SnipeLaneError("mode_invalid", `lane ${JSON.stringify(conf.lane)} is not one of ${SNIPE_LANE_MODES.join(", ")}`);
   const executing = conf.lane === "execute";
@@ -882,6 +1063,17 @@ export function createSnipeLane({
       `two readers share an id ([${ids.join(", ")}]) — two names for one node is one witness counted twice, `
       + "which is the exact failure the different-endpoint rule exists to prevent", { ids });
 
+  /* A FLOOR WITH NOTHING TO READ REFUSES EVERY CANDIDATE, and in a log that is
+     indistinguishable from a market with nothing worth buying in it. So it is a construction
+     refusal rather than a quiet afternoon of zero trades: either the floor can be honoured or
+     the lane says which half is missing. */
+  if (floorIsArmed(conf.marketFloor) && typeof marketReader !== "function")
+    throw new SnipeLaneError("market_reader_missing",
+      "a market floor is configured but no marketReader port was wired — every candidate would be "
+      + "refused at market_floor for want of a measurement, which reads in a log exactly like a "
+      + "market with nothing in it. Wire the reader or set SNIPE_MARKET_FLOOR=off.",
+      { floor: conf.marketFloor });
+
   if (typeof control !== "function")
     throw new SnipeLaneError("control_unchecked",
       "the lane needs a control reader returning {hardStop, pauseEntries} as strict booleans; there is no "
@@ -892,9 +1084,21 @@ export function createSnipeLane({
   ensureSnipeBook(S);
   if (S.positions === undefined) S.positions = {};
   const recorder = shadow ?? createSnipeShadow({ capacity: conf.shadowCapacity, laneMode: conf.lane });
+  /* A SPIKE FLOOR ON A TAPE NOBODY FILLS REFUSES EVERYTHING. The lane's own reads give a
+     mint one sample per notice, and a ratio needs 330 seconds of history, so without a tape
+     handed in by whoever mounts the trade tap, every candidate would be refused at
+     volume_spike for want of a baseline — in a log, the same sentence as "nothing spiked".
+     Refused at construction, like a floor with no reader. */
+  if (conf.minVolumeSpike !== undefined && conf.minVolumeSpike !== null && !flowTape)
+    throw new SnipeLaneError("volume_tape_unfed",
+      `minVolumeSpike is ${conf.minVolumeSpike} but no flowTape port was wired — the lane's own reads cannot `
+      + "form a 5-minute baseline, so every candidate would be refused at volume_spike. Mount the trade tap "
+      + "(SNIPE_GRPC_ENDPOINT + SNIPE_GRPC_TOKEN) or unset SNIPE_MIN_VOLUME_SPIKE.",
+      { minVolumeSpike: conf.minVolumeSpike });
+  const flow = flowTape ?? createFlowTape();
 
   const counters = {
-    notices: 0, recorded: 0, cleared: 0, refused: 0, wouldHaveOpened: 0,
+    notices: 0, recorded: 0, cleared: 0, refused: 0, wouldHaveOpened: 0, marketReadsSkipped: 0,
     wouldHaveExited: 0, forwardSamples: 0, readErrors: 0, ticks: 0, deterministErrors: 0,
     /* Execute mode. `entered`/`exited` count fills the port confirmed; the two failure
        counters count buys and sells the port refused or could not land, which in observe
@@ -954,11 +1158,37 @@ export function createSnipeLane({
        so an operator who did not ask for it makes no request at all. */
     const socialsPromise = conf.requireSocials === true
       ? Promise.resolve(socialsReader({
-          uri: record?.raw?.uri ?? record?.uri ?? null,
+          /* A create event decodes to `uri`; a pump.fun LISTING row — every momentum candidate,
+             and any launch the poll hears before the socket — spells it `metadata_uri`
+             (50 of 50 live rows, 2026-09-26). Reading only the first sent every momentum
+             candidate to no_socials with "no uri", so none ever reached the floor. */
+          uri: record?.raw?.uri ?? record?.raw?.metadata_uri ?? record?.uri ?? null,
           timeoutMs: Number(conf.socialsTimeoutMs) || undefined,
         })).catch((error) => Object.freeze({ ok: false, clause: "fetch_failed",
           message: String(error?.message ?? error).slice(0, 160) }))
       : null;
+    /* COST 1, THE OTHER HALF: the market read, issued HERE and joined below — beside the
+       account read and the metadata read, never after them. Only when a floor is actually
+       configured: an operator running no floor makes no request, and the gate passes without
+       looking. */
+    const listingRow = isPlainObject(record?.raw) ? record.raw : null;
+    /* NOT FOR A COIN THE AGE RULE ALREADY REFUSES. Age is free — the listing's creation stamp,
+       or for a create event the moment it arrived — so with an age floor armed, a launch
+       notice is known to fail before anything is fetched, and paying DexScreener for it was
+       ~29 wasted requests a minute. The facts are still assembled (with no pairs), so the gate
+       refuses on age by name exactly as before. */
+    const floorArmed = floorIsArmed(conf.marketFloor);
+    const skipMarketRead = floorArmed
+      && ageAloneRefuses(conf.marketFloor, { listing: listingRow, createdAtMs: noticeAtMs, nowMs: clock() });
+    if (skipMarketRead) counters.marketReadsSkipped++;
+    const marketPromise = !floorArmed ? null
+      : skipMarketRead
+        ? Promise.resolve(Object.freeze({ ok: false, clause: "skipped_age",
+            message: "not fetched: the coin's age alone already fails the floor", pairs: null }))
+        : typeof marketReader === "function"
+          ? Promise.resolve(marketReader(mint)).catch((error) => Object.freeze({
+              ok: false, clause: "fetch_failed", message: String(error?.message ?? error).slice(0, 160), pairs: null }))
+          : null;
     let read;
     try {
       read = await readAcrossEndpoints({ readers, addresses: adapter.accountsFor(mint), mint });
@@ -1004,6 +1234,31 @@ export function createSnipeLane({
     }
     hops.push({ hop: "prepare", atMs: clock() });
 
+    /* ONE STAMP FOR THE WHOLE GATE STACK, and the volume measurement taken against it.
+       The curve read this notice already paid for is added to the tape first — it is the
+       most recent point there is for this mint — and the spike is then measured as of the
+       same instant the rest of the gates are judged at. Two clock readings here would let
+       the budget gate and the volume gate disagree about when "now" was. */
+    const gateAtMs = clock();
+    flow.observe(mint, { atMs: gateAtMs, quoteRaw: curve?.realQuoteRaw ?? null });
+    const flowNow = flow.measure(mint, { nowMs: gateAtMs });
+
+    /* THE FLOOR'S FACTS, joined here rather than fetched here. The awaited half has had the
+       whole account round trip to finish; the liquidity half comes out of the curve that was
+       just decoded, which is the only place an exact bonding-curve depth exists. */
+    const market = marketPromise
+      ? marketReadFor({
+          read: await marketPromise,
+          /* The candidate row the momentum source carried, when there was one. A launch
+             notice has no listing, and its age is then taken from when it arrived. */
+          listing: listingRow,
+          curve,
+          solUsd: typeof solUsdReader === "function" ? (() => { try { return solUsdReader(); } catch { return null; } })() : null,
+          createdAtMs: noticeAtMs,
+          nowMs: gateAtMs,
+        })
+      : null;
+
     const verdict = snipeContract({
       notice: {
         mint,
@@ -1017,8 +1272,10 @@ export function createSnipeLane({
       adapter,
       cfg: conf,
       book: bookView(),
-      nowMs: clock(),
+      nowMs: gateAtMs,
       control: controlView(),
+      flow: flowNow,
+      market,
       mint: read.accounts[2] ?? null,
       creator: creatorFacts(record, curve),
       fees: feeModel(),
@@ -1381,6 +1638,10 @@ export function createSnipeLane({
     });
 
     counters.forwardSamples++;
+    /* The held position's own reserve reading, onto the same tape. Free — the read has
+       already happened — and it keeps a coin we are in measurable even if the trade tap is
+       not mounted or the wire went quiet. */
+    flow.observe(mint, { atMs: now, quoteRaw: curve?.realQuoteRaw ?? null });
     recorder.observe(mint, {
       atMs: now,
       slot: read.slot,
@@ -1535,7 +1796,9 @@ export function createSnipeLane({
 
   return {
     laneVersion: SNIPE_LANE_VERSION,
-    cfg: conf,
+    /* A getter, not a snapshot: applyFilters() replaces the entry filters, and a caller reading
+       `lane.cfg` must see the ones the gates are judging on now. */
+    get cfg() { return conf; },
     /* What the lane actually runs on: the stated config with the mode's overrides and the
        owner's dials folded into policy. Exposed so a test can prove a typed dial arrived. */
     effective,
@@ -1568,6 +1831,12 @@ export function createSnipeLane({
         + `(floorMarkX ${floor.floorMarkX.toFixed(4)}, minViable ${floor.minViableSol.toFixed(6)} SOL); `
         + `determiner ${determiner.shape}${determiner.version ? ` ${determiner.version}` : ""}; `
         + tail);
+      if (floorIsArmed(conf.marketFloor)) {
+        const named = MARKET_FLOOR_KEYS.filter((k) => conf.marketFloor[k] !== null)
+          .map((k) => `${k}=${conf.marketFloor[k]}`).join(", ");
+        log(`snipe market floor ARMED: ${named} — candidates under any of these are refused at market_floor`);
+        for (const w of curveReachability(conf.marketFloor)) log(`snipe market floor WARNING: ${w.message}`);
+      } else log("snipe market floor: off (every candidate is judged on the launch gates alone)");
       const summary = await feed.start();
       consumed = consume();
       return summary;
@@ -1585,6 +1854,46 @@ export function createSnipeLane({
 
     handleNotice,
     tick,
+
+    /**
+     * REPLACE THE ENTRY FILTERS OF A RUNNING LANE — nothing else. `next` is a full lane config
+     * (from remoteFilterConfig); only LIVE_FILTER_KEYS are taken from it, so a money dial, an
+     * exit dial or the lane mode in it is ignored rather than applied.
+     *
+     * The same two port checks construction makes are made here, because a floor with no
+     * reader or a spike floor with no tape refuses every candidate and reads in a log like an
+     * empty market. A refused change leaves the running filters exactly as they were.
+     * Never throws: it is called from the heartbeat path.
+     */
+    applyFilters(next) {
+      if (!isPlainObject(next)) return Object.freeze({ ok: false, reason: "no configuration" });
+      const picked = {};
+      for (const key of LIVE_FILTER_KEYS) if (Object.prototype.hasOwnProperty.call(next, key)) picked[key] = next[key];
+      if (floorIsArmed(picked.marketFloor) && typeof marketReader !== "function")
+        return Object.freeze({ ok: false, reason: "a market floor was asked for but this lane has no market reader wired" });
+      if (picked.minVolumeSpike !== undefined && picked.minVolumeSpike !== null && !flowTape)
+        return Object.freeze({ ok: false, reason: "a volume-spike floor was asked for but no trade tape feeds this lane" });
+      const changed = LIVE_FILTER_KEYS.filter((k) => JSON.stringify(conf[k] ?? null) !== JSON.stringify(picked[k] ?? null));
+      if (!changed.length) return Object.freeze({ ok: true, changed: Object.freeze([]) });
+      conf = Object.freeze({ ...conf, ...picked });
+      const floorText = floorIsArmed(conf.marketFloor)
+        ? MARKET_FLOOR_KEYS.filter((k) => conf.marketFloor[k] !== null).map((k) => `${k}=${conf.marketFloor[k]}`).join(", ")
+        : "off";
+      log(`snipe filters CHANGED from the desk (${changed.join(", ")}): floor ${floorText}; `
+        + `volume spike ${conf.minVolumeSpike ?? "measure only"}; socials ${conf.requireSocials === true ? "required" : "not required"}`);
+      for (const w of curveReachability(conf.marketFloor)) log(`snipe market floor WARNING: ${w.message}`);
+      return Object.freeze({ ok: true, changed: Object.freeze(changed) });
+    },
+    /** The entry filters this lane is judging on right now. */
+    filters() {
+      const out = {};
+      for (const key of LIVE_FILTER_KEYS) out[key] = conf[key] ?? null;
+      return Object.freeze(out);
+    },
+    /* The tape, exposed so the process that MOUNTS the trade tap and the lane that reads
+       the tape are provably the same one. A second tape filled by the tap and never
+       measured would look identical in every log line either of them prints. */
+    flow,
     report(opts) { return recorder.report(opts); },
     render(opts) { return recorder.render(opts); },
     rows() { return recorder.rows(); },
@@ -1604,6 +1913,16 @@ export function createSnipeLane({
         hops: SHADOW_HOPS.length,
         chargeDailyCap: effective.chargeDailyCap === true,
         wouldHaveDeployedSol,
+        /* What the volume tape actually holds. A spike gate reporting "no spike" on every
+           launch and a spike gate whose tape is empty are the same sentence and different
+           facts, so the tape's own counters ride on the lane's stats. */
+        flow: flow.stats(),
+        /* THE FLOOR THIS LANE IS ACTUALLY RUNNING, and whether it can be honoured. A floor
+           configured with no reader wired refuses every candidate, which in a log looks
+           exactly like a market with nothing in it — so both facts are stamped. */
+        marketFloor: conf.marketFloor,
+        marketFloorArmed: floorIsArmed(conf.marketFloor),
+        marketReaderWired: typeof marketReader === "function",
         ...counters,
         /* STAMPED AND ASSERTED. Not a claim in a comment — a field the test reads. An
            observing lane reports zero for all three by construction; an armed lane reports

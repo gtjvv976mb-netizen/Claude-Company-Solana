@@ -903,6 +903,41 @@ export class ExecutionJournal {
     return Number(row?.n || 0);
   }
 
+  /**
+   * THE WHOLE RECORD'S TALLY, IN ONE AGGREGATE — the numbers a level is judged on.
+   *
+   * The heartbeat used to tally wins, losses and the realised total over `snipeExits()`'s
+   * 200-row window and send them beside `snipeExitCount()`'s lifetime count. Past 200 trades
+   * that put a lifetime count next to a recent sum, and a desk that lost money on its first 800
+   * closes and made some on its last 200 read as a profitable record of 1000 — enough to climb
+   * the agent ladder the page promises it would never climb. So the tally is taken over every
+   * row, by the database, and costs one indexed aggregate however long the record grows.
+   *
+   * Same join, same source of truth as snipeExits: the risk ledger's own `realized` event, and
+   * a trade without one is UNKNOWN — counted as such, summed as nothing, never as zero.
+   * `realizedLamports` is null when no trade at all could be read, because a sum over nothing
+   * is not a break-even.
+   */
+  snipeExitTotals({ sinceMs = null } = {}) {
+    const floor = Number.isFinite(Number(sinceMs)) ? Number(sinceMs) : 0;
+    const row = this.db.prepare(`SELECT COUNT(*) AS trades,
+        SUM(CASE WHEN r.realized_lamports IS NULL THEN 1 ELSE 0 END) AS unknown,
+        SUM(CASE WHEN r.realized_lamports > 0 THEN 1 ELSE 0 END) AS wins,
+        SUM(CASE WHEN r.realized_lamports <= 0 THEN 1 ELSE 0 END) AS losses,
+        SUM(r.realized_lamports) AS realized
+      FROM intents i LEFT JOIN risk_events r ON r.intent_id = i.id AND r.kind = 'realized'
+      WHERE i.state='accounted' AND i.kind='snipe_exit' AND COALESCE(i.confirmed_at, i.updated_at) >= ?`)
+      .get(floor);
+    const n = (v) => Number(v || 0);
+    const readable = n(row?.wins) + n(row?.losses);
+    const realized = row?.realized === null || row?.realized === undefined ? null : Number(row.realized);
+    return Object.freeze({
+      trades: n(row?.trades), wins: n(row?.wins), losses: n(row?.losses), unknown: n(row?.unknown),
+      readable,
+      realizedLamports: readable === 0 || !Number.isSafeInteger(realized) ? null : realized,
+    });
+  }
+
   hasBlockingIntent(exceptId = null) {
     const row = this.db.prepare(`SELECT id FROM intents
       WHERE state IN ('signed','submitted','confirmed','ambiguous') AND (? IS NULL OR id<>?) LIMIT 1`)

@@ -31,7 +31,7 @@
  * THE POSITIVE CLASS IS A BAD LAUNCH, NOT A GOOD ONE
  *
  * `positiveOutcome` is "the curve's real quote reserve never advanced past the would-have-
- * fill within the forward window" — a launch nobody followed us into. These two rulers are
+ * fill within the forward window" — a launch nobody followed us into. These rulers are
  * REFUSALS: a high precision means "when this ruler flags a launch, that launch really was
  * one nobody followed". That is what makes it safe to promote to a kill, and it is why the
  * bar is precision rather than accuracy: the cost of a false flag is a missed winner.
@@ -86,7 +86,7 @@ const pct = (v) => (v == null ? "  —  " : `${(v * 100).toFixed(1)}%`);
 export function formatReport({ scorecard, read, bookPath }) {
   const L = [];
   L.push("");
-  L.push("HAWK-AI — grading the two entry rulers against the shadow book");
+  L.push(`HAWK-AI — grading the ${Object.keys(scorecard.proxies).length} entry rulers against the shadow book`);
   L.push("=".repeat(66));
   L.push(`book        ${bookPath}`);
   L.push(`rows        ${read.total} retained across ${read.files} file(s)` +
@@ -126,7 +126,22 @@ export function formatReport({ scorecard, read, bookPath }) {
      that result is worth as much as a positive one and is far easier to talk yourself out
      of. */
   const any = Object.values(scorecard.proxies).some((p) => p.promotable);
-  const enough = Object.values(scorecard.proxies).every((p) => p.n >= scorecard.minRows);
+  /* A RULER THAT IS NEVER MEASURED ON THIS BOOK CANNOT HOLD THE VERDICT OPEN. volume_spike
+     needs five minutes of a coin's history, and a launch notice is judged within thirty
+     seconds of its birth — so on a book of launches it measures nothing, by construction, and
+     "every ruler shows n >= 200" could never become true. The "no edge" reading was
+     unreachable. Sufficiency is therefore judged over the rulers that measured something, and
+     the ones that measured nothing are named as such rather than silently dropped. */
+  const entries = Object.entries(scorecard.proxies);
+  const measurable = entries.filter(([, p]) => p.n > 0);
+  const unmeasured = entries.filter(([, p]) => p.n === 0).map(([name]) => name);
+  const enough = measurable.length > 0 && measurable.every(([, p]) => p.n >= scorecard.minRows);
+  if (unmeasured.length) {
+    L.push(`NOT IN THE VERDICT: ${unmeasured.join(", ")} — measured on 0 of ${scorecard.judged} judged rows.`);
+    L.push("A ruler this book's population cannot measure is left out rather than holding the");
+    L.push("reading open forever. (volume_spike needs a 5-minute baseline; a launch has none.)");
+    L.push("");
+  }
   if (any) {
     L.push("READ THIS AS: at least one ruler clears the bar. That is a candidate, not a");
     L.push("decision — arming it is a separate deliberate change, and a ruler that works this");
@@ -135,9 +150,9 @@ export function formatReport({ scorecard, read, bookPath }) {
     L.push("READ THIS AS: not enough judged rows yet. Come back when every ruler shows");
     L.push(`n >= ${scorecard.minRows}.`);
   } else {
-    L.push("READ THIS AS: with a full sample, neither ruler separates the launches nobody");
+    L.push("READ THIS AS: with a full sample, no ruler separates the launches nobody");
     L.push("followed from the ones people did. That is a real result. It means this strategy");
-    L.push("has no entry edge that these two measurements can find, and the honest options are");
+    L.push("has no entry edge that these measurements can find, and the honest options are");
     L.push("a different signal entirely or not trading this book at all — not a faster feed,");
     L.push("and not another exit ladder.");
   }
