@@ -1631,6 +1631,37 @@ The env file stays the base: a filter cleared on the page falls back to the env 
 "no filter". Every value the desk sends is re-validated on the bot exactly as the env file is, and
 a bad one is refused on its own while the rest apply.
 
+### Risk modes: one choice instead of nine numbers
+
+`SNIPE_RISK_MODE` picks a whole bundle of what-to-buy filters at once. It is also a card on the
+agent page, and with `SNIPE_REMOTE_FILTERS=1` picking one changes the running bot within a minute.
+
+| Mode | Risk | Buys | Suggested size |
+|---|---|---|---:|
+| `veteran` — established coins only | lowest | on the curve, ≥ 2 h old, ≥ $75k 24h volume, ≥ 300 trades, ≤ 60% sells, social link required | 0.05 SOL |
+| `proven` — an hour of real demand | medium | on the curve, ≥ 1 h old, ≥ $50k 24h volume, ≤ 70% sells, social link required | 0.1 SOL |
+| `wave` — buy when volume spikes | medium-high | on the curve, ≥ 1 h old, ≥ $25k 24h volume, social link, **and** net inflow ≥ 3x its last 5 minutes (needs `SNIPE_GRPC_*`) | 0.1 SOL |
+| `early` — younger coins, more trades | highest | on the curve, ≥ 30 min old, ≥ $25k 24h volume, social link not required | 0.2 SOL |
+
+- **A mode never touches money.** Trade size, the daily cap, the stop and the exits are not in any
+  mode. The suggested size is shown on the page as a suggestion for the env file on the Mac, and
+  changing it still needs the typed sentence.
+- **Anything you set yourself wins over the mode**, in the env file or on the page. On the page,
+  picking a mode clears the filters that mode covers, so its values apply; set one again to override.
+- **These are three honest guesses, not measured edges.** Nothing in this desk's record proves any
+  of them profitable yet; the scorecard (`grade-entry-gates.mjs`) is how one earns trust.
+
+### Room for the price to move: `SNIPE_ENTRY_SLIPPAGE_BPS`
+
+Default **300** (3%), Mac-only. The busiest coins move between the moment the bot reads the curve and
+the moment its buy lands, and a buy capped at exactly the price it read is refused by pump.fun with
+`TooMuchSolRequired` (6002) — the first 43 live attempts on momentum coins all failed that way in
+simulation, spending nothing. So the bot asks for this many basis points **fewer tokens** and caps
+the spend at the ticket itself: if the price held, the buy costs a little under the ticket; if it
+rose by up to about 3%, it costs at most the ticket; beyond that it is refused as before. **The most
+a buy can spend is still exactly `SNIPE_MAX_SOL_PER_TRADE`.** `0` restores the strict ceiling; the
+maximum is 2000.
+
 ### The volume spike
 
 > *"When volume spikes on a token, that's a sign to get in and ride the wave."* — the owner,

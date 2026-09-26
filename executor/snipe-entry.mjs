@@ -306,13 +306,18 @@ export function planSnipeCeiling({ curve, adapter = null, solLamports, cfg = {},
 
   const state = curve && curve.k !== undefined ? curve : snipeCurveState(curve);
   const feeBps = Number(state.feeBps ?? 0);
+  /* THE ROOM TO BE LATE, taken out of the QUANTITY, never added to the price cap. See
+     quoteOneRung. Whole basis points, 0..2000; anything else is treated as 0 — the strict
+     ceiling this function always had. */
+  const slip = Number(cfg.entrySlippageBps);
+  const slippageBps = Number.isInteger(slip) && slip > 0 && slip <= 2_000 ? slip : 0;
 
   const rungs = [];
   let chosen = null;
   for (let i = 0; i <= halvings; i += 1) {
     const spend = ticket >> BigInt(i);
     if (spend <= 0n) break;
-    const rung = quoteOneRung({ state, adapter, spend, feeBps });
+    const rung = quoteOneRung({ state, adapter, spend, feeBps, slippageBps });
     const impactOverCap = Number.isFinite(maxImpactPct) && rung.impactPct !== null
       && rung.impactPct > maxImpactPct;
     const roundTripOverCap = Number.isFinite(maxRoundTripPct) && rung.roundTripLossPct !== null
@@ -328,6 +333,7 @@ export function planSnipeCeiling({ curve, adapter = null, solLamports, cfg = {},
   });
   return Object.freeze({
     ...result,
+    slippageBps,
     cleared: chosen !== null,
     ticketLamports: ticket,
     rungs: Object.freeze(rungs),
@@ -339,7 +345,7 @@ export function planSnipeCeiling({ curve, adapter = null, solLamports, cfg = {},
  *  is the authority on its own arithmetic — and falls back to the constant-product math.
  *  A throw anywhere in here is not swallowed: it means the venue cannot be quoted, which
  *  is `exit_route_unimplemented` upstream, never a hold. */
-function quoteOneRung({ state, adapter, spend, feeBps }) {
+function quoteOneRung({ state, adapter, spend, feeBps, slippageBps = 0 }) {
   const buy = adapter && typeof adapter.quoteExactIn === "function"
     ? adapter.quoteExactIn(state, spend)
     : constantProductExactIn({ vBase: state.vBaseRaw, vQuote: state.vQuoteRaw, quoteInRaw: spend, feeBps });
@@ -361,6 +367,22 @@ function quoteOneRung({ state, adapter, spend, feeBps }) {
     return { deliverable: false, spendLamports: spend, baseOutRaw: baseOut, maxQuoteInRaw: ceiling,
       impactPct: buy.impactPct ?? null, execImpactPct: buy.execImpactPct ?? null,
       sellBackRaw: 0n, roundTripLossPct: null, reserveKnown: state.reserveKnown === true, feeBps };
+
+  /* ROOM FOR THE PRICE TO MOVE, WITHOUT EVER SPENDING MORE THAN THE TICKET (2026-09-26).
+     The ceiling above is the exact cost at the instant the curve was read. On a fresh launch
+     the lane is first and that is fine; on the coins the market floor admits — the busiest on
+     the venue, read and then judged across a DexScreener round trip — one trade in between
+     raises the price, the program answers TooMuchSolRequired (6002), and the owner's first
+     43 live attempts all died that way in simulation, spending nothing and buying nothing.
+     So the room is taken from the QUANTITY: ask for slippageBps fewer tokens, and let the
+     price cap be the ticket itself. If the price did not move, the buy costs less than the
+     ticket; if it rose by up to about slippageBps, it costs at most the ticket; beyond that
+     the program refuses as before. The money cap is exactly what it was — the ticket — so
+     this is not a looser ceiling, it is fewer tokens under the same one. */
+  if (slippageBps > 0) {
+    const shaved = (baseOut * BigInt(10_000 - slippageBps)) / 10_000n;
+    if (shaved > 0n) { baseOut = shaved; ceiling = spend; }
+  }
 
   /* The round trip, priced against the curve THE BUY LEAVES BEHIND — including the quote
      the buy just paid into the real reserve, which is the only thing the sell can be paid

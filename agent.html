@@ -13,9 +13,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 
-<meta name="cc-build" content="2026-09-26 19:03 UTC">
-<meta name="cc-commit" content="27c28b58e731c8adc22fc5f72fbeb8b178fbff02">
-<script>console.log("Claude Company build 2026-09-26 19:03 UTC")</script>
+<meta name="cc-build" content="2026-09-26 22:05 UTC">
+<meta name="cc-commit" content="3a6e6ce58e615e0c69dd21988f4b44450fed3924">
+<script>console.log("Claude Company build 2026-09-26 22:05 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
 <style>
@@ -82,6 +82,13 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
 .sstat{font-family:var(--mono);font-size:12.5px;margin-top:10px;color:var(--dim)}
 .sstat.ok{color:var(--win)} .sstat.err{color:var(--loss)} .sstat.wait{color:var(--amber)}
 @media (max-width:520px){.dial{grid-template-columns:1fr}}
+.modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:6px 0 14px}
+.mode{text-align:left;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+  color:var(--cream);font-family:var(--sans);cursor:pointer}
+.mode b{display:block;font-size:16px;margin-bottom:4px}
+.mode span{display:block;font-size:12.5px;color:var(--dim);line-height:1.45}
+.mode i{display:block;font-style:normal;font-family:var(--mono);font-size:11px;color:var(--amber);margin-top:8px}
+.mode.on{border-color:var(--glass);box-shadow:0 0 0 1px var(--glass) inset}
 
 .level{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
 .level .lv{font-family:var(--serif);font-size:30px}
@@ -108,6 +115,7 @@ footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--line);color:v
     <span class="state" id="state">loading</span>
   </header>
   <div class="who" id="who"></div>
+  <div class="sstat err" id="buyfail"></div>
 
   <h2>The money, in three figures</h2>
   <p class="lede" id="lede">Trading, creator fees and house rewards — reported separately.</p>
@@ -215,6 +223,12 @@ async function load() {
     : stale ? `last heard ${ago(a.pulseAgeMs)} ago` : (live ? "running" : "stopped");
   $("state").className = "state " + (a.live === null ? "" : (live ? "up" : "down"));
   $("who").textContent = a.operator ? `operator ${a.operator}` : "";
+  /* A BUY THAT KEEPS FAILING IS SAID ON THE PAGE, with the program's own reason — the first
+     43 live attempts once failed with nothing anywhere but the Mac's log to say why. */
+  const lf = a.lastEntryFailure;
+  $("buyfail").textContent = lf
+    ? `${a.entryFailures ?? "?"} buy attempt(s) failed — last ${lf.at ? ago(Date.now() - lf.at) + " ago" : ""}: ${lf.clause}: ${lf.message}`
+    : "";
 
   put("m-trade", sol(a.tradingSol), Number(a.tradingSol) >= 0 ? " pos" : " neg");
   put("m-fee", sol(a.feeSol, { sign: false }), " pos");
@@ -282,7 +296,7 @@ async function load() {
    line reads the bot's OWN report of which saved version it is running, so "saved" and
    "running" are never confused. */
 const LABELS = {
-  marketFloor: "Market floor preset", minAgeHours: "Minimum coin age", minVolume24hUsd: "Minimum 24h volume",
+  riskMode: "Risk mode", marketFloor: "Market floor preset", minAgeHours: "Minimum coin age", minVolume24hUsd: "Minimum 24h volume",
   minMcapUsd: "Minimum market cap", minLiquidityUsd: "Minimum liquidity", minTopPoolLiquidityUsd: "Minimum deepest pool",
   minTxns24h: "Minimum trades in 24h", maxSellShare: "Maximum share of sells", maxPriceChange24hPct: "Maximum 24h run-up",
   maxVolumeToLiquidity: "Maximum volume ÷ liquidity", minVolumeSpike: "Volume spike (ride the wave)",
@@ -302,6 +316,31 @@ function renderPanel(a, el) {
   const DIALS = a.strategyDials || {};
   const saved = a.strategy || {};
   const panel = el("div", undefined, "panel");
+
+  /* RISK MODES: one choice instead of nine numbers. Picking a card sets the mode and clears the
+     filters it covers, so the mode's values apply rather than being overridden by old ones;
+     any filter set below still wins over the mode. The size is a suggestion for the Mac only. */
+  const MODES = a.riskModes || {};
+  if (Object.keys(MODES).length) {
+    panel.appendChild(el("h3", "Risk mode — pick how picky the bot is"));
+    const cards = el("div", undefined, "modes");
+    for (const [name, m] of Object.entries(MODES)) {
+      const card = el("button", undefined, `mode${saved.riskMode === name ? " on" : ""}`);
+      card.type = "button";
+      card.append(el("b", m.label), el("span", m.summary),
+        el("i", `${m.risk} risk · suggested size ${m.suggestedSolPerTrade} SOL/trade — set on the Mac`));
+      card.addEventListener("click", () => {
+        const sel = panel.querySelector('[data-key="riskMode"]');
+        if (sel) sel.value = name;
+        const covered = new Set(Object.keys(m.filters).map((k) => (k === "marketFloorPreset" ? "marketFloor" : k)));
+        for (const input of panel.querySelectorAll("[data-key]")) if (covered.has(input.dataset.key)) input.value = "";
+        for (const c of cards.children) c.classList.toggle("on", c === card);
+        dirty = true;
+      });
+      cards.appendChild(card);
+    }
+    panel.appendChild(cards);
+  }
   for (const [title, live] of [["Live — changes the running bot", true], ["Mac only — shown as env lines, never sent", false]]) {
     panel.appendChild(el("h3", title));
     for (const [key, d] of Object.entries(DIALS)) {

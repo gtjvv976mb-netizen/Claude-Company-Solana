@@ -103,6 +103,48 @@ export const SNIPE_LANE_VERSION = "snipe-lane-v1";
  *  and market-cap bars sit above anything a curve holds (snipe-market.mjs, CURVE_FLOOR). */
 export const MARKET_FLOOR_PRESETS = Object.freeze(Object.keys(MARKET_FLOOR_PRESET_VALUES));
 
+/**
+ * RISK MODES (owner, 2026-09-26: "make trading modes so it will help me choose the risks").
+ *
+ * One setting that picks a whole bundle of WHAT-TO-BUY filters, so choosing how much risk to take
+ * is one decision instead of nine numbers. Every value in a mode is an entry filter from
+ * LIVE_FILTER_ENV — a mode never touches trade size, the daily cap, the stop or the exits, which
+ * stay on the Mac behind the typed sentence. Each mode carries a SUGGESTED size, shown to the
+ * owner and never applied.
+ *
+ * A dial the owner sets explicitly (env file or page) always wins over the mode, the same rule a
+ * floor preset follows: a mode fills in only what nobody typed.
+ *
+ * These are HYPOTHESES, not measurements. The only evidence behind them is that curve coins an hour
+ * old with real volume exist (the `curve` preset) and that brand-new launches lost this desk money.
+ * The scorecard is how a mode earns trust; until then they are three honest guesses at three levels
+ * of pickiness.
+ */
+export const RISK_MODES = Object.freeze({
+  veteran: Object.freeze({
+    label: "Veteran — established coins only", risk: "lowest", suggestedSolPerTrade: 0.05,
+    summary: "Coins at least 2 hours old with $75k+ of 24h volume, 300+ trades, no more than 60% sells, and a social link. Fewest trades.",
+    filters: Object.freeze({ marketFloorPreset: "curve", minAgeHours: 2, minVolume24hUsd: 75_000, minTxns24h: 300,
+      maxSellShare: 0.6, requireSocials: true }),
+  }),
+  proven: Object.freeze({
+    label: "Proven mover — an hour of real demand", risk: "medium", suggestedSolPerTrade: 0.1,
+    summary: "Coins at least 1 hour old with $50k+ of 24h volume, no more than 70% sells, and a social link.",
+    filters: Object.freeze({ marketFloorPreset: "curve", maxSellShare: 0.7, requireSocials: true }),
+  }),
+  wave: Object.freeze({
+    label: "Wave rider — buy when volume spikes", risk: "medium-high", suggestedSolPerTrade: 0.1,
+    summary: "Coins at least 1 hour old with $25k+ of 24h volume and a social link, bought only while money is flowing in 3x faster than its last 5 minutes. Needs the gRPC feed.",
+    filters: Object.freeze({ marketFloorPreset: "curve", minVolume24hUsd: 25_000, minVolumeSpike: 3, requireSocials: true }),
+  }),
+  early: Object.freeze({
+    label: "Early riser — younger coins, more trades", risk: "highest", suggestedSolPerTrade: 0.2,
+    summary: "Coins from 30 minutes old with $25k+ of 24h volume, social link not required. The most trades, on the least proven coins.",
+    filters: Object.freeze({ marketFloorPreset: "curve", minAgeHours: 0.5, minVolume24hUsd: 25_000, requireSocials: false }),
+  }),
+});
+export const RISK_MODE_NAMES = Object.freeze(["off", ...Object.keys(RISK_MODES)]);
+
 /** The only two modes this file admits. `execute` is listed so a caller can NAME it and
  *  be refused by name; there is no signing path here to run it on. */
 export const SNIPE_LANE_MODES = Object.freeze(["off", "observe", "execute"]);
@@ -255,6 +297,13 @@ export const SNIPE_LANE_DEFAULTS = Object.freeze({
      on this machine, because the desk is a server this machine does not control — see
      LIVE_FILTER_ENV for exactly what it may and may not touch. */
   remoteFilters: false,
+  /* The risk mode, or "off" for none. See RISK_MODES. */
+  riskMode: "off",
+  /* ROOM FOR THE PRICE TO MOVE BETWEEN THE READ AND THE BUY, taken out of the quantity and
+     never added to the spend — see snipe-entry.mjs quoteOneRung. 3%: enough for one or two
+     trades landing in between on an active coin, and the ticket stays the hard cap either way.
+     Mac-only (not in LIVE_FILTER_ENV): it is how a fill is priced, not what is bought. */
+  entrySlippageBps: 300,
   minAgeHours: undefined,
   minLiquidityUsd: undefined,
   minVolume24hUsd: undefined,
@@ -385,6 +434,8 @@ export const SNIPE_ENV = Object.freeze({
   SNIPE_MIN_VOLUME_SPIKE: Object.freeze({ key: "minVolumeSpike", parse: "number" }),
   SNIPE_MARKET_FLOOR: Object.freeze({ key: "marketFloorPreset", parse: "preset" }),
   SNIPE_REMOTE_FILTERS: Object.freeze({ key: "remoteFilters", parse: "flag" }),
+  SNIPE_RISK_MODE: Object.freeze({ key: "riskMode", parse: "risk" }),
+  SNIPE_ENTRY_SLIPPAGE_BPS: Object.freeze({ key: "entrySlippageBps", parse: "number" }),
   SNIPE_MIN_AGE_HOURS: Object.freeze({ key: "minAgeHours", parse: "number" }),
   SNIPE_MIN_LIQUIDITY_USD: Object.freeze({ key: "minLiquidityUsd", parse: "number" }),
   SNIPE_MIN_VOLUME_24H_USD: Object.freeze({ key: "minVolume24hUsd", parse: "number" }),
@@ -425,11 +476,18 @@ export const SNIPE_ENV = Object.freeze({
  */
 export function snipeLaneConfig(env = {}) {
   const out = { ...SNIPE_LANE_DEFAULTS };
+  const typed = new Set();          // keys the operator set explicitly, which a risk mode never overrides
   for (const [name, spec] of Object.entries(SNIPE_ENV)) {
     const raw = env[name];
     if (raw === undefined || raw === null || String(raw).trim() === "") continue;
     const text = String(raw).trim();
-    if (spec.parse === "mode") {
+    typed.add(spec.key);
+    if (spec.parse === "risk") {
+      if (!RISK_MODE_NAMES.includes(text.toLowerCase()))
+        throw new SnipeLaneError("mode_invalid",
+          `${name}=${JSON.stringify(text)} is not one of ${RISK_MODE_NAMES.join(", ")}`, { name, value: text });
+      out[spec.key] = text.toLowerCase();
+    } else if (spec.parse === "mode") {
       if (!SNIPE_LANE_MODES.includes(text))
         throw new SnipeLaneError("mode_invalid",
           `${name}=${JSON.stringify(text)} is not one of ${SNIPE_LANE_MODES.join(", ")}`, { name, value: text });
@@ -491,6 +549,19 @@ export function snipeLaneConfig(env = {}) {
      overrides one of them. A dial set with no preset arms a floor of exactly that dial —
      surprising the other way round would be worse, since inheriting three thresholds the
      operator never typed is how a bot ends up refusing on a number nobody chose. */
+  /* Whole basis points, at most 20%: past that it is not room for a trade landing in between,
+     it is buying whatever the price has become. */
+  if (!Number.isInteger(out.entrySlippageBps) || out.entrySlippageBps < 0 || out.entrySlippageBps > 2_000)
+    throw new SnipeLaneError("mode_invalid",
+      `SNIPE_ENTRY_SLIPPAGE_BPS=${out.entrySlippageBps} must be a whole number of basis points from 0 to 2000`,
+      { name: "SNIPE_ENTRY_SLIPPAGE_BPS", value: out.entrySlippageBps });
+
+  /* THE RISK MODE FILLS IN WHAT NOBODY TYPED. Applied before the floor is assembled, so its
+     floor preset and thresholds take part exactly as if they had been set by hand — and any
+     dial the operator did set keeps its value. */
+  const mode = RISK_MODES[out.riskMode];
+  if (mode) for (const [key, value] of Object.entries(mode.filters)) if (!typed.has(key)) out[key] = value;
+
   const dialed = {};
   for (const key of MARKET_FLOOR_KEYS) if (out[key] !== undefined) dialed[key] = out[key];
   const preset = MARKET_FLOOR_PRESET_VALUES[out.marketFloorPreset] ?? {};
@@ -524,7 +595,7 @@ export function snipeLaneConfig(env = {}) {
  * money caps the owner typed on this machine.
  */
 export const LIVE_FILTER_ENV = Object.freeze([
-  "SNIPE_MARKET_FLOOR", "SNIPE_MIN_AGE_HOURS", "SNIPE_MIN_LIQUIDITY_USD", "SNIPE_MIN_VOLUME_24H_USD",
+  "SNIPE_RISK_MODE", "SNIPE_MARKET_FLOOR", "SNIPE_MIN_AGE_HOURS", "SNIPE_MIN_LIQUIDITY_USD", "SNIPE_MIN_VOLUME_24H_USD",
   "SNIPE_MIN_MCAP_USD", "SNIPE_MAX_VOLUME_TO_LIQUIDITY", "SNIPE_MIN_TXNS_24H", "SNIPE_MAX_SELL_SHARE",
   "SNIPE_MAX_PRICE_CHANGE_24H_PCT", "SNIPE_MIN_TOP_POOL_LIQUIDITY_USD",
   "SNIPE_MIN_VOLUME_SPIKE", "SNIPE_REQUIRE_SOCIALS",
@@ -1423,6 +1494,7 @@ export function createSnipeLane({
    * the money has moved and the lane cannot hold the position — so it names the
    * signature and says to sell by hand; the journal has the intent either way.
    */
+  let lastEntryFailure = null;
   async function enterForReal({ row, mint, curve, verdict, frictionX, record, read, prepared }) {
     const creator = record?.creator ?? curve?.creator ?? null;
     let fill = null;
@@ -1433,6 +1505,10 @@ export function createSnipeLane({
       });
     } catch (error) {
       counters.entryFailures++;
+      /* The last reason, kept for the heartbeat: 43 simulation failures once reached nobody but
+         a log file on the owner's Mac, and the page could only say "entryFailures: 43". */
+      lastEntryFailure = Object.freeze({ atMs: clock(), mint: String(mint), clause: String(error?.clause ?? error?.name ?? "error"),
+        message: String(error?.message ?? error).slice(0, 240) });
       log(`snipe live ${mint}: ENTRY FAILED (${error?.clause ?? error?.name ?? "error"}): ${error?.message ?? error}`);
       return null;
     }
@@ -1834,7 +1910,7 @@ export function createSnipeLane({
       if (floorIsArmed(conf.marketFloor)) {
         const named = MARKET_FLOOR_KEYS.filter((k) => conf.marketFloor[k] !== null)
           .map((k) => `${k}=${conf.marketFloor[k]}`).join(", ");
-        log(`snipe market floor ARMED: ${named} — candidates under any of these are refused at market_floor`);
+        log(`snipe market floor ARMED${conf.riskMode !== "off" ? ` (risk mode ${conf.riskMode})` : ""}: ${named} — candidates under any of these are refused at market_floor`);
         for (const w of curveReachability(conf.marketFloor)) log(`snipe market floor WARNING: ${w.message}`);
       } else log("snipe market floor: off (every candidate is judged on the launch gates alone)");
       const summary = await feed.start();
@@ -1879,7 +1955,7 @@ export function createSnipeLane({
       const floorText = floorIsArmed(conf.marketFloor)
         ? MARKET_FLOOR_KEYS.filter((k) => conf.marketFloor[k] !== null).map((k) => `${k}=${conf.marketFloor[k]}`).join(", ")
         : "off";
-      log(`snipe filters CHANGED from the desk (${changed.join(", ")}): floor ${floorText}; `
+      log(`snipe filters CHANGED from the desk (${changed.join(", ")}): risk mode ${conf.riskMode}; floor ${floorText}; `
         + `volume spike ${conf.minVolumeSpike ?? "measure only"}; socials ${conf.requireSocials === true ? "required" : "not required"}`);
       for (const w of curveReachability(conf.marketFloor)) log(`snipe market floor WARNING: ${w.message}`);
       return Object.freeze({ ok: true, changed: Object.freeze(changed) });
@@ -1923,6 +1999,7 @@ export function createSnipeLane({
         marketFloor: conf.marketFloor,
         marketFloorArmed: floorIsArmed(conf.marketFloor),
         marketReaderWired: typeof marketReader === "function",
+        lastEntryFailure,
         ...counters,
         /* STAMPED AND ASSERTED. Not a claim in a comment — a field the test reads. An
            observing lane reports zero for all three by construction; an armed lane reports
