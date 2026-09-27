@@ -13,9 +13,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 
-<meta name="cc-build" content="2026-09-27 06:17 UTC">
-<meta name="cc-commit" content="ac2b7c22c4c396b9f7be947563f1a53aadd4893e">
-<script>console.log("Claude Company build 2026-09-27 06:17 UTC")</script>
+<meta name="cc-build" content="2026-09-27 20:18 UTC">
+<meta name="cc-commit" content="1fc468a1a82dc215173f006a1838d5e5edbee035">
+<script>console.log("Claude Company build 2026-09-27 20:18 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
 <style>
@@ -116,6 +116,7 @@ footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--line);color:v
   </header>
   <div class="who" id="who"></div>
   <div class="sstat err" id="buyfail"></div>
+  <div class="sstat wait" id="feeddown"></div>
 
   <h2>The money, in three figures</h2>
   <p class="lede" id="lede">Trading, creator fees and house rewards — reported separately.</p>
@@ -228,6 +229,17 @@ async function load() {
   const lf = a.lastEntryFailure;
   $("buyfail").textContent = lf
     ? `${a.entryFailures ?? "?"} buy attempt(s) failed — last ${lf.at ? ago(Date.now() - lf.at) + " ago" : ""}: ${lf.clause}: ${lf.message}`
+    : "";
+  /* A DEAD TRADE FEED IS SAID ON THE PAGE, as the bot's fault and not the market's. On
+     2026-09-27 the gRPC stream died and every candidate was refused as "a coin nobody is
+     trading" for nine hours while the page showed nothing. Only a strict false says down —
+     null is a bot with no trade tap, or a release that predates the field — and only on a
+     fresh pulse, because a stale one is already said above as "last heard". */
+  const fl = a.snipe && a.snipe.flow;
+  const restarts = fl && Number.isFinite(Number(fl.grpcRestarts)) ? Number(fl.grpcRestarts) : 0;
+  $("feeddown").textContent = fl && fl.tradeFeedLive === false && !stale
+    ? "Trade feed down — HAWK-AI cannot count trades; reconnecting"
+      + (restarts ? ` (${restarts} attempt${restarts === 1 ? "" : "s"} so far${fl.grpcLastRestartError ? `; last: ${fl.grpcLastRestartError}` : ""})` : "")
     : "";
 
   put("m-trade", sol(a.tradingSol), Number(a.tradingSol) >= 0 ? " pos" : " neg");

@@ -1692,6 +1692,22 @@ Read from the chain: **4 wins, 42 losses, −0.19 SOL.** Four things were wrong,
    minutes-old launches. With a market floor armed and no exit timing typed, a position now gets a
    **10-minute time stop and no stall exit** (`MARKET_FLOOR_HOLD`). `SNIPE_TIME_STOP_MS` and
    `SNIPE_STALL_MS` typed on the Mac still win. Decided at startup.
+5. **The gRPC trade feed died and nothing revived it.** Later that day HAWK-AI refused every
+   candidate for about nine hours as "0 trades in the last 5 minutes", on coins the chain shows
+   traded 2 to 25 times in those minutes: the Yellowstone stream died early in the run, the
+   heartbeat said `DEAD: grpc:pumpfun`, and no code ever called `restartSource`, so the tape
+   `recent_trades` counts from went stale and the refusal blamed the coin. A **watchdog**
+   (`snipe-feed.mjs` `createSourceWatchdog` with `GRPC_WATCHDOG`) now restarts the gRPC source
+   when it is dead, silent for 60 s, or errored with nothing after it, backing off 15 s → 5 min,
+   and logs and counts every attempt (`flow.grpcRestarts`, `grpcLastRestartAtMs`,
+   `grpcLastRestartError` in the heartbeat). While the feed is down the trade floors still refuse,
+   but as **`trade_feed_down`** with nothing measured ("the gRPC trade feed is down … the bot is
+   reconnecting it"), `flow.tradeFeedLive` reads `false` and the agent page says so. A reconnect
+   counts as down until the new subscription actually delivers, and the tape's coverage restarts
+   at that first frame: for five minutes after every (re)connect a low count refuses as
+   `trade_feed_warming` (not as a quiet coin), and for five and a half the volume spike is
+   withdrawn rather than measured across the hole. And the lane's own read of a launch notice no longer adds a new
+   mint to the 2,000-mint tape — those glances had caused 6,511 evictions of real trade history.
 
 ### The volume spike
 

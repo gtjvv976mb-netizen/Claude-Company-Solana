@@ -243,6 +243,18 @@ export function measureActivity(samples, { nowMs, windowMs = DEFAULT_ACTIVITY_MS
  * samples per mint, and `maxMints` mints, evicting the least recently touched. An evicted
  * mint is COUNTED, so a report can never quietly describe a subset while claiming to
  * describe everything — the same rule snipe-feed.mjs's ledger follows.
+ *
+ * WHO MAY ADD A MINT, AND WHO MAY ONLY TOP ONE UP (2026-09-27). The LRU bound makes every
+ * new mint cost an old one, so the question of who is allowed to insert is the question of
+ * whose history gets evicted. The trade tap inserts freely: a coin somebody traded is
+ * exactly what this tape exists to remember. The lane's own gate-time read of a launch
+ * notice passes `onlyIfKnown`, and is recorded only for a mint the trade feed has already
+ * put here. Before that option existed the lane inserted every one of the ~29 launches a
+ * minute it looked at, most of which nobody ever traded, and on the owner's Mac the tape
+ * sat pinned at its 2,000-mint cap with 6,511 evictions — the bot's glances at coins
+ * pushing out the real trade history of coins it might actually buy. A skipped read is
+ * counted (`skippedUnknown`), never dropped silently, and `has()` answers the same
+ * question for a caller that wants to ask before it reads.
  */
 export function createFlowTape({
   capacity = DEFAULT_CAPACITY, maxMints = 2_000,
@@ -261,7 +273,7 @@ export function createFlowTape({
       + `is ${capacity * bucketMs}ms of history, under the ${windowMs + baselineMs}ms a spike needs`);
 
   const tapes = new Map();          // mint -> array of {atMs, quoteRaw}, insertion ordered
-  const counters = { observed: 0, evictedMints: 0, droppedSamples: 0, coalesced: 0, rejected: 0 };
+  const counters = { observed: 0, evictedMints: 0, droppedSamples: 0, coalesced: 0, rejected: 0, skippedUnknown: 0 };
 
   return {
     version: SNIPE_VOLUME_VERSION,
@@ -269,10 +281,16 @@ export function createFlowTape({
 
     /** One reading. A sample without a usable reserve is REJECTED and counted, never
      *  recorded as a zero — a curve whose reserve could not be decoded has not suddenly
-     *  emptied. */
-    observe(mint, { atMs, quoteRaw } = {}) {
+     *  emptied.
+     *
+     *  `onlyIfKnown: true` records the reading only when the tape ALREADY holds this mint,
+     *  and otherwise counts it as `skippedUnknown` and returns null without touching the
+     *  LRU order — see the header on who may insert. A usable sample is judged first, so a
+     *  junk read is still `rejected` whichever way it was asked. */
+    observe(mint, { atMs, quoteRaw, onlyIfKnown = false } = {}) {
       const key = String(mint ?? "");
       if (!key || !Number.isFinite(Number(atMs)) || asBig(quoteRaw) === null) { counters.rejected++; return null; }
+      if (onlyIfKnown === true && !tapes.has(key)) { counters.skippedUnknown++; return null; }
       let tape = tapes.get(key);
       if (tape) tapes.delete(key);                 // re-insert: Map order is recency
       else tape = [];
@@ -310,6 +328,9 @@ export function createFlowTape({
       return measureActivity(tape ?? [], { nowMs, ...(windowMs ? { windowMs } : {}) });
     },
 
+    /** Whether the tape holds any history for this mint. A read, never a touch: asking does
+     *  not refresh the mint's place in the LRU order. */
+    has(mint) { return tapes.has(String(mint ?? "")); },
     forget(mint) { return tapes.delete(String(mint ?? "")); },
     size() { return tapes.size; },
     stats() { return { ...counters, mints: tapes.size, capacity, maxMints, windowMs, baselineMs, bucketMs }; },
@@ -355,6 +376,19 @@ export function observeTradeEvents(tape, events, { atMs } = {}) {
 }
 
 /**
+ * HOW LONG THE PUMP.FUN TRADE WIRE MAY BE SILENT BEFORE IT IS CALLED DOWN: sixty seconds.
+ *
+ * The gRPC source subscribes to the pump.fun PROGRAM, so it carries every buy and sell on
+ * every curve — many transactions a second on an ordinary afternoon, not the ~29 creates a
+ * minute snipe-feed.mjs's silence thresholds were derived from. A full minute without one
+ * notification is therefore not a quiet market; it is a stream that stopped. It matches the
+ * feed's own `degradedAfterSilentMs` on purpose, so the two components never disagree about
+ * the same minute, and it is short enough that a gate stops trusting the tape a minute into
+ * an outage rather than after the feed's five-minute death verdict.
+ */
+export const TRADE_FEED_STALE_MS = 60_000;
+
+/**
  * The tap: one subscription notification in, samples on the tape out.
  *
  * `tradesFrom(notification, context)` is INJECTED and has no default, for the same reason
@@ -367,22 +401,46 @@ export function observeTradeEvents(tape, events, { atMs } = {}) {
  * measurement at all. Every failure is CAUGHT AND COUNTED here — `errors` in stats(), with
  * the last message kept — because the alternative to counting is a tap that is silently
  * recording nothing while the gate above it reports "no spike" with total confidence.
+ *
+ * AND IT KNOWS WHEN IT LAST HEARD ANYTHING (2026-09-27). The counters above say how much
+ * arrived; they cannot say whether anything is STILL arriving. On the owner's Mac the gRPC
+ * stream died early in a run, `notifications` froze at 4,748, and for nine hours the lane
+ * counted every candidate's recent trades off a tape nobody was filling — refusing each one
+ * as "0 trades in the last 5 minutes" on coins that had traded 2 to 25 times. So every
+ * notification is stamped: `lastNotificationAtMs` is the last instant any notification
+ * reached the tap (a trade, a create, or bytes that did not decode — all proof the wire is
+ * up), and `liveSinceMs` is the start of the current UNBROKEN run of them, where a silence
+ * longer than `gapMs` begins a new run. The second is half of what tells a gate how much of
+ * its five-minute window the tape actually covers. Only half: the tap cannot see a
+ * subscription boundary, so a reconnect that closes a hole SHORTER than `gapMs` — the usual
+ * case once a watchdog restarts an errored stream within seconds — leaves this run
+ * unbroken across a stretch whose trades never arrived. `tradeFeedStatus` below supplies
+ * the other half from the feed (the current subscription's first notice).
  */
-export function createTradeTap({ tape, tradesFrom, clock = () => Date.now() } = {}) {
+export function createTradeTap({ tape, tradesFrom, clock = () => Date.now(), gapMs = TRADE_FEED_STALE_MS } = {}) {
   if (!tape || typeof tape.observe !== "function") throw new TypeError("createTradeTap needs a flow tape");
   if (typeof tradesFrom !== "function")
     throw new TypeError("createTradeTap needs tradesFrom(notification, context): no log layout is decoded here");
+  if (!Number.isFinite(gapMs) || gapMs <= 0) throw new TypeError(`createTradeTap gapMs must be a positive number of ms, got ${gapMs}`);
   const counters = { notifications: 0, trades: 0, recorded: 0, skipped: 0, errors: 0 };
   let lastError = null;
+  let lastNotificationAtMs = null;
+  let liveSinceMs = null;
   return {
     version: SNIPE_VOLUME_VERSION,
     observe(notification, context = null) {
       counters.notifications++;
       try {
+        /* Stamped BEFORE the decode, so a notification whose bytes do not decode still
+           proves the wire is alive — a decoder fault is `errors`, not a dead feed. */
+        const atMs = clock();
+        if (Number.isFinite(atMs)) {
+          if (lastNotificationAtMs === null || atMs - lastNotificationAtMs > gapMs) liveSinceMs = atMs;
+          lastNotificationAtMs = atMs;
+        }
         const events = tradesFrom(notification, context) ?? [];
         const list = Array.isArray(events) ? events : [];
         counters.trades += list.length;
-        const atMs = clock();
         const took = observeTradeEvents(tape, list, { atMs });
         counters.recorded += took;
         counters.skipped += list.length - took;
@@ -393,6 +451,62 @@ export function createTradeTap({ tape, tradesFrom, clock = () => Date.now() } = 
         return 0;
       }
     },
-    stats() { return { ...counters, lastError, tape: tape.stats() }; },
+    stats() { return { ...counters, lastError, lastNotificationAtMs, liveSinceMs, gapMs, tape: tape.stats() }; },
   };
+}
+
+/**
+ * IS THE TAPE BEING FED RIGHT NOW, AND SINCE WHEN? Pure: every input is handed in.
+ *
+ * `source` is the feed's WHOLE verdict on the gRPC source (snipe-feed.mjs classifySource:
+ * `state`, `startedAtMs`, `firstNoticeAtMs`, `lastNoticeAtMs`), not just its state word; the
+ * other three inputs are the tap's own stamps. Live only when every one of these holds:
+ *
+ *   · the feed calls the source `live` — degraded, dead, starting or stopped is down;
+ *   · the CURRENT subscription has delivered: `firstNoticeAtMs` is set (a restart clears
+ *     it, and a retired subscription's late frames cannot set it) and the tap has heard
+ *     something since `startedAtMs`. This is the case the state word lies about: the feed
+ *     reads a subscription `live` the instant it opens, and after an error the tap's last
+ *     stamp is still seconds old — from the stream that just died — so "live, and heard
+ *     within the minute" held for up to sixty seconds of a reconnect that had delivered
+ *     nothing, long enough to log the feed "back", count off a tape missing the hole, and
+ *     blame the coin again;
+ *   · nothing has been silent longer than `staleMs`, judged on the OLDER of the tap's stamp
+ *     and the feed's, since either can be the one that stopped.
+ *
+ * `sinceMs` is where the tape's unbroken coverage begins: the later of the tap's run start
+ * and the current subscription's first notice. The second is not optional. A watchdog
+ * restarts an errored stream in five to twenty seconds, which closes the hole long before
+ * the tap's sixty-second gap rule would break its run, so the run alone claimed everything
+ * before the outage as covered — and a buy that landed inside the hole was then credited
+ * to the recent window when the tape resumed: a "spike" well over the wave mode's 3x on a
+ * coin nobody had traded for forty seconds. Measured from the reconnect, the gates are
+ * told the window is partial (`trade_feed_warming`) for the first five and a half minutes
+ * after every (re)subscription, which withdraws the spike and makes a low count a lower
+ * bound.
+ *
+ * Nothing here decides what to refuse; it says what can be measured.
+ */
+export function tradeFeedStatus({
+  source = null, lastNotificationAtMs = null, liveSinceMs = null, nowMs, staleMs = TRADE_FEED_STALE_MS,
+} = {}) {
+  const down = (reason, extra = {}) => Object.freeze({ live: false, sinceMs: null, reason, ...extra });
+  const finite = Number.isFinite;
+  if (!finite(nowMs)) return down("no_clock");
+  if (!isPlainObject(source)) return down("source_missing");
+  if (source.state !== "live") return down(`source_${source.state == null ? "missing" : String(source.state)}`);
+  if (!finite(lastNotificationAtMs)) return down("no_notification");
+  /* The current subscription, proven by both witnesses. A source verdict with no start stamp
+     cannot show which subscription it describes, and is not taken on trust. */
+  if (!finite(source.startedAtMs) || !finite(source.firstNoticeAtMs) || lastNotificationAtMs < source.startedAtMs)
+    return down("no_notification_since_subscribe", { subscribedAtMs: finite(source.startedAtMs) ? source.startedAtMs : null });
+  const heardAtMs = finite(source.lastNoticeAtMs) ? Math.min(lastNotificationAtMs, source.lastNoticeAtMs) : lastNotificationAtMs;
+  const silentMs = nowMs - heardAtMs;
+  if (silentMs > staleMs) return down("silent", { silentMs });
+  return Object.freeze({
+    live: true,
+    sinceMs: Math.max(finite(liveSinceMs) ? liveSinceMs : lastNotificationAtMs, source.firstNoticeAtMs),
+    reason: null,
+    silentMs,
+  });
 }

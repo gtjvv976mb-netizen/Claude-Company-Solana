@@ -532,6 +532,25 @@ export function assertSnipeInstruction(ix, expected, adapter) {
   });
 }
 
+/* WHEN THE TRADE FEED, NOT THE COIN, IS WHY A FLOW GATE CANNOT MEASURE. The lane sets these
+   reasons on `c.flow` (snipe-lane.mjs, at the gate stamp) and both flow gates turn them into
+   the same two sentences, so a log line can never blame a coin for a wire that is down.
+   Exported so the tests can hold the exact words. */
+export const FLOW_FEED_REASONS = Object.freeze({
+  trade_feed_down: Object.freeze({
+    trades: () => "the gRPC trade feed is down, so this coin's recent trades cannot be counted",
+    spike: () => "the gRPC trade feed is down, so this coin's flow cannot be measured; the bot is reconnecting it",
+  }),
+  trade_feed_warming: Object.freeze({
+    trades: (f) => `the gRPC trade feed has only covered ${Math.round((f?.activityCoverageMs ?? 0) / 1000)}s of the `
+      + `${Math.round((f?.activityWindowMs ?? 300_000) / 60_000)}-minute window since it (re)connected`,
+    spike: () => "the gRPC trade feed (re)connected too recently for a 30-second flow to be judged against a "
+      + "5-minute baseline (trade_feed_warming)",
+  }),
+});
+const feedReason = (reason) => (typeof reason === "string" && Object.hasOwn(FLOW_FEED_REASONS, reason)
+  ? FLOW_FEED_REASONS[reason] : null);
+
 /* ── the gates themselves ──────────────────────────────────────────────────────────
  *
  * Each one is a function of the prepared context and returns null to pass, or a detail
@@ -868,6 +887,12 @@ const GATE_IMPLS = Object.freeze({
     c.trace.measured.volume_spike = measured;
     const threshold = Number(c.cfg.minVolumeSpike);
     if (!Number.isFinite(threshold)) return null;          // measure only — the shipped default
+    /* When the WIRE is the reason, the refusal says so. A spike the lane withdrew because
+       the trade feed is down or has not yet covered the window is a fact about this bot,
+       not about the coin, and the owner reading the log needs to know which. */
+    if (measured === null && feedReason(flow?.reason))
+      return { message: `a minVolumeSpike of ${threshold} is configured but ${feedReason(flow.reason).spike(flow)}` +
+        " — unverified is not safe", measured: null, threshold, reason: flow.reason };
     if (measured === null)
       return { message: `a minVolumeSpike of ${threshold} is configured but no spike could be measured ` +
         `for this launch (${flow?.reason ?? "no flow tape"}) — unverified is not safe`,
@@ -886,16 +911,36 @@ const GATE_IMPLS = Object.freeze({
      measureActivity), counted BEFORE the lane adds its own read of this notice.
 
      Same discipline as volume_spike: unset measures and never kills, and a floor set with no
-     measurement available refuses. */
+     measurement available refuses.
+
+     AND THE REFUSAL NAMES THE RIGHT CULPRIT (2026-09-27). For nine hours the owner's log read
+     "0 trades in the last 5 minutes ... a coin nobody is trading cannot move" on coins the
+     chain shows traded 2 to 25 times in exactly those minutes: the gRPC stream that fills
+     the tape had died, and the sentence blamed the coin. Refusing was right — a count off a
+     tape nobody is filling verifies nothing — but the WHY is what the owner acts on. So the
+     lane hands this gate `activityReason`: `trade_feed_down` (nothing counted; the wire is
+     being reconnected) and `trade_feed_warming` (the tape covers less than the window, so a
+     low count is a floor, not a measurement — a count that already clears the bar still
+     passes, because a lower bound over the bar is over the bar). */
   recent_trades: (c) => {
     const flow = c.flow ?? null;
     const measured = Number.isInteger(flow?.recentTrades) ? flow.recentTrades : null;
     c.trace.measured.recent_trades = measured;
     const threshold = Number(c.cfg.minRecentTrades);
     if (!Number.isFinite(threshold)) return null;          // measure only — the shipped default
+    const why = feedReason(flow?.activityReason);
+    if (measured === null && why)
+      return { message: `a minRecentTrades of ${threshold} is configured but ${why.trades(flow)} — unverified is not safe` +
+        (flow.activityReason === "trade_feed_down" ? "; the bot is reconnecting it" : ""),
+        measured: null, threshold, reason: flow.activityReason };
     if (measured === null)
       return { message: `a minRecentTrades of ${threshold} is configured but this coin's recent trades could not ` +
         "be counted (no trade tape) — unverified is not safe", measured: null, threshold };
+    if (measured < threshold && flow.activityReason === "trade_feed_warming")
+      return { message: `${measured} trades counted in the ${Math.round((flow.activityCoverageMs ?? 0) / 1000)}s since the gRPC trade ` +
+        `feed (re)connected, under the ${threshold} bar — the ${Math.round((flow.activityWindowMs ?? 300_000) / 60_000)}-minute ` +
+        "window is not covered yet, so a low count is not evidence the coin is quiet; unverified is not safe",
+        measured, threshold, reason: "trade_feed_warming" };
     if (measured < threshold)
       return { message: `${measured} trades in the last ${Math.round((flow.activityWindowMs ?? 300_000) / 60_000)} minutes, ` +
         `under the ${threshold} bar — a coin nobody is trading cannot move`, measured, threshold };

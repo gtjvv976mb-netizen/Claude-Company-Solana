@@ -86,7 +86,25 @@
  *    the comparison is the measurement. Both run; the ledger records who was first.
  *  · Auto-reconnect loops inside the feed. A backoff loop is untestable without real
  *    timers and turns a dead source into a permanently "recovering" one that reads as
- *    almost-fine. The feed reports; `restartSource(id)` is an explicit act by the lane.
+ *    almost-fine. The feed reports; `restartSource(id)` is an explicit act by its caller.
+ *
+ *    That sentence stood alone until 2026-09-27, and on that day it cost nine hours: the
+ *    owner's gRPC stream died early in a run, the heartbeat said "DEAD: grpc:pumpfun" the
+ *    whole time, and nothing in the repository ever called restartSource. The trade tape
+ *    that stream fed went stale, and every candidate was refused as a coin nobody traded.
+ *    So the explicit act now has an owner: `createSourceWatchdog` below. It is still NOT a
+ *    loop inside the feed — it is a separate object the caller mounts for one named
+ *    source, its timer is injected so the test drives it tick by tick, it backs off
+ *    exponentially, and every attempt, success and failure is counted in its own stats()
+ *    rather than folded into "fine". It changes nothing about how the feed classifies a
+ *    source — and that classification has a property anything depending on the DATA must
+ *    know: a (re)started subscription reads `live` from the instant it opens, before it has
+ *    delivered a byte, and is measured for silence from then (the 60 s / 5 min thresholds
+ *    below). So "live" after a restart means "subscribed", never "recovered". What must
+ *    know the difference asks for proof instead: the watchdog forgives its backoff only on a
+ *    notice that landed after its restart, and snipe-volume.mjs `tradeFeedStatus` calls the
+ *    trade feed down until the CURRENT subscription has delivered (`firstNoticeAtMs`, which
+ *    a restart clears and a retired subscription's late frames can never set).
  *  · Deduping on (mint, slot) or on the raw payload. The identity of a launch is its
  *    mint; anything finer re-emits the same launch from a second source, which is exactly
  *    the bug the dedupe exists to prevent.
@@ -439,6 +457,7 @@ export function classifySource(source, nowMs, cfg = {}) {
   const base = {
     id: source.id, kind: source.kind, venueId: source.venueId ?? null,
     startedAtMs: source.startedAtMs ?? null, lastNoticeAtMs: source.lastNoticeAtMs ?? null,
+    firstNoticeAtMs: source.firstNoticeAtMs ?? null,
     silentMs, notices: source.notices ?? 0, accepted: source.accepted ?? 0,
     firsts: source.firsts ?? 0, rejected: source.rejected ?? 0, unparsed: source.unparsed ?? 0,
     errors: source.errors ?? 0, consecutiveErrors: source.consecutiveErrors ?? 0,
@@ -615,13 +634,28 @@ export function createSnipeFeed({
       state: "starting", startedAtMs: null, lastNoticeAtMs: null, handle: null, fatal: false,
       notices: 0, accepted: 0, firsts: 0, rejected: 0, unparsed: 0, errors: 0, consecutiveErrors: 0,
       lastError: null, lastErrorAtMs: null, restarts: 0, lastAliveAtMs: null, pulses: 0,
+      /* WHICH SUBSCRIPTION IS CURRENT. Every start() hands the source a context stamped with
+         a generation, and a restart retires the old one BEFORE it stops the old handle — so
+         a notification or an error the dead socket still had in flight lands as a stale
+         hand-off (counted, refused) instead of as proof that the NEW subscription is alive.
+         Without it, one late frame from a closed stream would reset the silence clock of a
+         reconnect that has not delivered a byte, which is exactly the fake "live" a watchdog
+         must never be shown. */
+      generation: 0, restarting: null,
+      /* THE FIRST NOTICE ON THE CURRENT SUBSCRIPTION — null from every (re)start until that
+         subscription delivers. `state: "live"` cannot say this (a fresh subscription reads
+         live before its first byte), `lastNoticeAtMs` answers "most recently", and a trade
+         tape needs "since when, unbroken": a reconnect that closed a twenty-second hole is
+         covered from its first frame, not from the start of the run before the hole. Set
+         only through admit(), so a retired subscription's late frame can never set it. */
+      firstNoticeAtMs: null,
     });
   }
 
   const ledger = createNoticeLedger({ capacity: conf.dedupeCapacity, ttlMs: conf.dedupeTtlMs });
   const queue = createQueue();
   const rejections = [];
-  const counters = { emitted: 0, corroborated: 0, rejected: 0, overflow: 0, afterStop: 0 };
+  const counters = { emitted: 0, corroborated: 0, rejected: 0, overflow: 0, afterStop: 0, afterRestart: 0 };
   let running = false, stopped = false;
 
   const reject = (reason, message, detail = {}) => {
@@ -631,10 +665,16 @@ export function createSnipeFeed({
     return Object.freeze({ accepted: false, fresh: false, reason, message });
   };
 
-  function admit(sourceId, payload) {
+  function admit(sourceId, payload, generation) {
     const st = states.get(sourceId);
     if (!st) return reject("source_unknown", `emit() from unregistered source ${JSON.stringify(sourceId)}`);
     if (stopped) { counters.afterStop++; return reject("after_stop", `source ${sourceId} emitted after stop()`, { source: sourceId }); }
+    /* The subscription that sent this has been stopped by a restart. Same fact as after_stop
+       — a socket with one more frame in flight — scoped to one source. */
+    if (generation !== undefined && generation !== st.generation) {
+      counters.afterRestart++;
+      return reject("after_stop", `source ${sourceId} emitted from a subscription a restart already stopped`, { source: sourceId });
+    }
     st.notices++;
 
     /* ANYTHING ARRIVING IS PROOF THE TRANSPORT IS ALIVE, whatever we then think of the
@@ -643,6 +683,7 @@ export function createSnipeFeed({
        liveness would declare a perfectly healthy socket dead on a quiet launch minute. */
     const arrivedAtMs = clock();
     st.lastNoticeAtMs = arrivedAtMs;
+    if (st.firstNoticeAtMs === null) st.firstNoticeAtMs = arrivedAtMs;
     st.consecutiveErrors = 0;
 
     if (!isPlainObject(payload)) {
@@ -687,9 +728,11 @@ export function createSnipeFeed({
     return Object.freeze({ accepted: true, fresh: result.fresh, record: result.record });
   }
 
-  function fail(sourceId, error, { fatal = false } = {}) {
+  function fail(sourceId, error, { fatal = false } = {}, generation) {
     const st = states.get(sourceId);
     if (!st) return;
+    /* A dead subscription's last error is not the new one's first. */
+    if (generation !== undefined && generation !== st.generation) { counters.afterRestart++; return; }
     st.errors++;
     st.consecutiveErrors++;
     st.lastError = String(error?.message ?? error);
@@ -700,18 +743,19 @@ export function createSnipeFeed({
 
   /** A source that answered — a poll that returned an array — without necessarily having
    *  anything to emit. Liveness, and nothing else: it neither queues nor dedupes. */
-  function alive(sourceId) {
+  function alive(sourceId, generation) {
     const st = states.get(sourceId);
     if (!st || stopped) return;
+    if (generation !== undefined && generation !== st.generation) { counters.afterRestart++; return; }
     st.lastAliveAtMs = clock();
     st.pulses++;
     st.consecutiveErrors = 0;
   }
 
-  const ctxFor = (id) => Object.freeze({
-    emit: (payload) => admit(id, payload),
-    fail: (error, opts) => fail(id, error, opts),
-    alive: () => alive(id),
+  const ctxFor = (id, generation) => Object.freeze({
+    emit: (payload) => admit(id, payload, generation),
+    fail: (error, opts) => fail(id, error, opts, generation),
+    alive: () => alive(id, generation),
     clock, schedule, cancel, cfg: conf,
   });
 
@@ -730,14 +774,27 @@ export function createSnipeFeed({
     st.lastError = null;
     st.consecutiveErrors = 0;
     st.startedAtMs = clock();
+    st.firstNoticeAtMs = null;                   // this subscription has delivered nothing yet
+    const generation = ++st.generation;
     try {
-      st.handle = await st.source.start(ctxFor(st.id));
+      const handle = await st.source.start(ctxFor(st.id, generation));
+      /* stop() LANDED WHILE THIS WAS CONNECTING. Keeping the handle would leave a live
+         subscription on a feed that has reported itself stopped — a socket nobody will
+         ever close — so it is closed here and the source says what happened. */
+      if (stopped) {
+        try { await handle?.stop?.(); } catch { /* it was never going to be used */ }
+        st.handle = null;
+        st.state = "stopped";
+        return Object.freeze({ id: st.id, kind: st.kind, ok: false, error: "the feed was stopped while this source was starting" });
+      }
+      st.handle = handle;
       if (!st.fatal) st.state = "live";
       return Object.freeze({ id: st.id, kind: st.kind, ok: st.fatal !== true, error: st.lastError });
     } catch (error) {
       /* A source that cannot start is DEAD AND NAMED, and the others still start. One bad
-         endpoint must not take the feed down, and it must not vanish either. */
-      st.state = "dead";
+         endpoint must not take the feed down, and it must not vanish either. (Unless the
+         whole feed was stopped meanwhile: then it is stopped, like every other source.) */
+      st.state = stopped ? "stopped" : "dead";
       st.fatal = true;
       st.handle = null;
       st.errors++;
@@ -779,12 +836,25 @@ export function createSnipeFeed({
          out of several and leave the feed reporting a health summary for sources that were
          never asked to connect. */
       if (!running) throw new FeedConfigError(`feed has not been started; cannot restart source ${id}`);
-      try { await st.handle?.stop?.(); } catch { /* it is already broken; that is why we are here */ }
-      st.handle = null;
-      st.restarts++;
-      st.state = "starting";
-      st.lastNoticeAtMs = null;
-      return startOne(st);
+      /* ONE RESTART AT A TIME PER SOURCE. A second caller arriving while the first is still
+         connecting gets the first one's answer rather than stopping a subscription that is
+         mid-handshake and opening a third. */
+      if (st.restarting) return st.restarting;
+      st.restarting = (async () => {
+        /* THE OLD SUBSCRIPTION IS RETIRED, THEN STOPPED, THEN REPLACED — in that order.
+           Retiring first (the generation bump) means anything it still delivers while its
+           stop() is in flight is refused as stale; stopping before resubscribing means the
+           venue never sees two live subscriptions from this source, which on a metered
+           endpoint is two bills and on any endpoint is every trade counted twice. */
+        st.generation++;
+        try { await st.handle?.stop?.(); } catch { /* it is already broken; that is why we are here */ }
+        st.handle = null;
+        st.restarts++;
+        st.state = "starting";
+        st.lastNoticeAtMs = null;
+        return startOne(st);
+      })();
+      try { return await st.restarting; } finally { st.restarting = null; }
     },
 
     async stop() {
@@ -818,6 +888,212 @@ export function createSnipeFeed({
         ledger: ledger.stats(),
       });
     },
+  };
+}
+
+/* ── the watchdog: who calls restartSource ─────────────────────────────────────────── */
+
+/**
+ * The dials for a watchdog on the pump.fun gRPC stream, and what each is derived from.
+ *
+ *   intervalMs 15s    — how often it looks. A quarter of the silence below, so a dead
+ *                       stream is noticed within one silence plus one tick.
+ *   backoffMs         — 15s, 30s, 1m, 2m, then every 5m for as long as it stays down. An
+ *                       endpoint refusing the token or out of credits answers the same way
+ *                       every time, and hammering it is how a quota becomes a ban; five
+ *                       minutes is the feed's own death threshold, so even the slowest
+ *                       retry is no later than the moment the heartbeat already says DEAD.
+ *   silentMs 60s      — a stream that should never be quiet. This subscription is on the
+ *                       pump.fun PROGRAM, so it carries every trade on every curve — many a
+ *                       second — not just the ~29 creates a minute the feed's thresholds were
+ *                       derived from. A full minute of nothing is a stream that stopped. The
+ *                       feed would wait five minutes for its `dead` verdict; on 2026-09-27
+ *                       that verdict stood for nine hours with nobody acting on it, and the
+ *                       first five of any outage are five minutes of trade history the tape
+ *                       never gets back. Sixty matches `degradedAfterSilentMs` and
+ *                       snipe-volume.mjs TRADE_FEED_STALE_MS, so nothing disagrees about the
+ *                       same minute.
+ *   errorSilentMs 5s  — an error with nothing after it. grpc-wire.mjs's openGrpcStream closes
+ *                       the stream on the first failure it reports (an end, a reset, a bad
+ *                       status), so on this transport an unrecovered error IS a closed socket,
+ *                       not a wobble. The five seconds are for the errors that do not close
+ *                       it — a frame that failed to decode, a log the parser choked on — after
+ *                       which a healthy stream's next notice clears the error within
+ *                       milliseconds. Waiting the full silentMs to prove what the transport
+ *                       already said would throw away a minute of trades per disconnect.
+ */
+export const GRPC_WATCHDOG = Object.freeze({
+  intervalMs: 15_000,
+  backoffMs: Object.freeze([15_000, 30_000, 60_000, 120_000, 300_000]),
+  silentMs: 60_000,
+  errorSilentMs: 5_000,
+});
+
+/**
+ * Keep ONE named source of a started feed alive: look every `intervalMs`, and when the
+ * feed's own verdict says the source is dead — or, when asked, that it has been silent or
+ * errored for too long — call `feed.restartSource(sourceId)`, no sooner than the backoff
+ * allows.
+ *
+ * WHAT COUNTS AS RECOVERED. `restartSource` returning ok means the subscription was
+ * re-opened, not that anything arrived on it — a fresh source reads `live` the instant it
+ * starts. So the backoff resets only on PROOF: the source is live AND a notice (or a
+ * successful poll) has landed since the last restart. Until then every further attempt
+ * waits longer. A reconnect that opens and delivers nothing is still a failure, and is
+ * treated as one.
+ *
+ * WHAT IT NEVER DOES. It never throws from its timer: a reader that throws, a restart that
+ * throws, a log sink that throws — each is caught, counted and kept as a message. It never
+ * runs two restarts at once. It never touches how the feed classifies a source — which
+ * means that after each attempt the feed's summary reads the source `live` (subscribed, not
+ * yet proven) until silence degrades it again, so the heartbeat's feed line alone cannot
+ * tell a reconnect from a recovery. This watchdog's `failures` (attempts since the last
+ * proof of life) can, and so can snipe-volume.mjs `tradeFeedStatus`, which demands a
+ * notice on the current subscription — and that check is what the gates and the page's
+ * "trade feed down" line (heartbeat `flow.tradeFeedLive`) read. And it stops itself the
+ * first tick after its feed is stopped, so nobody has to remember to.
+ *
+ * `clock` is optional: without one, "now" is the instant the feed stamped on its own health
+ * summary, so the watchdog and the verdict it is acting on can never disagree about time.
+ * `setIntervalFn`/`clearIntervalFn` are injected for the same reason the feed's scheduler
+ * is: the test drives every tick by hand and waits on nothing.
+ */
+export function createSourceWatchdog({
+  feed, sourceId, clock = null,
+  setIntervalFn = globalThis.setInterval, clearIntervalFn = globalThis.clearInterval,
+  intervalMs = GRPC_WATCHDOG.intervalMs, backoffMs = GRPC_WATCHDOG.backoffMs,
+  silentMs = null, errorSilentMs = null, log = () => {},
+} = {}) {
+  if (!isPlainObject(feed) || typeof feed.health !== "function" || typeof feed.restartSource !== "function")
+    throw new FeedConfigError("createSourceWatchdog needs a feed with health() and restartSource()");
+  if (!isNonEmptyString(sourceId)) throw new FeedConfigError("createSourceWatchdog needs the id of the source it keeps alive");
+  if (clock !== null && typeof clock !== "function") throw new FeedConfigError("createSourceWatchdog clock must be a function or null");
+  if (typeof setIntervalFn !== "function" || typeof clearIntervalFn !== "function")
+    throw new FeedConfigError("createSourceWatchdog needs setIntervalFn and clearIntervalFn");
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0)
+    throw new FeedConfigError(`watchdog intervalMs ${JSON.stringify(intervalMs)} must be a positive number of ms`);
+  const steps = Array.isArray(backoffMs) ? [...backoffMs] : [];
+  if (steps.length === 0 || steps.some((ms) => !Number.isFinite(ms) || ms < 0))
+    throw new FeedConfigError(`watchdog backoffMs ${JSON.stringify(backoffMs)} must be a non-empty list of non-negative ms`);
+  for (const [name, value] of [["silentMs", silentMs], ["errorSilentMs", errorSilentMs]])
+    if (value !== null && (!Number.isFinite(value) || value <= 0))
+      throw new FeedConfigError(`watchdog ${name} ${JSON.stringify(value)} must be a positive number of ms, or null`);
+
+  const say = (message) => { try { log(message); } catch { /* a log sink must not stop a restart */ } };
+  const counts = { restarts: 0, restartsOk: 0, restartsFailed: 0, recoveries: 0, ticks: 0, tickErrors: 0 };
+  let state = "idle";                 // idle | watching | backoff | restarting | stopped
+  let timer = null;
+  let inFlight = null;
+  let failures = 0;                   // restarts since the last proof of life
+  let nextAttemptAtMs = null;
+  let lastRestartAtMs = null, lastRestartOk = null, lastRestartError = null;
+  let lastReason = null, lastTickError = null, sourceState = null;
+
+  /* Why this source should be restarted now, or null. Judged on the FEED's classification
+     (classifySource) plus the two optional tighter rules; never on a guess of its own. */
+  const whyRestart = (src) => {
+    if (src.state === "dead") return `dead (${src.reason ?? "no reason given"})`;
+    if (src.state !== "live" && src.state !== "degraded") return null;   // starting, stopped
+    const silent = Number.isFinite(src.silentMs) ? src.silentMs : null;
+    if (silentMs !== null && silent !== null && silent >= silentMs) return `silent ${silent}ms (>= ${silentMs}ms)`;
+    if (errorSilentMs !== null && (src.consecutiveErrors ?? 0) > 0 && silent !== null && silent >= errorSilentMs)
+      return `errored (${String(src.lastError ?? "no message").slice(0, 120)}) with nothing received for ${silent}ms`;
+    return null;
+  };
+
+  const snapshot = () => Object.freeze({
+    sourceId, state, sourceState,
+    restarts: counts.restarts, restartsOk: counts.restartsOk, restartsFailed: counts.restartsFailed,
+    recoveries: counts.recoveries, failures,
+    lastRestartAtMs, lastRestartOk, lastRestartError, nextAttemptAtMs,
+    lastReason, ticks: counts.ticks, tickErrors: counts.tickErrors, lastTickError,
+  });
+
+  function stop() {
+    if (timer !== null) { try { clearIntervalFn(timer); } catch { /* already gone */ } timer = null; }
+    state = "stopped";
+    return snapshot();
+  }
+
+  async function tick() {
+    if (state === "stopped" || inFlight) return snapshot();
+    counts.ticks++;
+    let atMs, src;
+    try {
+      const health = feed.health(typeof clock === "function" ? clock() : undefined);
+      atMs = typeof clock === "function" ? health?.at ?? clock() : health?.at;
+      src = (health?.sources ?? []).find((s) => s?.id === sourceId) ?? null;
+    } catch (error) {
+      counts.tickErrors++;
+      lastTickError = String(error?.message ?? error).slice(0, 200);
+      return snapshot();
+    }
+    if (!src) { lastReason = `the feed reports no source ${sourceId}`; sourceState = null; return snapshot(); }
+    sourceState = src.state;
+    if (src.state === "stopped") {
+      say(`watchdog: ${sourceId} was stopped with its feed; the watchdog stops too`);
+      return stop();
+    }
+    /* PROOF OF LIFE since the last restart, and only then is the backoff forgiven. */
+    const proof = Math.max(src.lastNoticeAtMs ?? -Infinity, src.lastAliveAtMs ?? -Infinity);
+    if (failures > 0 && src.state === "live" && lastRestartAtMs !== null && proof >= lastRestartAtMs) {
+      counts.recoveries++;
+      say(`watchdog: ${sourceId} is delivering again after ${failures} restart attempt(s); backoff reset`);
+      failures = 0;
+      nextAttemptAtMs = null;
+    }
+    const why = whyRestart(src);
+    lastReason = why;
+    if (why === null) { state = "watching"; return snapshot(); }
+    if (!Number.isFinite(atMs)) { counts.tickErrors++; lastTickError = "no clock reading to judge the backoff against"; return snapshot(); }
+    if (nextAttemptAtMs !== null && atMs < nextAttemptAtMs) { state = "backoff"; return snapshot(); }
+
+    const waitMs = steps[Math.min(failures, steps.length - 1)];
+    failures++;
+    counts.restarts++;
+    const attempt = counts.restarts;
+    lastRestartAtMs = atMs;
+    nextAttemptAtMs = atMs + waitMs;
+    state = "restarting";
+    say(`watchdog: ${sourceId} is ${why} — restart attempt ${attempt}; the next, if it stays down, no sooner than ${Math.round(waitMs / 1000)}s`);
+    inFlight = (async () => {
+      try {
+        const result = await feed.restartSource(sourceId);
+        lastRestartOk = result?.ok === true;
+        lastRestartError = lastRestartOk ? null : String(result?.error ?? "restartSource returned no verdict").slice(0, 200);
+      } catch (error) {
+        lastRestartOk = false;
+        lastRestartError = String(error?.message ?? error).slice(0, 200);
+      }
+      if (lastRestartOk) {
+        counts.restartsOk++;
+        say(`watchdog: ${sourceId} resubscribed (attempt ${attempt}); the backoff resets only once data arrives on it`);
+      } else {
+        counts.restartsFailed++;
+        say(`watchdog: ${sourceId} restart attempt ${attempt} FAILED: ${lastRestartError}`);
+      }
+    })();
+    try { await inFlight; } finally {
+      inFlight = null;
+      if (state !== "stopped") state = "watching";
+    }
+    return snapshot();
+  }
+
+  return {
+    sourceId,
+    /** Arms the timer. Constructing the watchdog opened nothing, like everything else here. */
+    start() {
+      if (timer !== null || state === "stopped") return snapshot();
+      state = "watching";
+      timer = setIntervalFn(() => { tick().catch(() => { /* tick() catches its own; belt and braces */ }); }, intervalMs);
+      timer?.unref?.();
+      return snapshot();
+    },
+    /** One look, on demand. The timer calls exactly this. */
+    tick,
+    stop,
+    stats: snapshot,
   };
 }
 

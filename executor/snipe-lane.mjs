@@ -1098,6 +1098,32 @@ export function createSnipeLane({
      `not_enough_samples`, the gate treats unknown as not-a-spike, and with no threshold set
      that is a recorded measurement and nothing else. */
   flowTape = null,
+  /* IS ANYBODY FILLING THAT TAPE RIGHT NOW? (2026-09-27, nine hours of wrong refusals.)
+     A tape answers "how many trades reached this process"; it cannot answer "was the wire
+     that delivers them up". On the owner's Mac the gRPC stream died early in a run and the
+     tape went stale, so every candidate counted 0 recent trades and was refused as "a coin
+     nobody is trading" — on coins that had traded 2 to 25 times in those five minutes. The
+     refusals were right to refuse (unverified is not safe) and wrong about WHY, and the why
+     is what the owner reads.
+
+     So, two optional ports, both supplied by whoever mounts the trade tap:
+       · tradeFeedLive()  -> true only while the tap is being fed. Anything but `true` —
+                             false, a throw, a malformed answer — means the tape cannot be
+                             trusted, and the flow gates are handed `trade_feed_down` with
+                             nothing measured, never a zero.
+       · tradeFeedSince() -> the instant the tape's current unbroken coverage began — for the
+                             poller, the later of the tap's run start and the current gRPC
+                             subscription's first notice, so EVERY reconnect restarts it. A
+                             tape that reconnected forty seconds ago (or booted forty seconds
+                             ago) holds forty seconds of a five-minute window; its count is a
+                             floor, not a count, and a spike across its gap would be the
+                             outage's flow landing in thirty seconds. The gates are told
+                             `trade_feed_warming`. Wired, it must answer whenever the feed is
+                             live: a live feed that cannot say since when is a feed nobody can
+                             vouch for, and is treated as down rather than as fully covered.
+     Absent, the lane measures exactly as it always has. */
+  tradeFeedLive = null,
+  tradeFeedSince = null,
   /* THE MARKET READ, AS A PORT — the DexScreener half of the market floor. Injected like
      every other outside call here so a test can drive an empty pair list, a hang, or a pool
      with no liquidity field (which that API really does return) without a network. Absent,
@@ -1211,6 +1237,34 @@ export function createSnipeLane({
       + "(SNIPE_GRPC_ENDPOINT + SNIPE_GRPC_TOKEN) or unset SNIPE_MIN_VOLUME_SPIKE.",
       { minVolumeSpike: conf.minVolumeSpike });
   const flow = flowTape ?? createFlowTape();
+  if (tradeFeedLive !== null && typeof tradeFeedLive !== "function")
+    throw new SnipeLaneError("volume_tape_unfed", `tradeFeedLive must be a function or null, got ${typeof tradeFeedLive}`);
+  if (tradeFeedSince !== null && typeof tradeFeedSince !== "function")
+    throw new SnipeLaneError("volume_tape_unfed", `tradeFeedSince must be a function or null, got ${typeof tradeFeedSince}`);
+  /* The two feed ports, read defensively. `null` means "not wired" and changes nothing;
+     a wired port that throws or answers anything but a strict `true` is a feed that cannot
+     be vouched for, which is a down feed — fail closed, and say so. */
+  const feedLiveNow = () => {
+    if (typeof tradeFeedLive !== "function") return null;
+    try { return tradeFeedLive() === true; } catch { return false; }
+  };
+  const feedSinceNow = () => {
+    if (typeof tradeFeedSince !== "function") return null;
+    try { const t = Number(tradeFeedSince()); return Number.isFinite(t) && t > 0 ? t : null; } catch { return null; }
+  };
+  /* Both ports, read once, by the one rule the gate stamp and stats() share: `since` is
+     asked only of a feed that says live, and a wired since-port with no answer for a live
+     feed — a throw, or a status that flipped down between the two questions — is DOWN.
+     Read as "no answer, so fully covered" it would be the one reading that can pass a
+     floor off a tape nobody can vouch for. */
+  const feedNow = () => {
+    const live = feedLiveNow();
+    if (live !== true || typeof tradeFeedSince !== "function") return { live, since: null };
+    const since = feedSinceNow();
+    return since === null ? { live: false, since: null } : { live: true, since };
+  };
+  /* The last answer the gate saw, so a flip is logged ONCE rather than on every notice. */
+  let feedLiveSeen = null;
 
   const counters = {
     notices: 0, recorded: 0, cleared: 0, refused: 0, wouldHaveOpened: 0, marketReadsSkipped: 0,
@@ -1359,9 +1413,45 @@ export function createSnipeLane({
        somebody trading it. */
     const activityNow = typeof flow.activity === "function"
       ? flow.activity(mint, { nowMs: gateAtMs }) : { trades: null, windowMs: 300_000 };
-    flow.observe(mint, { atMs: gateAtMs, quoteRaw: curve?.realQuoteRaw ?? null });
-    const flowNow = { ...flow.measure(mint, { nowMs: gateAtMs }),
-      recentTrades: flowTape ? activityNow.trades : null, activityWindowMs: activityNow.windowMs };
+    /* THE BOT'S OWN READ TOPS UP A COIN THE TRADE FEED KNOWS, AND NEVER ADDS ONE IT DOES NOT.
+       This used to insert every launch notice the lane looked at — ~29 a minute, most never
+       traded by anybody — into a tape bounded at 2,000 mints and evicting the least recently
+       touched. On 2026-09-27 the owner's tape sat at its 2,000 cap with 6,511 evictions: the
+       bot's glances at coins pushing out real trade history of coins it might buy. A coin
+       the tape does not hold gains nothing from one sample anyway — a spike needs 330
+       seconds of them — so `onlyIfKnown` loses no measurement and keeps the history. */
+    flow.observe(mint, { atMs: gateAtMs, quoteRaw: curve?.realQuoteRaw ?? null, onlyIfKnown: true });
+    const { live: feedLive, since } = feedNow();
+    if (feedLive !== null && feedLive !== feedLiveSeen) {
+      if (feedLive === false)
+        log(`snipe trade feed DOWN: the volume tape is not being fed, so recent_trades and volume_spike cannot be `
+          + "measured — every candidate they judge is refused as unverified (trade_feed_down), not as a quiet coin");
+      else if (feedLiveSeen === false) log("snipe trade feed back: recent_trades and volume_spike are measured again");
+      feedLiveSeen = feedLive;
+    }
+    const spikeNow = flow.measure(mint, { nowMs: gateAtMs });
+    const activityWindowMs = activityNow.windowMs ?? 300_000;
+    let flowNow;
+    if (feedLive === false) {
+      /* NOTHING ON THIS TAPE IS CURRENT. A count off it is not a count, a ratio off it is not
+         a ratio, and a zero would blame the coin for the wire. */
+      flowNow = { ...spikeNow, spike: null, reason: "trade_feed_down",
+        recentTrades: null, activityWindowMs, activityReason: "trade_feed_down", activityCoverageMs: null,
+        tradeFeedLive: false };
+    } else {
+      const coverageMs = since === null ? null : Math.max(0, gateAtMs - since);
+      const spikeSpanMs = (Number(flow.windowMs) || 30_000) + (Number(flow.baselineMs) || 300_000);
+      /* A partial window: the count is a real lower bound (it can still CLEAR a floor), and a
+         spike across the gap is not a spike at all, so it is withdrawn. */
+      const warmingActivity = coverageMs !== null && coverageMs < activityWindowMs;
+      const warmingSpike = coverageMs !== null && coverageMs < spikeSpanMs;
+      flowNow = { ...spikeNow,
+        ...(warmingSpike ? { spike: null, reason: "trade_feed_warming" } : {}),
+        recentTrades: flowTape ? activityNow.trades : null, activityWindowMs,
+        activityReason: !flowTape ? "no_tape" : warmingActivity ? "trade_feed_warming" : null,
+        activityCoverageMs: coverageMs,
+        tradeFeedLive: feedLive };
+    }
 
     /* THE FLOOR'S FACTS, joined here rather than fetched here. The awaited half has had the
        whole account round trip to finish; the liquidity half comes out of the curve that was
@@ -2044,6 +2134,12 @@ export function createSnipeLane({
            launch and a spike gate whose tape is empty are the same sentence and different
            facts, so the tape's own counters ride on the lane's stats. */
         flow: flow.stats(),
+        /* WHETHER THAT TAPE IS BEING FED, asked of the same ports the gates ask. `null` is
+           "no port wired" — a lane with no trade tap — never "down". */
+        ...(() => {
+          const { live, since } = feedNow();
+          return { tradeFeedLive: live, tradeFeedSinceMs: since };
+        })(),
         /* THE FLOOR THIS LANE IS ACTUALLY RUNNING, and whether it can be honoured. A floor
            configured with no reader wired refuses every candidate, which in a log looks
            exactly like a market with nothing in it — so both facts are stamped. */

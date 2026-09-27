@@ -2525,6 +2525,7 @@ const snipeStatus = {
   lastFillAt: 0,           // the last confirmed buy or sell the port reported
   lane: null, feed: null,  // references, read by the builder below and never serialized
   flowTap: null, momentum: null, remote: null,
+  grpcWatchdog: null,      // the thing that revives the gRPC stream; its counters ride in `flow`
 };
 const setSnipeState = (state, error) => {
   snipeStatus.state = state;
@@ -2645,6 +2646,12 @@ function snipeHeartbeat() {
          in every shadow row exactly like "fresh launch, no baseline yet". */
       const f = s.flow || {};
       const tap = snipeStatus.flowTap?.stats?.() || null;
+      /* THE WIRE UNDER THE TAPE, AND WHO IS REVIVING IT (2026-09-27). The counters above froze
+         at 4,748 for nine hours while nothing restarted the stream and the page could not say
+         so. `tradeFeedLive` is the lane's own answer to "can recent_trades be counted right
+         now" (null: no tap at all); the grpc* fields are the watchdog's attempts to make it
+         true again. */
+      const wd = (() => { try { return snipeStatus.grpcWatchdog?.stats?.() || null; } catch { return null; } })();
       out.flow = {
         tapped: tap !== null,
         mints: Number(f.mints) || 0, observed: Number(f.observed) || 0, rejected: Number(f.rejected) || 0,
@@ -2654,6 +2661,10 @@ function snipeHeartbeat() {
         recorded: tap ? Number(tap.recorded) || 0 : null,
         tapErrors: tap ? Number(tap.errors) || 0 : null,
         lastError: tap?.lastError ? String(tap.lastError).slice(0, 160) : null,
+        tradeFeedLive: typeof s.tradeFeedLive === "boolean" ? s.tradeFeedLive : null,
+        grpcRestarts: wd ? Number(wd.restarts) || 0 : null,
+        grpcLastRestartAtMs: wd && Number(wd.lastRestartAtMs) > 0 ? Number(wd.lastRestartAtMs) : null,
+        grpcLastRestartError: wd?.lastRestartError ? String(wd.lastRestartError).slice(0, 160) : null,
       };
     }
   } catch {}
@@ -3946,9 +3957,11 @@ if (SNIPE_LANE_MODE !== "off") {
      * already receiving: no new subscription, no new request, no new key, and not one
      * millisecond added to the path that buys.
      *
-     * Without SNIPE_GRPC_* the tape still exists and still takes the lane's own curve reads;
-     * it simply has too few points to form a ratio, the gate records `null`, and since
-     * SNIPE_MIN_VOLUME_SPIKE is unset by default nothing is refused on an unknown. */
+     * Without SNIPE_GRPC_* the tape still exists and still takes the lane's reads of the
+     * positions it holds (a launch notice's own read is recorded only for a coin the trade
+     * feed already put on the tape — snipe-lane.mjs says why); it simply has too few points to
+     * form a ratio, the gate records `null`, and since SNIPE_MIN_VOLUME_SPIKE is unset by
+     * default nothing is refused on an unknown. */
     const flowTape = volumeMod.createFlowTape();
     const flowTap = volumeMod.createTradeTap({
       tape: flowTape,
@@ -4092,6 +4105,41 @@ if (SNIPE_LANE_MODE !== "off") {
       sink: sinkMod.createShadowSink({ file: sinkMod.shadowBookPath(STATE_DB) }),
     });
     log(`[snipe] shadow book persisting to ${sinkMod.shadowBookPath(STATE_DB)}`);
+    /* IS THE TRADE TAPE BEING FED — asked of BOTH halves, because either alone can lie. The
+       feed's verdict on the gRPC source is handed over WHOLE, not just its state word: the
+       word reads `live` the instant a (re)subscription opens, before it has delivered a byte,
+       and after an error the tap's own stamp is still seconds old from the stream that just
+       died, so "state live AND heard within a minute" was true for up to a minute of an
+       empty reconnect. The verdict's `firstNoticeAtMs` (cleared by every restart, and set
+       only by the current subscription) is the proof, and it is also where coverage restarts
+       — a watchdog reconnect closes its hole in seconds, too quickly for the tap's own
+       sixty-second gap rule to notice. snipe-volume.mjs tradeFeedStatus joins them, and the
+       lane asks it at every gate stamp: down means recent_trades and volume_spike refuse as
+       `trade_feed_down` — the wire's fault, said as the wire's fault — rather than counting
+       zero off a stale tape and blaming the coin, which is what nine hours of the owner's
+       log did on 2026-09-27; freshly (re)connected means `trade_feed_warming` until the tape
+       covers the window again. */
+    const grpcFeedStatus = () => {
+      const nowMs = Date.now();
+      let source = null;
+      try { source = laneFeed.health(nowMs).sources.find((x) => x.id === grpcSource.id) ?? null; } catch {}
+      const tap = flowTap.stats();
+      return volumeMod.tradeFeedStatus({
+        source, lastNotificationAtMs: tap.lastNotificationAtMs, liveSinceMs: tap.liveSinceMs, nowMs,
+      });
+    };
+    /* AND SOMETHING THAT REVIVES IT. snipe-feed.mjs has always said restarting a source is the
+       caller's explicit act, and until this line no caller ever performed it: the stream died,
+       the heartbeat said "DEAD: grpc:pumpfun", and nothing reconnected it for nine hours. The
+       watchdog looks every 15 seconds and calls restartSource on a dead, silent or errored
+       stream, backing off 15s -> 5m while it stays down; every attempt is logged here under
+       [snipe] and counted in the heartbeat's flow block. Only the gRPC source gets one: it is
+       the only source a gate depends on, and the websocket and the polls already report
+       themselves. It stops itself when the feed stops. */
+    const grpcWatchdog = grpcSource ? feedMod.createSourceWatchdog({
+      feed: laneFeed, sourceId: grpcSource.id, ...feedMod.GRPC_WATCHDOG,
+      log: (m) => log(`[snipe] ${m}`),
+    }) : null;
     const lane = createSnipeLane({
       venue: PUMPFUN_VENUE,
       readers: laneReaders,
@@ -4101,6 +4149,12 @@ if (SNIPE_LANE_MODE !== "off") {
       shadow: shadowBook,
       /* The same tape the tap above fills. */
       flowTape,
+      /* Whether that tape is being fed right now, and since when. Only with a tap: a bot with
+         no gRPC source refuses the trade floors at construction instead (above). */
+      ...(grpcSource ? {
+        tradeFeedLive: () => grpcFeedStatus().live === true,
+        tradeFeedSince: () => grpcFeedStatus().sinceMs,
+      } : {}),
       /* The market floor's reader. Null when no floor is configured, and createSnipeLane
          REFUSES an armed floor with no reader rather than refusing every candidate for want
          of a measurement — which in a log is indistinguishable from an empty market. */
@@ -4217,6 +4271,7 @@ if (SNIPE_LANE_MODE !== "off") {
     if (remoteFilters) log("[snipe] SNIPE_REMOTE_FILTERS=1: the desk's filter panel may change this lane's ENTRY FILTERS "
       + "(never its money caps, exits or mode); changes arrive with the heartbeat, about once a minute");
     snipeStatus.flowTap = grpcSource ? flowTap : null; snipeStatus.momentum = momentumFetch;
+    snipeStatus.grpcWatchdog = grpcWatchdog;
     setSnipeState("starting", null);
     const snipeTickMs = Number(process.env.SNIPE_TICK_MS || 1_000);
     /* A FAULT MUST NEVER ABANDON AN OPEN POSITION.
@@ -4285,6 +4340,14 @@ if (SNIPE_LANE_MODE !== "off") {
       }
     }
     await lane.start();
+    /* Armed only once the feed is running: before start() there is nothing to revive, and
+       restartSource refuses a feed that was never started. */
+    if (grpcWatchdog) {
+      grpcWatchdog.start();
+      log(`[snipe] gRPC watchdog armed on ${grpcSource.id}: restarts it when dead, silent ${feedMod.GRPC_WATCHDOG.silentMs / 1000}s, `
+        + `or errored with nothing after ${feedMod.GRPC_WATCHDOG.errorSilentMs / 1000}s; backoff `
+        + `${feedMod.GRPC_WATCHDOG.backoffMs.map((ms) => `${ms / 1000}s`).join(" -> ")}`);
+    }
     setSnipeState("up", null);
     log(`[snipe] launch lane up in ${laneCfg.lane} mode, ${snipeTickMs}ms tick, ` +
       `${laneReaders.length} endpoints — ${laneCfg.lane === "execute"
