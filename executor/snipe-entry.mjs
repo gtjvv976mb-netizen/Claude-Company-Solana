@@ -154,6 +154,7 @@ export const SNIPE_GATES = Object.freeze([
   "creator_profile",
   "launch_share",
   "volume_spike",
+  "recent_trades",
   // ── COST 4: pre-signature, no network ────────────────────────────────────────────
   "network_fee_over_cap",
   "rent_over_cap",
@@ -169,7 +170,7 @@ export const SNIPE_GATE_COST = Object.freeze({
   curve_unreadable: 1, curve_type_unsupported: 1, quote_not_sol: 1, curve_already_complete: 1,
   exit_route_unimplemented: 1, mint_refused: 1, no_socials: 1, market_floor: 1,
   impact_over_cap: 2, round_trip_over_cap: 2, stop_floor: 2, size_under_minimum: 2,
-  creator_profile: 3, launch_share: 3, volume_spike: 3,
+  creator_profile: 3, launch_share: 3, volume_spike: 3, recent_trades: 3,
   network_fee_over_cap: 4, rent_over_cap: 4, instruction_mismatch: 4,
 });
 
@@ -875,6 +876,29 @@ const GATE_IMPLS = Object.freeze({
       return { message: `net inflow is ${measured.toFixed(2)}x its baseline, under the ${threshold}x bar ` +
         `(${Math.round(flow.recentLamportsPerSec ?? 0)} against ${Math.round(flow.baselineLamportsPerSec ?? 0)} lamports/sec)`,
         measured, threshold };
+    return null;
+  },
+
+  /* ONLY BUY A COIN SOMEBODY IS TRADING NOW (2026-09-27). 30 of 46 live market-floor trades
+     sold at exactly their buy price: nobody traded those coins while the bot held them, so
+     each one lost the round-trip fees and nothing else. `c.flow.recentTrades` is how many
+     times the curve's reserve changed in the last five minutes (snipe-volume.mjs
+     measureActivity), counted BEFORE the lane adds its own read of this notice.
+
+     Same discipline as volume_spike: unset measures and never kills, and a floor set with no
+     measurement available refuses. */
+  recent_trades: (c) => {
+    const flow = c.flow ?? null;
+    const measured = Number.isInteger(flow?.recentTrades) ? flow.recentTrades : null;
+    c.trace.measured.recent_trades = measured;
+    const threshold = Number(c.cfg.minRecentTrades);
+    if (!Number.isFinite(threshold)) return null;          // measure only — the shipped default
+    if (measured === null)
+      return { message: `a minRecentTrades of ${threshold} is configured but this coin's recent trades could not ` +
+        "be counted (no trade tape) — unverified is not safe", measured: null, threshold };
+    if (measured < threshold)
+      return { message: `${measured} trades in the last ${Math.round((flow.activityWindowMs ?? 300_000) / 60_000)} minutes, ` +
+        `under the ${threshold} bar — a coin nobody is trading cannot move`, measured, threshold };
     return null;
   },
 

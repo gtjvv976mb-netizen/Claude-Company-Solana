@@ -196,6 +196,43 @@ export function measureSpike(samples, { nowMs, windowMs = DEFAULT_WINDOW_MS, bas
   });
 }
 
+/** How far back `measureActivity` counts trades by default: five minutes. */
+export const DEFAULT_ACTIVITY_MS = 300_000;
+
+/**
+ * IS ANYBODY TRADING THIS COIN RIGHT NOW? Counts the moments in the last `windowMs` at which
+ * the curve's SOL reserve CHANGED from the sample before it. Pure, like measureSpike.
+ *
+ * Why this exists (2026-09-27): 30 of the first 46 live market-floor trades came back at
+ * exactly the price they were bought at, because nobody traded those coins in the three
+ * minutes the bot held them. A pump.fun price moves only when someone trades, so a flat coin
+ * is a guaranteed loss of the round-trip fees. Their 24h volume had all happened earlier.
+ *
+ * It counts CHANGES, not samples, so the lane's own reads of a coin nobody is touching (the
+ * same reserve, read again) never count as activity. It is a LOWER bound on trades: the tape
+ * keeps one sample per 2-second bucket, and the first sample a tape ever holds has nothing
+ * before it to differ from.
+ */
+export function measureActivity(samples, { nowMs, windowMs = DEFAULT_ACTIVITY_MS } = {}) {
+  if (!Number.isFinite(nowMs)) return Object.freeze({ trades: null, reason: "no_clock", samples: 0, windowMs });
+  const rows = [];
+  for (const s of Array.isArray(samples) ? samples : []) {
+    if (!isPlainObject(s)) continue;
+    const at = Number(s.atMs);
+    const q = asBig(s.quoteRaw);
+    if (Number.isFinite(at) && q !== null) rows.push({ at, q });
+  }
+  rows.sort((a, b) => a.at - b.at);
+  const from = nowMs - windowMs;
+  let trades = 0, inWindow = 0;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].at < from || rows[i].at > nowMs) continue;
+    inWindow++;
+    if (i > 0 && rows[i].q !== rows[i - 1].q) trades++;
+  }
+  return Object.freeze({ trades, reason: null, samples: inWindow, windowMs });
+}
+
 /**
  * The tape: a bounded per-mint history of the curve's real quote reserve.
  *
@@ -264,6 +301,13 @@ export function createFlowTape({
     measure(mint, { nowMs, ...opts } = {}) {
       const tape = tapes.get(String(mint ?? ""));
       return measureSpike(tape ?? [], { nowMs, windowMs, baselineMs, ...opts });
+    },
+
+    /** Trades in the last few minutes for one mint — see measureActivity. A mint the tape
+     *  has never seen is zero trades, which is the truth: none reached this process. */
+    activity(mint, { nowMs, windowMs } = {}) {
+      const tape = tapes.get(String(mint ?? ""));
+      return measureActivity(tape ?? [], { nowMs, ...(windowMs ? { windowMs } : {}) });
     },
 
     forget(mint) { return tapes.delete(String(mint ?? "")); },

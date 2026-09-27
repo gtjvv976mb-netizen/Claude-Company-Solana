@@ -3865,6 +3865,7 @@ if (SNIPE_LANE_MODE !== "off") {
         relaySubmitter: snipeRelaySubmitter,
         cfg: { priorityFeeLamports: laneCfg.priorityFeeLamports, maxNetworkFeeLamports: laneCfg.maxNetworkFeeLamports,
           maxRentLamports: laneCfg.maxRentLamports,
+          minWalletReserveLamports: Math.round(Number(laneCfg.minWalletReserveSol) * 1_000_000_000),
           tipAccounts: snipeTipAccounts,
           tipBaseLamports: Number(process.env.SNIPE_TIP_BASE_LAMPORTS) || 0,
           tipMaxLamports: Number(process.env.SNIPE_TIP_MAX_LAMPORTS) || 0 },
@@ -4005,6 +4006,12 @@ if (SNIPE_LANE_MODE !== "off") {
       throw new Error(`SNIPE_MIN_VOLUME_SPIKE=${laneCfg.minVolumeSpike} needs the gRPC trade tap to fill the volume tape `
         + "(SNIPE_GRPC_ENDPOINT + SNIPE_GRPC_TOKEN). Without it no candidate can have a 5-minute baseline, so every "
         + "one would be refused at volume_spike. Set the gRPC pair, or unset SNIPE_MIN_VOLUME_SPIKE.");
+    /* The recent-trades floor counts off the same tape, and every risk mode sets one. */
+    const activityArmed = laneCfg.minRecentTrades !== undefined && laneCfg.minRecentTrades !== null;
+    if (activityArmed && !grpcSource)
+      throw new Error(`SNIPE_MIN_RECENT_TRADES=${laneCfg.minRecentTrades}${laneCfg.riskMode !== "off" ? ` (from risk mode ${laneCfg.riskMode})` : ""} `
+        + "needs the gRPC trade tap to count a coin's trades (SNIPE_GRPC_ENDPOINT + SNIPE_GRPC_TOKEN). Without it every "
+        + "candidate would be refused at recent_trades. Set the gRPC pair, or set SNIPE_MIN_RECENT_TRADES=0 and SNIPE_RISK_MODE=off.");
     /* FILTERS THE DESK MAY CHANGE WHILE THIS RUNS (SNIPE_REMOTE_FILTERS=1). When the owner has
        opted in, the parts that serve a filter are mounted up front — the momentum source and
        the market reader — so switching a floor on from the page does not need a restart. The
@@ -4165,18 +4172,22 @@ if (SNIPE_LANE_MODE !== "off") {
         try {
           const dials = strategy.env && typeof strategy.env === "object" && !Array.isArray(strategy.env) ? { ...strategy.env } : {};
           const refusedHere = [];
-          if (!grpcSource && dials.SNIPE_MIN_VOLUME_SPIKE !== undefined && dials.SNIPE_MIN_VOLUME_SPIKE !== null) {
-            refusedHere.push({ name: "SNIPE_MIN_VOLUME_SPIKE",
-              reason: "this bot has no gRPC trade tap (SNIPE_GRPC_*), so no candidate could ever be measured" });
-            delete dials.SNIPE_MIN_VOLUME_SPIKE;
+          for (const name of ["SNIPE_MIN_VOLUME_SPIKE", "SNIPE_MIN_RECENT_TRADES"]) {
+            if (!grpcSource && dials[name] !== undefined && dials[name] !== null) {
+              refusedHere.push({ name,
+                reason: "this bot has no gRPC trade tap (SNIPE_GRPC_*), so no candidate could ever be measured" });
+              delete dials[name];
+            }
           }
           let r = remoteFilterConfig({ baseEnv, remote: dials });
           /* A spike can also arrive inside a risk mode (wave), not only as its own dial — so the
              tap check is made on the RESOLVED config, and a mode that needs the tap is refused
              whole on a bot that has none, rather than applied as a floor that refuses everything. */
-          if (!grpcSource && r.ok && r.cfg.minVolumeSpike !== undefined && r.cfg.minVolumeSpike !== null) {
+          const tapeNeeded = (c) => (c.minVolumeSpike !== undefined && c.minVolumeSpike !== null)
+            || (c.minRecentTrades !== undefined && c.minRecentTrades !== null);
+          if (!grpcSource && r.ok && tapeNeeded(r.cfg)) {
             refusedHere.push({ name: "SNIPE_RISK_MODE",
-              reason: `mode ${r.cfg.riskMode} needs the gRPC trade tap for its volume spike, and this bot has none` });
+              reason: `mode ${r.cfg.riskMode} needs the gRPC trade tap to count trades, and this bot has none` });
             delete dials.SNIPE_RISK_MODE;
             r = remoteFilterConfig({ baseEnv, remote: dials });
           }

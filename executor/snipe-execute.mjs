@@ -81,6 +81,7 @@ export const SNIPE_EXECUTE_CLAUSES = Object.freeze([
   "failed_on_chain",     // the transaction landed and errored
   "ambiguous",           // the chain could not be read to a verdict inside the timeout
   "malformed",           // an argument this file cannot act on
+  "low_balance",         // the buy would leave the wallet unable to pay for its own exit
 ]);
 
 export class SnipeExecuteError extends Error {
@@ -115,6 +116,15 @@ export const SNIPE_EXECUTE_DEFAULTS = Object.freeze({
   tipAccounts: Object.freeze([]),
   tipBaseLamports: 0,
   tipMaxLamports: 0,
+  /* SOL THE WALLET KEEPS BACK AFTER EVERY BUY. On 2026-09-27 a buy spent the wallet down to
+     665,323 lamports and the sell that followed could not pay its own fee: 365 failed exits on
+     a position that was up 12%. A buy that strands its exit is refused before it is signed.
+     0.01 SOL covers the exit's fee many times over and keeps the payer rent-exempt. */
+  minWalletReserveLamports: 10_000_000,
+  /* Close the token account in the same transaction as a whole-position sell, so the ~0.0015
+     SOL of rent each buy locks up comes back on every trade instead of piling up in empty
+     accounts (47 of them, 0.07 SOL, on the same date). */
+  closeAccountOnSell: true,
   statusPollMs: 250,
   confirmTimeoutMs: 25_000,
   finalityTimeoutMs: 90_000,
@@ -177,6 +187,21 @@ export function createAtaIdempotentIx({ payer, ata, owner, mint, tokenProgram })
   });
 }
 
+/** SPL Token / Token-2022 CloseAccount (opcode 9): the account's rent goes to `destination`.
+ *  The token program refuses to close an account that still holds a balance, so a close
+ *  riding a partial sell fails the transaction rather than burning anything. */
+export function closeAccountIx({ account, destination, owner, tokenProgram }) {
+  return new TransactionInstruction({
+    programId: new PublicKey(tokenProgram),
+    keys: [
+      { pubkey: new PublicKey(account), isSigner: false, isWritable: true },
+      { pubkey: new PublicKey(destination), isSigner: false, isWritable: true },
+      { pubkey: new PublicKey(owner), isSigner: true, isWritable: false },
+    ],
+    data: Buffer.from([9]),
+  });
+}
+
 /** The venue's plain {programId, keys, data} instruction as web3's TransactionInstruction. */
 export function toTransactionInstruction(ix) {
   if (!isPlainObject(ix) || !ix.programId || !Array.isArray(ix.keys))
@@ -196,6 +221,9 @@ export function toTransactionInstruction(ix) {
  *   rentLamports   — lamports that funded accounts which did not exist before
  *   quoteInRaw     — spent less fee less rent: what actually went into the curve
  *   qtyRaw         — base tokens the wallet gained (buy) or lost (sell)
+ *   refundLamports — rent returned by accounts the transaction closed (the sell's own
+ *                    token account). Kept OUT of quoteOutRaw, so quoteOutRaw is still what
+ *                    the curve paid and a realized figure never counts a refund as profit.
  */
 export function fillFromTransaction(tx, { wallet, mint, side }) {
   const meta = tx?.meta;
@@ -206,10 +234,11 @@ export function fillFromTransaction(tx, { wallet, mint, side }) {
     throw new SnipeExecuteError("malformed", "the transaction has no balance arrays");
   const fee = BigInt(meta.fee ?? 0);
   const payerDelta = BigInt(pre[0]) - BigInt(post[0]);          // positive when SOL left
-  let rent = 0n;
+  let rent = 0n, refund = 0n;
   for (let i = 1; i < pre.length; i++) {
     const before = BigInt(pre[i]), after = BigInt(post[i]);
     if (before === 0n && after > 0n) rent += after;              // a brand-new account was funded
+    if (before > 0n && after === 0n) refund += before;           // an account was closed back to us
   }
   const amountFor = (list) => {
     let total = 0n;
@@ -233,10 +262,11 @@ export function fillFromTransaction(tx, { wallet, mint, side }) {
   }
   const sold = baseBefore - baseAfter;
   if (sold <= 0n) throw new SnipeExecuteError("malformed", "the sell moved no base tokens out of the wallet");
-  const gross = (-payerDelta) + fee;                              // proceeds before the fee
+  const gross = (-payerDelta) + fee - refund;                     // curve proceeds before the fee
   if (gross <= 0n) throw new SnipeExecuteError("malformed", "the sell returned no SOL to the wallet");
   return Object.freeze({ side, qtyRaw: sold.toString(), quoteOutRaw: gross.toString(),
-    feeLamports: fee.toString(), rentLamports: rent.toString(), slot: Number(tx.slot) || null });
+    feeLamports: fee.toString(), rentLamports: rent.toString(), refundLamports: refund.toString(),
+    slot: Number(tx.slot) || null });
 }
 
 /**
@@ -607,7 +637,19 @@ export function createSnipeExecutor({
     ]);
     const preLamports = BigInt(pre?.[0]?.lamports ?? 0);
     const preBase = tokenAmountOf(pre?.[1] ?? null, { mint, owner: wallet });
+    const reserve = BigInt(Math.max(0, Math.round(Number(conf.minWalletReserveLamports) || 0)));
+    const strands = (left) => new SnipeExecuteError("low_balance",
+      `the buy would leave ${left} lamports in the wallet, under the ${reserve} kept back so the exit can pay ` +
+      "for itself — fund the wallet or lower the ticket", { preLamports: preLamports.toString(), reserve: reserve.toString() });
+    /* Cheap first: the ceiling alone already says no when the wallet is this short, and the
+       two simulations it saves are the slowest thing on this path. */
+    if (side === "buy" && reserve > 0n && preLamports - expected.maxQuoteInRaw < reserve)
+      throw strands(preLamports - expected.maxQuoteInRaw);
     const sim = await simulateBoth({ tx: built.tx, ata, mint, side, expected: { ...expected, preLamports, preBase } });
+    /* Exact second: what both providers say the whole transaction spends — ceiling, fee, the
+       new account's rent and any tip. */
+    if (side === "buy" && reserve > 0n && preLamports - sim.spend < reserve)
+      throw strands(preLamports - sim.spend);
 
     built.tx.sign([keypair]);
     const signature = bs58.encode(built.tx.signatures[0]);
@@ -748,12 +790,28 @@ export function createSnipeExecutor({
           position: { qtyRaw: qty.toString(), costBasisLamports: basis, mint },
           quotedOutRaw: quoted.toString(), minQuoteOutRaw: floor.toString(), plannedAt: clock() },
       });
-      return await submit({
-        intentId, kind: "snipe_exit", side: "sell", mint, instructions: [toTransactionInstruction(prepared.instruction)],
+      const sellIx = toTransactionInstruction(prepared.instruction);
+      const attempt = (close) => submit({
+        intentId, kind: "snipe_exit", side: "sell", mint,
+        instructions: close
+          ? [sellIx, closeAccountIx({ account: prepared.associatedBaseUser, destination: wallet, owner: wallet,
+              tokenProgram: prepared.baseTokenProgram })]
+          : [sellIx],
         ata: prepared.associatedBaseUser,
         expected: { qtyRaw: qty, minQuoteOutRaw: floor },
-        order: { side: "sell", mint, amountRaw: qty.toString(), minQuoteOutRaw: floor.toString(), quotedOutRaw: quoted.toString(), venue: venue.id ?? null },
+        order: { side: "sell", mint, amountRaw: qty.toString(), minQuoteOutRaw: floor.toString(), quotedOutRaw: quoted.toString(),
+          venue: venue.id ?? null, closesAccount: close },
       });
+      if (conf.closeAccountOnSell !== true) return await attempt(false);
+      try { return await attempt(true); }
+      catch (error) {
+        /* THE CLOSE MUST NEVER COST THE EXIT. A wallet holding dust beyond the position, or a
+           token account the program will not close, fails the whole simulated transaction —
+           and nothing has been signed at that point, so the plain sell is simply tried next. */
+        if (error?.clause !== "simulation_failed") throw error;
+        log(`snipe execute ${mint}: sell with account close refused in simulation (${error.message}) — selling without the close`);
+        return await attempt(false);
+      }
     } finally { inFlight.delete(intentId); }
   }
 

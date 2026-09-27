@@ -123,24 +123,26 @@ export const MARKET_FLOOR_PRESETS = Object.freeze(Object.keys(MARKET_FLOOR_PRESE
 export const RISK_MODES = Object.freeze({
   veteran: Object.freeze({
     label: "Veteran — established coins only", risk: "lowest", suggestedSolPerTrade: 0.05,
-    summary: "Coins at least 2 hours old with $75k+ of 24h volume, 300+ trades, no more than 60% sells, and a social link. Fewest trades.",
+    summary: "Coins at least 2 hours old with $75k+ of 24h volume, 300+ trades, no more than 60% sells, a social link, and 10+ trades in the last 5 minutes. Fewest trades.",
     filters: Object.freeze({ marketFloorPreset: "curve", minAgeHours: 2, minVolume24hUsd: 75_000, minTxns24h: 300,
-      maxSellShare: 0.6, requireSocials: true }),
+      maxSellShare: 0.6, requireSocials: true, minRecentTrades: 10 }),
   }),
   proven: Object.freeze({
     label: "Proven mover — an hour of real demand", risk: "medium", suggestedSolPerTrade: 0.1,
-    summary: "Coins at least 1 hour old with $50k+ of 24h volume, no more than 70% sells, and a social link.",
-    filters: Object.freeze({ marketFloorPreset: "curve", maxSellShare: 0.7, requireSocials: true }),
+    summary: "Coins at least 1 hour old with $50k+ of 24h volume, no more than 70% sells, a social link, and 8+ trades in the last 5 minutes.",
+    filters: Object.freeze({ marketFloorPreset: "curve", maxSellShare: 0.7, requireSocials: true, minRecentTrades: 8 }),
   }),
   wave: Object.freeze({
     label: "Wave rider — buy when volume spikes", risk: "medium-high", suggestedSolPerTrade: 0.1,
-    summary: "Coins at least 1 hour old with $25k+ of 24h volume and a social link, bought only while money is flowing in 3x faster than its last 5 minutes. Needs the gRPC feed.",
-    filters: Object.freeze({ marketFloorPreset: "curve", minVolume24hUsd: 25_000, minVolumeSpike: 3, requireSocials: true }),
+    summary: "Coins at least 1 hour old with $25k+ of 24h volume, a social link and 5+ trades in the last 5 minutes, bought only while money is flowing in 3x faster than its last 5 minutes.",
+    filters: Object.freeze({ marketFloorPreset: "curve", minVolume24hUsd: 25_000, minVolumeSpike: 3, requireSocials: true,
+      minRecentTrades: 5 }),
   }),
   early: Object.freeze({
     label: "Early riser — younger coins, more trades", risk: "highest", suggestedSolPerTrade: 0.2,
-    summary: "Coins from 30 minutes old with $25k+ of 24h volume, social link not required. The most trades, on the least proven coins.",
-    filters: Object.freeze({ marketFloorPreset: "curve", minAgeHours: 0.5, minVolume24hUsd: 25_000, requireSocials: false }),
+    summary: "Coins from 30 minutes old with $25k+ of 24h volume and 8+ trades in the last 5 minutes, social link not required. The most trades, on the least proven coins.",
+    filters: Object.freeze({ marketFloorPreset: "curve", minAgeHours: 0.5, minVolume24hUsd: 25_000, requireSocials: false,
+      minRecentTrades: 8 }),
   }),
 });
 export const RISK_MODE_NAMES = Object.freeze(["off", ...Object.keys(RISK_MODES)]);
@@ -304,6 +306,15 @@ export const SNIPE_LANE_DEFAULTS = Object.freeze({
      trades landing in between on an active coin, and the ticket stays the hard cap either way.
      Mac-only (not in LIVE_FILTER_ENV): it is how a fill is priced, not what is bought. */
   entrySlippageBps: 300,
+  /* SOL THE WALLET KEEPS BACK AFTER EVERY BUY, handed to the signing port (snipe-execute.mjs
+     minWalletReserveLamports). 0.01 SOL: on 2026-09-27 a buy spent the wallet to 0.00067 SOL and
+     the exit could not pay its own fee. Mac-only — it is money, not what is bought. */
+  minWalletReserveSol: 0.01,
+  /* THE "IS ANYONE TRADING IT NOW" FLOOR: at least this many trades on the coin in the last five
+     minutes, counted off the gRPC trade tape (snipe-volume.mjs measureActivity). Undefined by
+     default like the spike: measured on every candidate, kills nothing until a number is set.
+     Every risk mode sets one. */
+  minRecentTrades: undefined,
   minAgeHours: undefined,
   minLiquidityUsd: undefined,
   minVolume24hUsd: undefined,
@@ -436,6 +447,8 @@ export const SNIPE_ENV = Object.freeze({
   SNIPE_REMOTE_FILTERS: Object.freeze({ key: "remoteFilters", parse: "flag" }),
   SNIPE_RISK_MODE: Object.freeze({ key: "riskMode", parse: "risk" }),
   SNIPE_ENTRY_SLIPPAGE_BPS: Object.freeze({ key: "entrySlippageBps", parse: "number" }),
+  SNIPE_MIN_WALLET_RESERVE_SOL: Object.freeze({ key: "minWalletReserveSol", parse: "number" }),
+  SNIPE_MIN_RECENT_TRADES: Object.freeze({ key: "minRecentTrades", parse: "number" }),
   SNIPE_MIN_AGE_HOURS: Object.freeze({ key: "minAgeHours", parse: "number" }),
   SNIPE_MIN_LIQUIDITY_USD: Object.freeze({ key: "minLiquidityUsd", parse: "number" }),
   SNIPE_MIN_VOLUME_24H_USD: Object.freeze({ key: "minVolume24hUsd", parse: "number" }),
@@ -556,6 +569,11 @@ export function snipeLaneConfig(env = {}) {
       `SNIPE_ENTRY_SLIPPAGE_BPS=${out.entrySlippageBps} must be a whole number of basis points from 0 to 2000`,
       { name: "SNIPE_ENTRY_SLIPPAGE_BPS", value: out.entrySlippageBps });
 
+  if (!(out.minWalletReserveSol >= 0 && out.minWalletReserveSol <= 1))
+    throw new SnipeLaneError("mode_invalid",
+      `SNIPE_MIN_WALLET_RESERVE_SOL=${out.minWalletReserveSol} must be from 0 to 1 SOL`,
+      { name: "SNIPE_MIN_WALLET_RESERVE_SOL", value: out.minWalletReserveSol });
+
   /* THE RISK MODE FILLS IN WHAT NOBODY TYPED. Applied before the floor is assembled, so its
      floor preset and thresholds take part exactly as if they had been set by hand — and any
      dial the operator did set keeps its value. */
@@ -572,8 +590,28 @@ export function snipeLaneConfig(env = {}) {
     out.marketFloor = resolveMarketFloor(floor);
   } else out.marketFloor = null;
 
+  if (out.minRecentTrades !== undefined && out.minRecentTrades !== null
+      && !(Number.isInteger(out.minRecentTrades) && out.minRecentTrades >= 0 && out.minRecentTrades <= 1_000))
+    throw new SnipeLaneError("mode_invalid",
+      `SNIPE_MIN_RECENT_TRADES=${out.minRecentTrades} must be a whole number of trades from 0 to 1000`,
+      { name: "SNIPE_MIN_RECENT_TRADES", value: out.minRecentTrades });
+
+  /* A COIN THAT HAS BEEN TRADING FOR AN HOUR IS NOT A LAUNCH, AND DOES NOT GET A LAUNCH'S
+     EXITS. The 90-second stall and 3-minute time stop were measured on minutes-old launches;
+     on the market floor's coins they sold every position before anything could happen (46 of
+     46 trades on 2026-09-26/27 left on the clock or a stop). With a floor armed and no exit
+     timing typed, a position gets MARKET_FLOOR_HOLD instead. Anything typed wins. Decided at
+     startup: a floor switched on from the page later keeps the exits the bot started with. */
+  if (out.marketFloor !== null) {
+    for (const [key, value] of Object.entries(MARKET_FLOOR_HOLD)) if (!typed.has(key)) out[key] = value;
+  }
+
   return Object.freeze(out);
 }
+
+/** The exit timing a market-floor lane uses when none is typed: a 10-minute time stop (the
+ *  lane's own holdMaxMs clock is 10 minutes too) and no stall exit. */
+export const MARKET_FLOOR_HOLD = Object.freeze({ timeStopMs: 10 * 60_000, stallMs: 0 });
 
 /**
  * THE FILTERS THE DESK MAY CHANGE ON A RUNNING LANE — and, by omission, everything it may not.
@@ -598,7 +636,7 @@ export const LIVE_FILTER_ENV = Object.freeze([
   "SNIPE_RISK_MODE", "SNIPE_MARKET_FLOOR", "SNIPE_MIN_AGE_HOURS", "SNIPE_MIN_LIQUIDITY_USD", "SNIPE_MIN_VOLUME_24H_USD",
   "SNIPE_MIN_MCAP_USD", "SNIPE_MAX_VOLUME_TO_LIQUIDITY", "SNIPE_MIN_TXNS_24H", "SNIPE_MAX_SELL_SHARE",
   "SNIPE_MAX_PRICE_CHANGE_24H_PCT", "SNIPE_MIN_TOP_POOL_LIQUIDITY_USD",
-  "SNIPE_MIN_VOLUME_SPIKE", "SNIPE_REQUIRE_SOCIALS",
+  "SNIPE_MIN_VOLUME_SPIKE", "SNIPE_MIN_RECENT_TRADES", "SNIPE_REQUIRE_SOCIALS",
   "SNIPE_MAX_CREATOR_SHARE_PCT", "SNIPE_MAX_LAUNCH_SHARE_PCT",
 ]);
 /** The config keys those names resolve to, plus the floor object they assemble into. */
@@ -1160,6 +1198,12 @@ export function createSnipeLane({
      handed in by whoever mounts the trade tap, every candidate would be refused at
      volume_spike for want of a baseline — in a log, the same sentence as "nothing spiked".
      Refused at construction, like a floor with no reader. */
+  if (conf.minRecentTrades !== undefined && conf.minRecentTrades !== null && !flowTape)
+    throw new SnipeLaneError("volume_tape_unfed",
+      `minRecentTrades is ${conf.minRecentTrades} but no flowTape port was wired — no trade could ever be counted, `
+      + "so every candidate would be refused at recent_trades. Mount the trade tap "
+      + "(SNIPE_GRPC_ENDPOINT + SNIPE_GRPC_TOKEN) or unset SNIPE_MIN_RECENT_TRADES.",
+      { minRecentTrades: conf.minRecentTrades });
   if (conf.minVolumeSpike !== undefined && conf.minVolumeSpike !== null && !flowTape)
     throw new SnipeLaneError("volume_tape_unfed",
       `minVolumeSpike is ${conf.minVolumeSpike} but no flowTape port was wired — the lane's own reads cannot `
@@ -1311,8 +1355,13 @@ export function createSnipeLane({
        same instant the rest of the gates are judged at. Two clock readings here would let
        the budget gate and the volume gate disagree about when "now" was. */
     const gateAtMs = clock();
+    /* Counted BEFORE this notice's own read joins the tape: the bot looking at a coin is not
+       somebody trading it. */
+    const activityNow = typeof flow.activity === "function"
+      ? flow.activity(mint, { nowMs: gateAtMs }) : { trades: null, windowMs: 300_000 };
     flow.observe(mint, { atMs: gateAtMs, quoteRaw: curve?.realQuoteRaw ?? null });
-    const flowNow = flow.measure(mint, { nowMs: gateAtMs });
+    const flowNow = { ...flow.measure(mint, { nowMs: gateAtMs }),
+      recentTrades: flowTape ? activityNow.trades : null, activityWindowMs: activityNow.windowMs };
 
     /* THE FLOOR'S FACTS, joined here rather than fetched here. The awaited half has had the
        whole account round trip to finish; the liquidity half comes out of the curve that was
@@ -1949,6 +1998,8 @@ export function createSnipeLane({
         return Object.freeze({ ok: false, reason: "a market floor was asked for but this lane has no market reader wired" });
       if (picked.minVolumeSpike !== undefined && picked.minVolumeSpike !== null && !flowTape)
         return Object.freeze({ ok: false, reason: "a volume-spike floor was asked for but no trade tape feeds this lane" });
+      if (picked.minRecentTrades !== undefined && picked.minRecentTrades !== null && !flowTape)
+        return Object.freeze({ ok: false, reason: "a recent-trades floor was asked for but no trade tape feeds this lane" });
       const changed = LIVE_FILTER_KEYS.filter((k) => JSON.stringify(conf[k] ?? null) !== JSON.stringify(picked[k] ?? null));
       if (!changed.length) return Object.freeze({ ok: true, changed: Object.freeze([]) });
       conf = Object.freeze({ ...conf, ...picked });

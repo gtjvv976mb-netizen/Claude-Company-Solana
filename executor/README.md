@@ -1638,10 +1638,13 @@ agent page, and with `SNIPE_REMOTE_FILTERS=1` picking one changes the running bo
 
 | Mode | Risk | Buys | Suggested size |
 |---|---|---|---:|
-| `veteran` — established coins only | lowest | on the curve, ≥ 2 h old, ≥ $75k 24h volume, ≥ 300 trades, ≤ 60% sells, social link required | 0.05 SOL |
-| `proven` — an hour of real demand | medium | on the curve, ≥ 1 h old, ≥ $50k 24h volume, ≤ 70% sells, social link required | 0.1 SOL |
-| `wave` — buy when volume spikes | medium-high | on the curve, ≥ 1 h old, ≥ $25k 24h volume, social link, **and** net inflow ≥ 3x its last 5 minutes (needs `SNIPE_GRPC_*`) | 0.1 SOL |
-| `early` — younger coins, more trades | highest | on the curve, ≥ 30 min old, ≥ $25k 24h volume, social link not required | 0.2 SOL |
+| `veteran` — established coins only | lowest | on the curve, ≥ 2 h old, ≥ $75k 24h volume, ≥ 300 trades, ≤ 60% sells, social link required, ≥ 10 trades in the last 5 min | 0.05 SOL |
+| `proven` — an hour of real demand | medium | on the curve, ≥ 1 h old, ≥ $50k 24h volume, ≤ 70% sells, social link required, ≥ 8 trades in the last 5 min | 0.1 SOL |
+| `wave` — buy when volume spikes | medium-high | on the curve, ≥ 1 h old, ≥ $25k 24h volume, social link, ≥ 5 trades in the last 5 min, **and** net inflow ≥ 3x its last 5 minutes | 0.1 SOL |
+| `early` — younger coins, more trades | highest | on the curve, ≥ 30 min old, ≥ $25k 24h volume, ≥ 8 trades in the last 5 min, social link not required | 0.2 SOL |
+
+**Every mode needs the gRPC feed (`SNIPE_GRPC_*`)**, because the recent-trades count comes off it.
+A bot without it refuses a mode at startup, and refuses one sent from the page, by name.
 
 - **A mode never touches money.** Trade size, the daily cap, the stop and the exits are not in any
   mode. The suggested size is shown on the page as a suggestion for the env file on the Mac, and
@@ -1661,6 +1664,34 @@ the spend at the ticket itself: if the price held, the buy costs a little under 
 rose by up to about 3%, it costs at most the ticket; beyond that it is refused as before. **The most
 a buy can spend is still exactly `SNIPE_MAX_SOL_PER_TRADE`.** `0` restores the strict ceiling; the
 maximum is 2000.
+
+### What the first 46 live market-floor trades taught (2026-09-27)
+
+Read from the chain: **4 wins, 42 losses, −0.19 SOL.** Four things were wrong, and each is now fixed.
+
+1. **30 of the 46 sold at exactly their buy price.** A pump.fun price moves only when somebody
+   trades, and nobody traded those coins in the 3 minutes they were held. A coin that is an hour
+   old and still on the curve is usually one that stalled; its 24h volume happened earlier.
+   **`SNIPE_MIN_RECENT_TRADES`** refuses a coin with fewer than this many trades in the last five
+   minutes, counted off the gRPC trade tape (`snipe-volume.mjs` `measureActivity`: changes of the
+   curve's SOL reserve, so the bot's own reads never count). Every risk mode sets one; it is a live
+   filter; unset with no mode, it is measured on every candidate and kills nothing.
+2. **A flat trade still cost 4.1%**: ~2.4% pump.fun fees, 0.2% network fees, and **1.5% of rent**
+   for the token account the buy opens, which the sell never closed. 47 empty accounts held 0.07 SOL.
+   **The sell now closes its token account in the same transaction**, so the rent comes back on
+   every trade. If the program refuses the close (dust left in the account), the plain sell goes out
+   instead — the close can never cost the exit. The refund is kept out of the trade's proceeds, so
+   it never shows as profit. `node reclaim-rent.mjs --send` still recovers accounts left by older
+   releases.
+3. **A buy spent the wallet down to 0.00067 SOL and the sell could not pay its own fee** — 365
+   failed exits on a position that was up 12%. **`SNIPE_MIN_WALLET_RESERVE_SOL`** (default **0.01**,
+   Mac-only, 0–1) refuses any buy that would leave less than this in the wallet, checked against the
+   ceiling before simulating and against the simulated spend (fee, rent and tip included) after. It
+   fails as `low_balance`, which the agent page shows as the last buy failure.
+4. **Every trade left on the 90-second stall or the 3-minute time stop**, exits measured on
+   minutes-old launches. With a market floor armed and no exit timing typed, a position now gets a
+   **10-minute time stop and no stall exit** (`MARKET_FLOOR_HOLD`). `SNIPE_TIME_STOP_MS` and
+   `SNIPE_STALL_MS` typed on the Mac still win. Decided at startup.
 
 ### The volume spike
 
