@@ -1709,6 +1709,38 @@ Read from the chain: **4 wins, 42 losses, −0.19 SOL.** Four things were wrong,
    withdrawn rather than measured across the hole. And the lane's own read of a launch notice no longer adds a new
    mint to the 2,000-mint tape — those glances had caused 6,511 evictions of real trade history.
 
+### The trend lane: coins launched about a runaway coin (shadow only)
+
+> *"Whenever a token goes to millions in just a few hours, people launch tokens related to it or
+> a parody of it. Take advantage of the trend it creates."* — the owner, 2026-09-28.
+
+`SNIPE_TREND=shadow` turns it on. It needs the gRPC stream (`SNIPE_GRPC_*`), and **it signs
+nothing**: every trade it takes is on paper, written to `.cc-executor.sqlite.trend-shadow.jsonl`
+beside the journal, and summarised on the agent page under **Trend lane — shadow**.
+
+1. **Parents.** Every 5 minutes it reads pump.fun's listing by market cap. A coin whose all-time
+   high reached **$1M within 12 hours of its launch**, and did so within the last day, is a parent.
+2. **Related launches.** Every new launch's name and ticker — they arrive in the create event, so
+   this costs nothing — are matched against every parent. A **variant** carries the parent's ticker
+   or name with something added ("Baby Cali", "NIKE 2.0", "cat wif hat"). A **subtopic** shares a
+   distinctive word of its name, its ticker or the capitalised names in its description ("Kitten
+   Wif Sword" under "cat wif sword"; "Maye Musk" under the coin whose description names her). An
+   **exact clone** — same ticker or same name — is counted and skipped: a copy is not a spin-off.
+   A key that suddenly matches more than 25 launches an hour is treated as generic and dropped.
+3. **Lottery exits**, because the measured shape is a lottery, not a sure thing (in the 29-minute
+   sample that prompted this, related launches reached ~$30k 2.2x as often as other launches, but
+   most died like any launch): a 0.05 SOL paper ticket bought 2 s after launch; out at **-25%**; a
+   coin that has not reached **+10% within 3 minutes** is cut; a winner that reaches **+30%** is not
+   sold there but rides, and leaves when it falls **25% from its own peak**; nothing is held past
+   an hour. pump.fun's fees and the network cost are charged on both legs.
+4. **Then decide.** After about a day, the JSONL and the page say whether the related launches beat
+   their costs. Turning this lane on with real money is a separate change, made on that evidence.
+
+It cannot see sub-topics that share no word with the parent ("Vice City" under "GTA VI"): that needs
+a model that knows what the parent is about, which this release deliberately does not call.
+stonk.fun coins trade against a tokenized stock rather than SOL, so they cannot be parents' copies
+this bot could buy; the lane reads pump.fun only.
+
 ### The volume spike
 
 > *"When volume spikes on a token, that's a sign to get in and ride the wave."* — the owner,

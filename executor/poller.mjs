@@ -2526,6 +2526,7 @@ const snipeStatus = {
   lane: null, feed: null,  // references, read by the builder below and never serialized
   flowTap: null, momentum: null, remote: null,
   grpcWatchdog: null,      // the thing that revives the gRPC stream; its counters ride in `flow`
+  trend: null, trendDetector: null,   // the trend lane (snipe-trend.mjs), shadow only
 };
 const setSnipeState = (state, error) => {
   snipeStatus.state = state;
@@ -2671,6 +2672,12 @@ function snipeHeartbeat() {
   /* THE DESK'S FILTER PANEL, AS THIS BOT SEES IT: whether it accepts one at all, which saved
      version is running, and what it refused. The page reads this instead of assuming. */
   try { const rr = snipeStatus.remote?.report?.(); if (rr) out.remote = rr; } catch {}
+  /* THE TREND LANE'S SHADOW SCORECARD — parents it is following, related launches it matched,
+     and what those would-have trades did. Shadow only: no row here ever moved money. */
+  try {
+    const t = snipeStatus.trend?.stats?.();
+    if (t) out.trend = { ...t, detector: snipeStatus.trendDetector?.stats?.() ?? null, openRows: snipeStatus.trend.open().slice(0, 8) };
+  } catch {}
   /* THE MOMENTUM SOURCE'S PRE-FILTER TALLY — what arrived, what survived, and the clause for
      every row that did not. "0 of 70 survived, 51 bonded, 19 too young" and "the endpoint is
      empty" need opposite responses, and until this was carried only the second could be
@@ -3968,6 +3975,39 @@ if (SNIPE_LANE_MODE !== "off") {
       tradesFrom: (notification) => eventsFromLogs(notification?.logs, { kind: "trade" }),
     });
     const grpcCfg = grpcFromEnv(process.env);
+    /* THE TREND LANE, SHADOW ONLY (owner, 2026-09-28): when a pump.fun coin runs to $1M+ within
+       hours, follow the coins launched ABOUT it — parodies, spin-offs, sub-topics, never exact
+       clones — and record what buying each one would have done under lottery exits. It signs
+       nothing. It needs the gRPC stream for both halves (names at launch, prices after), so
+       without SNIPE_GRPC_* it says so and stays off. See snipe-trend.mjs. */
+    let trendShadow = null, trendDetector = null;
+    if (laneCfg.trendMode === "shadow") {
+      if (!grpcCfg) log("[snipe] SNIPE_TREND=shadow needs the gRPC stream (SNIPE_GRPC_*) for launch names and prices — trend lane OFF");
+      else {
+        const trendMod = await import("./snipe-trend.mjs");
+        const trendFile = `${STATE_DB}.trend-shadow.jsonl`;
+        trendDetector = trendMod.createTrendDetector({
+          fetchRows: async (page) => {
+            const url = `${feedMod.PUMPFUN_LIST_ORIGIN}/coins?offset=${page * 50}&limit=50&sort=market_cap&order=DESC&includeNsfw=true`;
+            const res = await fetch(url, { signal: AbortSignal.timeout(15_000), headers: { accept: "application/json" } });
+            if (!res.ok) throw new Error(`pump.fun listing HTTP ${res.status}`);
+            const body = await res.json();
+            return Array.isArray(body) ? body : (Array.isArray(body?.coins) ? body.coins : []);
+          },
+          log: (m) => log(`[snipe] ${m}`),
+        });
+        trendShadow = trendMod.createTrendShadow({
+          parents: () => trendDetector.parents(),
+          log: (m) => log(`[snipe] ${m}`),
+          onClose: (row) => { try { fs.appendFileSync(trendFile, `${JSON.stringify(row)}\n`, { mode: 0o600 }); } catch {} },
+        });
+        trendDetector.start();
+        snipeStatus.trend = trendShadow; snipeStatus.trendDetector = trendDetector;
+        log(`[snipe] trend lane in SHADOW: parents are pump.fun coins at $${trendMod.TREND_DEFAULTS.minParentMcapUsd / 1e6}M+ `
+          + `within ${trendMod.TREND_DEFAULTS.maxHoursToReach}h of launch; related launches are followed at `
+          + `${trendMod.TREND_DEFAULTS.ticketSol} SOL with lottery exits and written to ${trendFile}. Nothing is signed.`);
+      }
+    }
     const grpcSource = grpcCfg ? feedMod.grpcSubscribeSource({
       id: "grpc:pumpfun", venueId: PUMPFUN_VENUE.id,
       programId: PUMPFUN_PROGRAM_ID, commitment: grpcCfg.commitment,
@@ -3983,7 +4023,22 @@ if (SNIPE_LANE_MODE !== "off") {
         });
         return notice ? { mint: notice.mint, creator: notice.creator, slot: notice.slot } : null;
       },
-      observe: (notification) => flowTap.observe(notification),
+      observe: (notification) => {
+        flowTap.observe(notification);
+        /* THE TREND LANE rides the same stream (snipe-trend.mjs): every create event carries the
+           launch's name and ticker, every trade event carries the curve's price. Decoded here
+           only when the lane is on, inside its own catch — a trend lane that throws must never
+           be able to blind the volume tape or the launch feed. */
+        if (trendShadow) {
+          try {
+            const atMs = Date.now();
+            for (const ev of eventsFromLogs(notification?.logs)) {
+              if (ev?.kind === "trade") trendShadow.onTrade(ev, atMs);
+              else if (ev?.mint && ev?.name !== undefined) trendShadow.onCreate(ev, atMs);
+            }
+          } catch { /* counted nowhere on purpose: the tap above already counts decode failures */ }
+        }
+      },
     }) : null;
     if (grpcCfg) log(`[snipe] gRPC source armed against ${new URL(grpcCfg.endpoint).host} at ${grpcCfg.commitment}`
       + "; every trade on it feeds the volume tape");
@@ -4291,6 +4346,9 @@ if (SNIPE_LANE_MODE !== "off") {
     let snipeFillsSeen = 0;   // the port's fill total at the last tick that looked
     const LANE_BACKOFF_MAX_MS = 60_000;
     setInterval(async () => {
+      /* The trend lane's clock rides the lane's own tick — first, and in its own catch, so a
+         faulted or backing-off launch lane still closes paper positions on time. */
+      if (trendShadow) { try { trendShadow.tick(Date.now()); } catch { /* shadow only */ } }
       if (laneFaulted) return;
       if (laneRetryAt && Date.now() < laneRetryAt) return;
       try {

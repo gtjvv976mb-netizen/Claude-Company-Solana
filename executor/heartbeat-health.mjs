@@ -72,7 +72,7 @@ const TRADING_RUNTIME_FILES = Object.freeze([
   "entry-quote-guard.mjs", "exit-trigger.mjs", "feed-drain.mjs", "sol-usd-oracle.mjs",
   "heartbeat-health.mjs", "sleep-assertion.mjs", "strategy.mjs", "trade-policy.mjs",
   // desk-led-v4: both are loaded by the trading process, so both are part of its identity.
-  "dexscreener-consensus.mjs", "desk-mirror.mjs",
+  "dexscreener-consensus.mjs", "desk-mirror.mjs", "snipe-trend.mjs",
   /* token2022.mjs was missing from this list while poller.mjs:22 and jupiter.mjs:37 both
      import it — so a fingerprint documented as "exactly the modules loaded by the trading
      process" covered 14 of the 15 it loads, and the one it missed is the module that

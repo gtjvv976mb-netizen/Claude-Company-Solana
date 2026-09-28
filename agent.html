@@ -13,9 +13,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 
-<meta name="cc-build" content="2026-09-27 20:18 UTC">
-<meta name="cc-commit" content="1fc468a1a82dc215173f006a1838d5e5edbee035">
-<script>console.log("Claude Company build 2026-09-27 20:18 UTC")</script>
+<meta name="cc-build" content="2026-09-28 16:54 UTC">
+<meta name="cc-commit" content="cb37b0bb9873e75bee0c6fb0d0c2790f8cf64e09">
+<script>console.log("Claude Company build 2026-09-28 16:54 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
 <style>
@@ -117,6 +117,12 @@ footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--line);color:v
   <div class="who" id="who"></div>
   <div class="sstat err" id="buyfail"></div>
   <div class="sstat wait" id="feeddown"></div>
+  <section id="trendbox" hidden>
+    <h2>Trend lane — shadow</h2>
+    <p class="lede" id="trendlede"></p>
+    <div id="trendparents" class="lede"></div>
+    <div id="trendrows"></div>
+  </section>
 
   <h2>The money, in three figures</h2>
   <p class="lede" id="lede">Trading, creator fees and house rewards — reported separately.</p>
@@ -235,6 +241,25 @@ async function load() {
      trading" for nine hours while the page showed nothing. Only a strict false says down —
      null is a bot with no trade tap, or a release that predates the field — and only on a
      fresh pulse, because a stale one is already said above as "last heard". */
+  /* THE TREND LANE, SHADOW ONLY: coins launched about a runaway coin, "bought" on paper with
+     lottery exits. Built from text nodes only — every ticker here was typed by a coin launcher. */
+  const tr = a.snipe && a.snipe.trend;
+  $("trendbox").hidden = !(tr && tr.mode === "shadow");
+  if (tr && tr.mode === "shadow") {
+    const sol = (x) => (x == null ? "—" : `${x >= 0 ? "+" : ""}${Number(x).toFixed(4)} SOL`);
+    $("trendlede").textContent = `Following ${tr.parents} trending coin(s). ${tr.matched} related launch(es) matched`
+      + ` (${tr.clones} exact clone(s) skipped). ${tr.closed} closed on paper: ${tr.wins} won, ${tr.losses} lost,`
+      + ` net ${sol(tr.pnlSol)} at ${tr.ticketSol} SOL each${tr.open ? `; ${tr.open} open now` : ""}. Nothing here spent money.`;
+    $("trendparents").textContent = (tr.topParents || []).length
+      ? "Trending: " + tr.topParents.map((p) => `${p.symbol} ($${(p.athUsd / 1e6).toFixed(1)}M in ${p.hoursToReach}h)`).join(" · ")
+      : "No coin has reached the trend bar yet.";
+    const box = $("trendrows"); box.textContent = "";
+    for (const r of (tr.recent || [])) {
+      const div = document.createElement("div"); div.className = "sstat";
+      div.textContent = `${r.symbol} — ${r.kind} of ${r.parent}: ${r.netPct >= 0 ? "+" : ""}${r.netPct}% (peak ${r.peakX}x) · ${r.reason}`;
+      box.appendChild(div);
+    }
+  }
   const fl = a.snipe && a.snipe.flow;
   const restarts = fl && Number.isFinite(Number(fl.grpcRestarts)) ? Number(fl.grpcRestarts) : 0;
   $("feeddown").textContent = fl && fl.tradeFeedLive === false && !stale

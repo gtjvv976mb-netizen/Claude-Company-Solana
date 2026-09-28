@@ -100,7 +100,7 @@ RUNTIME_PATHS=(
   executor/exit-trigger.mjs executor/feed-drain.mjs executor/sol-usd-oracle.mjs
   executor/heartbeat-health.mjs executor/sleep-assertion.mjs
   executor/strategy.mjs executor/trade-policy.mjs
-  executor/dexscreener-consensus.mjs executor/desk-mirror.mjs
+  executor/dexscreener-consensus.mjs executor/desk-mirror.mjs executor/snipe-trend.mjs
   executor/snipe-execute.mjs executor/snipe-lane.mjs executor/snipe-venue-pumpfun.mjs
   executor/snipe-venue.mjs executor/snipe-curve.mjs executor/snipe-entry.mjs
   executor/snipe-feed.mjs executor/snipe-book.mjs executor/snipe-shadow.mjs

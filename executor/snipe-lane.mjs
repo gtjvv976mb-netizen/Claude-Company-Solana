@@ -146,6 +146,8 @@ export const RISK_MODES = Object.freeze({
   }),
 });
 export const RISK_MODE_NAMES = Object.freeze(["off", ...Object.keys(RISK_MODES)]);
+/** The trend lane's modes (snipe-trend.mjs TREND_MODES, repeated here so this file imports nothing new). */
+export const TREND_MODE_NAMES = Object.freeze(["off", "shadow"]);
 
 /** The only two modes this file admits. `execute` is listed so a caller can NAME it and
  *  be refused by name; there is no signing path here to run it on. */
@@ -310,6 +312,9 @@ export const SNIPE_LANE_DEFAULTS = Object.freeze({
      minWalletReserveLamports). 0.01 SOL: on 2026-09-27 a buy spent the wallet to 0.00067 SOL and
      the exit could not pay its own fee. Mac-only — it is money, not what is bought. */
   minWalletReserveSol: 0.01,
+  /* THE TREND LANE (snipe-trend.mjs): "off" or "shadow". Read by the poller, not by this lane —
+     the trend lane follows launches related to a runaway coin and, in shadow, signs nothing. */
+  trendMode: "off",
   /* THE "IS ANYONE TRADING IT NOW" FLOOR: at least this many trades on the coin in the last five
      minutes, counted off the gRPC trade tape (snipe-volume.mjs measureActivity). Undefined by
      default like the spike: measured on every candidate, kills nothing until a number is set.
@@ -449,6 +454,7 @@ export const SNIPE_ENV = Object.freeze({
   SNIPE_ENTRY_SLIPPAGE_BPS: Object.freeze({ key: "entrySlippageBps", parse: "number" }),
   SNIPE_MIN_WALLET_RESERVE_SOL: Object.freeze({ key: "minWalletReserveSol", parse: "number" }),
   SNIPE_MIN_RECENT_TRADES: Object.freeze({ key: "minRecentTrades", parse: "number" }),
+  SNIPE_TREND: Object.freeze({ key: "trendMode", parse: "trend" }),
   SNIPE_MIN_AGE_HOURS: Object.freeze({ key: "minAgeHours", parse: "number" }),
   SNIPE_MIN_LIQUIDITY_USD: Object.freeze({ key: "minLiquidityUsd", parse: "number" }),
   SNIPE_MIN_VOLUME_24H_USD: Object.freeze({ key: "minVolume24hUsd", parse: "number" }),
@@ -499,6 +505,11 @@ export function snipeLaneConfig(env = {}) {
       if (!RISK_MODE_NAMES.includes(text.toLowerCase()))
         throw new SnipeLaneError("mode_invalid",
           `${name}=${JSON.stringify(text)} is not one of ${RISK_MODE_NAMES.join(", ")}`, { name, value: text });
+      out[spec.key] = text.toLowerCase();
+    } else if (spec.parse === "trend") {
+      if (!TREND_MODE_NAMES.includes(text.toLowerCase()))
+        throw new SnipeLaneError("mode_invalid",
+          `${name}=${JSON.stringify(text)} is not one of ${TREND_MODE_NAMES.join(", ")}`, { name, value: text });
       out[spec.key] = text.toLowerCase();
     } else if (spec.parse === "mode") {
       if (!SNIPE_LANE_MODES.includes(text))

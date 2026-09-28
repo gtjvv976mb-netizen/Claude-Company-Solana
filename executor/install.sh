@@ -940,7 +940,7 @@ if [ "$MODE" = "live" ]; then
     echo "live --expected-commit must exactly match the published commit $SOURCE_COMMIT" >&2
     exit 1
   fi
-  for source_file in poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs reclaim-rent.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs network-fee-budget.mjs snipe-lane.mjs snipe-venue-pumpfun.mjs snipe-venue.mjs snipe-curve.mjs snipe-entry.mjs snipe-feed.mjs snipe-book.mjs snipe-shadow.mjs snipe-policy.mjs snipe-volume.mjs snipe-market.mjs fee-lane.mjs pumpfun-fees.mjs snipe-socials.mjs snipe-relay.mjs grpc-wire.mjs snipe-grpc.mjs shadow-sink.mjs grade-entry-gates.mjs snipe-execute.mjs dexscreener-consensus.mjs desk-mirror.mjs package.json package-lock.json; do
+  for source_file in poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs reclaim-rent.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs network-fee-budget.mjs snipe-lane.mjs snipe-venue-pumpfun.mjs snipe-venue.mjs snipe-curve.mjs snipe-entry.mjs snipe-feed.mjs snipe-book.mjs snipe-shadow.mjs snipe-policy.mjs snipe-volume.mjs snipe-market.mjs fee-lane.mjs pumpfun-fees.mjs snipe-socials.mjs snipe-relay.mjs grpc-wire.mjs snipe-grpc.mjs shadow-sink.mjs grade-entry-gates.mjs snipe-execute.mjs dexscreener-consensus.mjs desk-mirror.mjs snipe-trend.mjs package.json package-lock.json; do
     if [ -n "$(git -C "$source_root" status --porcelain -- "executor/$source_file")" ]; then
       echo "live source file executor/$source_file differs from commit $SOURCE_COMMIT" >&2
       exit 1
@@ -1697,7 +1697,7 @@ rollback_install() {
 trap rollback_install EXIT
 
 echo "▶ fetching the executor and shared policy…"
-RUNTIME_FILES=(poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs reclaim-rent.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs network-fee-budget.mjs snipe-lane.mjs snipe-venue-pumpfun.mjs snipe-venue.mjs snipe-curve.mjs snipe-entry.mjs snipe-feed.mjs snipe-book.mjs snipe-shadow.mjs snipe-policy.mjs snipe-volume.mjs snipe-market.mjs fee-lane.mjs pumpfun-fees.mjs snipe-socials.mjs snipe-relay.mjs grpc-wire.mjs snipe-grpc.mjs shadow-sink.mjs grade-entry-gates.mjs snipe-execute.mjs dexscreener-consensus.mjs desk-mirror.mjs)
+RUNTIME_FILES=(poller.mjs burner-backup.mjs journal.mjs jupiter.mjs token2022.mjs balance-verification.mjs entry-quote-guard.mjs exit-trigger.mjs feed-drain.mjs sol-usd-oracle.mjs heartbeat-health.mjs sleep-assertion.mjs monitor.mjs reclaim-rent.mjs strategy.mjs trade-policy.mjs entry-contract.mjs entry-sizing.mjs network-fee-budget.mjs snipe-lane.mjs snipe-venue-pumpfun.mjs snipe-venue.mjs snipe-curve.mjs snipe-entry.mjs snipe-feed.mjs snipe-book.mjs snipe-shadow.mjs snipe-policy.mjs snipe-volume.mjs snipe-market.mjs fee-lane.mjs pumpfun-fees.mjs snipe-socials.mjs snipe-relay.mjs grpc-wire.mjs snipe-grpc.mjs shadow-sink.mjs grade-entry-gates.mjs snipe-execute.mjs dexscreener-consensus.mjs desk-mirror.mjs snipe-trend.mjs)
 SOURCE_FILES=("${RUNTIME_FILES[@]}" package.json package-lock.json)
 # launchd adopts a DIRECTORY, not a command line: macos-launchagent.sh resolves
 # launchd-runner.mjs and poller.mjs out of the --executor-dir it is handed, and
@@ -1916,7 +1916,7 @@ fi
       SNIPE_MARKET_FLOOR SNIPE_MIN_AGE_HOURS SNIPE_MIN_LIQUIDITY_USD SNIPE_MIN_VOLUME_24H_USD \
       SNIPE_MIN_MCAP_USD SNIPE_MAX_VOLUME_TO_LIQUIDITY SNIPE_MIN_TXNS_24H SNIPE_MAX_SELL_SHARE \
       SNIPE_MAX_PRICE_CHANGE_24H_PCT SNIPE_MIN_TOP_POOL_LIQUIDITY_USD SNIPE_REMOTE_FILTERS SNIPE_RISK_MODE SNIPE_ENTRY_SLIPPAGE_BPS \
-      SNIPE_MIN_WALLET_RESERVE_SOL SNIPE_MIN_RECENT_TRADES \
+      SNIPE_MIN_WALLET_RESERVE_SOL SNIPE_MIN_RECENT_TRADES SNIPE_TREND \
       FEE_CLAIM FEE_CLAIM_CREATOR FEE_CLAIM_ACK FEE_CLAIM_INTERVAL_MS FEE_CLAIM_MIN_NET_LAMPORTS \
       SNIPE_RELAYS SNIPE_TIP_ACCOUNTS SNIPE_TIP_BASE_LAMPORTS SNIPE_TIP_MAX_LAMPORTS \
       SNIPE_GRPC_URL SNIPE_GRPC_TOKEN SNIPE_GRPC_COMMITMENT \
