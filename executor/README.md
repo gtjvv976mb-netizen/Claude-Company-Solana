@@ -1741,6 +1741,19 @@ a model that knows what the parent is about, which this release deliberately doe
 stonk.fun coins trade against a tokenized stock rather than SOL, so they cannot be parents' copies
 this bot could buy; the lane reads pump.fun only.
 
+**Variants only, with subtopics as the control (2026-09-30).** Over the first 103 paper trades
+variants came out ahead (+0.017 SOL, 5 of 19 won) and subtopics well behind (-0.223 SOL, 11 of 84).
+`SNIPE_TREND_KINDS` picks which kinds are the **strategy**: `all` (the default), `variant` or
+`subtopic`. The kinds left out are **still followed on paper**, as the comparison, so the page
+reads "Strategy — variants: … Comparison — subtopics: …" and the question stays answered with
+live numbers. Every JSONL row carries `strategy: true|false`. The scorecard now survives a
+restart: the newest 5,000 rows of the JSONL are read back on start and re-judged against the
+current setting.
+
+```sh
+printf 'SNIPE_TREND_KINDS="variant"\n' >> ~/claudeco-executor/.cc-executor.env
+```
+
 ### The volume spike
 
 > *"When volume spikes on a token, that's a sign to get in and ride the wave."* — the owner,

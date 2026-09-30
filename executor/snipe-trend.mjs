@@ -69,7 +69,13 @@ export const TREND_DEFAULTS = Object.freeze({
   networkSolPerLeg: 0.0001,
   /* Bounds. */
   maxTracked: 500,
-  historyCap: 1_000,
+  historyCap: 5_000,
+  /* WHICH KINDS ARE THE STRATEGY. Every related launch is still followed on paper; the kinds
+     listed here are the ones the strategy would trade, and the rest are its comparison. On
+     2026-09-29/30 variants came out ahead of subtopics (+0.017 against -0.223 SOL over 103
+     paper trades), so the owner asked for a variants-only strategy with subtopics kept as the
+     control. */
+  kinds: Object.freeze(["variant", "subtopic"]),
 });
 
 /* pump.fun's opening curve: 30 SOL of virtual quote against 1,073,000,000 tokens (6 decimals).
@@ -190,6 +196,14 @@ export function matchLaunch({ mint, name, symbol } = {}, parents = [], { isGener
   return best ? Object.freeze(best) : null;
 }
 
+/** n, wins, win rate and net SOL of a set of closed rows. */
+function tally(rows) {
+  const wins = rows.filter((r) => r.pnlSol > 0).length;
+  const pnl = rows.reduce((a, r) => a + r.pnlSol, 0);
+  return { n: rows.length, wins, winRate: rows.length ? Math.round((wins / rows.length) * 1000) / 10 : null,
+    pnlSol: Math.round(pnl * 1e6) / 1e6 };
+}
+
 /** The curve's price after a trade, in raw quote per raw base. Null when it cannot be read. */
 export function priceOfTrade(ev) {
   if (!isPlainObject(ev) || ev.quoteUsable === false) return null;
@@ -246,6 +260,7 @@ export function createTrendShadow({ parents = () => [], cfg: override = {}, cloc
       exitX: Math.round(exitX * 10_000) / 10_000, peakX: Math.round((pos.peak / pos.entryPrice) * 10_000) / 10_000,
       netPct: Math.round(net * 10_000) / 100, pnlSol: Math.round(net * cfg.ticketSol * 1e6) / 1e6,
       trades: pos.trades, ticketSol: cfg.ticketSol,
+      strategy: cfg.kinds.includes(pos.kind),
     });
     history.push(row);
     while (history.length > cfg.historyCap) history.shift();
@@ -333,6 +348,21 @@ export function createTrendShadow({ parents = () => [], cfg: override = {}, cloc
       x: Math.round((p.lastPrice / p.entryPrice) * 1000) / 1000, heldMs: clock() - p.entryAtMs })); },
     history() { return history.slice(); },
 
+    /** Put closed rows back after a restart (the JSONL file), so the scorecard spans days, not
+     *  one process. Rows are re-judged against the CURRENT kinds, since that is the question. */
+    seed(rows) {
+      let n = 0;
+      for (const r of Array.isArray(rows) ? rows : []) {
+        if (!isPlainObject(r) || !Number.isFinite(Number(r.pnlSol)) || !Number.isFinite(Number(r.exitAtMs))
+            || !["variant", "subtopic"].includes(r.kind) || !isPlainObject(r.parent)) continue;
+        history.push(Object.freeze({ ...r, strategy: cfg.kinds.includes(r.kind) }));
+        n++;
+      }
+      history.sort((a, b) => a.exitAtMs - b.exitAtMs);
+      while (history.length > cfg.historyCap) history.shift();
+      return n;
+    },
+
     stats() {
       const rows = history;
       const wins = rows.filter((r) => r.pnlSol > 0).length;
@@ -357,6 +387,12 @@ export function createTrendShadow({ parents = () => [], cfg: override = {}, cloc
         bestPct: rows.length ? Math.max(...rows.map((r) => r.netPct)) : null,
         worstPct: rows.length ? Math.min(...rows.map((r) => r.netPct)) : null,
         byKind,
+        /* The strategy (the kinds it would trade) against its comparison (the rest), so the
+           question "are variants alone worth it" is answered on the page, not in a spreadsheet. */
+        kinds: [...cfg.kinds],
+        strategy: tally(rows.filter((r) => cfg.kinds.includes(r.kind))),
+        comparison: tally(rows.filter((r) => !cfg.kinds.includes(r.kind))),
+        sinceMs: rows.length ? rows[0].exitAtMs : null,
         recent: rows.slice(-8).reverse().map((r) => ({ symbol: r.symbol, parent: r.parent.symbol, kind: r.kind,
           netPct: r.netPct, peakX: r.peakX, reason: r.reason.slice(0, 60), exitAtMs: r.exitAtMs })),
       });

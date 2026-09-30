@@ -13,9 +13,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 
-<meta name="cc-build" content="2026-09-28 16:54 UTC">
-<meta name="cc-commit" content="cb37b0bb9873e75bee0c6fb0d0c2790f8cf64e09">
-<script>console.log("Claude Company build 2026-09-28 16:54 UTC")</script>
+<meta name="cc-build" content="2026-09-30 10:39 UTC">
+<meta name="cc-commit" content="91dd82c96092ef8a45bc9b01a819f1f3e5911477">
+<script>console.log("Claude Company build 2026-09-30 10:39 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
 <style>
@@ -253,6 +253,15 @@ async function load() {
     $("trendparents").textContent = (tr.topParents || []).length
       ? "Trending: " + tr.topParents.map((p) => `${p.symbol} ($${(p.athUsd / 1e6).toFixed(1)}M in ${p.hoursToReach}h)`).join(" · ")
       : "No coin has reached the trend bar yet.";
+    /* The strategy against its comparison: with SNIPE_TREND_KINDS=variant the strategy is the
+       variants and the subtopics are the control, both still followed on paper. */
+    const st = tr.strategy, cmp = tr.comparison, ks = tr.kinds || [];
+    if (st && ks.length === 1) {
+      const line = (name, t) => `${name}: ${t.n} closed, ${t.wins} won${t.winRate == null ? "" : ` (${t.winRate}%)`}, net ${sol(t.pnlSol)}`;
+      const other = ks[0] === "variant" ? "subtopics" : "variants";
+      $("trendlede").textContent += ` Strategy — ${line(`${ks[0]}s`, st)}. Comparison — ${line(other, cmp || { n: 0, wins: 0, winRate: null, pnlSol: 0 })}`
+        + `${tr.sinceMs ? ` (since ${new Date(tr.sinceMs).toLocaleString()})` : ""}.`;
+    }
     const box = $("trendrows"); box.textContent = "";
     for (const r of (tr.recent || [])) {
       const div = document.createElement("div"); div.className = "sstat";

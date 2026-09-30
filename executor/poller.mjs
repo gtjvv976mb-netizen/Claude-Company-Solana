@@ -3996,16 +3996,30 @@ if (SNIPE_LANE_MODE !== "off") {
           },
           log: (m) => log(`[snipe] ${m}`),
         });
+        const kinds = laneCfg.trendKinds === "all" ? ["variant", "subtopic"] : [laneCfg.trendKinds];
         trendShadow = trendMod.createTrendShadow({
+          cfg: { kinds },
           parents: () => trendDetector.parents(),
           log: (m) => log(`[snipe] ${m}`),
           onClose: (row) => { try { fs.appendFileSync(trendFile, `${JSON.stringify(row)}\n`, { mode: 0o600 }); } catch {} },
         });
+        /* The scorecard survives restarts: the rows already written come back, the newest
+           five thousand, so "variants over several days" is one number on the page. */
+        try {
+          if (fs.existsSync(trendFile)) {
+            const lines = fs.readFileSync(trendFile, "utf8").split("\n").filter(Boolean).slice(-5_000);
+            const rows = [];
+            for (const line of lines) { try { rows.push(JSON.parse(line)); } catch { /* a torn last line */ } }
+            const back = trendShadow.seed(rows);
+            if (back) log(`[snipe] trend lane restored ${back} paper trade(s) from ${trendFile}`);
+          }
+        } catch (error) { log(`[snipe] trend history not restored (${error?.message ?? error}) — starting a fresh scorecard`); }
         trendDetector.start();
         snipeStatus.trend = trendShadow; snipeStatus.trendDetector = trendDetector;
         log(`[snipe] trend lane in SHADOW: parents are pump.fun coins at $${trendMod.TREND_DEFAULTS.minParentMcapUsd / 1e6}M+ `
           + `within ${trendMod.TREND_DEFAULTS.maxHoursToReach}h of launch; related launches are followed at `
-          + `${trendMod.TREND_DEFAULTS.ticketSol} SOL with lottery exits and written to ${trendFile}. Nothing is signed.`);
+          + `${trendMod.TREND_DEFAULTS.ticketSol} SOL with lottery exits and written to ${trendFile}; the strategy trades `
+          + `${kinds.join(" + ")}${kinds.length < 2 ? " (the other kind is kept as its comparison)" : ""}. Nothing is signed.`);
       }
     }
     const grpcSource = grpcCfg ? feedMod.grpcSubscribeSource({
