@@ -42,7 +42,9 @@
  */
 
 export const SNIPE_TREND_VERSION = "snipe-trend-v1";
-export const TREND_MODES = Object.freeze(["off", "shadow"]);
+/* "live" (2026-09-30): the shadow still runs as the comparison, and snipe-trend-live.mjs buys
+   the strategy's kinds for real through the sniper's signing port. */
+export const TREND_MODES = Object.freeze(["off", "shadow", "live"]);
 
 export const TREND_DEFAULTS = Object.freeze({
   /* Parents. */
@@ -221,6 +223,27 @@ export function netReturn(exitX, cfg = TREND_DEFAULTS) {
 }
 
 /**
+ * THE LOTTERY EXITS, as one pure rule both lanes call — so the live lane leaves on exactly the
+ * rule the paper record measured. `pos` carries entryPrice, lastPrice, peak, armed and
+ * entryAtMs; peak and armed are updated in place. Returns the exit reason, or null to hold.
+ */
+export function trendExitReason(pos, nowMs, cfg = TREND_DEFAULTS) {
+  if (!(pos?.lastPrice > 0) || !(pos?.entryPrice > 0)) return null;
+  const x = pos.lastPrice / pos.entryPrice;
+  if (pos.lastPrice > pos.peak) pos.peak = pos.lastPrice;
+  const peakX = pos.peak / pos.entryPrice;
+  if (x <= cfg.stopFrac) return `stop: ${Math.round((1 - cfg.stopFrac) * 100)}% under entry`;
+  if (!pos.armed && peakX >= cfg.trailArmX) pos.armed = true;
+  if (pos.armed && pos.lastPrice <= pos.peak * cfg.trailFrac)
+    return `trail: ${Math.round((1 - cfg.trailFrac) * 100)}% off a ${peakX.toFixed(2)}x peak`;
+  const held = nowMs - pos.entryAtMs;
+  if (!pos.armed && held >= cfg.loserTimeMs && peakX < cfg.loserMinX)
+    return `loser: under ${cfg.loserMinX}x after ${Math.round(cfg.loserTimeMs / 1000)}s`;
+  if (held >= cfg.maxHoldMs) return `max hold ${Math.round(cfg.maxHoldMs / 60_000)}m`;
+  return null;
+}
+
+/**
  * The shadow lane: parents in, create and trade events in, closed would-have trades out.
  *
  *   parents()                    — the detector's current parents
@@ -230,7 +253,10 @@ export function netReturn(exitX, cfg = TREND_DEFAULTS) {
  *   onClose(row)                 — each closed row, e.g. to a JSONL sink
  */
 export function createTrendShadow({ parents = () => [], cfg: override = {}, clock = () => Date.now(),
-  log = () => {}, onClose = () => {} } = {}) {
+  log = () => {}, onClose = () => {},
+  /* Called once per paper entry with a frozen snapshot — the live lane's signal. A listener
+     that throws must not stop the paper lane. */
+  onEnter = () => {} } = {}) {
   const cfg = Object.freeze({ ...TREND_DEFAULTS, ...override });
   const tracked = new Map();        // mint -> position (pending or entered)
   const history = [];               // closed rows, newest last
@@ -273,18 +299,8 @@ export function createTrendShadow({ parents = () => [], cfg: override = {}, cloc
 
   function checkExits(pos, nowMs) {
     if (!pos.entered || !(pos.lastPrice > 0)) return null;
-    const x = pos.lastPrice / pos.entryPrice;
-    if (pos.lastPrice > pos.peak) pos.peak = pos.lastPrice;
-    const peakX = pos.peak / pos.entryPrice;
-    if (x <= cfg.stopFrac) return close(pos, `stop: ${Math.round((1 - cfg.stopFrac) * 100)}% under entry`, nowMs);
-    if (!pos.armed && peakX >= cfg.trailArmX) pos.armed = true;
-    if (pos.armed && pos.lastPrice <= pos.peak * cfg.trailFrac)
-      return close(pos, `trail: ${Math.round((1 - cfg.trailFrac) * 100)}% off a ${peakX.toFixed(2)}x peak`, nowMs);
-    const held = nowMs - pos.entryAtMs;
-    if (!pos.armed && held >= cfg.loserTimeMs && peakX < cfg.loserMinX)
-      return close(pos, `loser: under ${cfg.loserMinX}x after ${Math.round(cfg.loserTimeMs / 1000)}s`, nowMs);
-    if (held >= cfg.maxHoldMs) return close(pos, `max hold ${Math.round(cfg.maxHoldMs / 60_000)}m`, nowMs);
-    return null;
+    const reason = trendExitReason(pos, nowMs, cfg);
+    return reason ? close(pos, reason, nowMs) : null;
   }
 
   return {
@@ -337,6 +353,11 @@ export function createTrendShadow({ parents = () => [], cfg: override = {}, cloc
           if (!(pos.lastPrice > 0)) pos.lastPrice = pos.entryPrice;
           pos.peak = pos.entryPrice;
           counters.entered++;
+          try {
+            onEnter(Object.freeze({ mint: pos.mint, name: pos.name, symbol: pos.symbol, kind: pos.kind, key: pos.key,
+              pattern: pos.pattern, parent: pos.parent, entryAtMs: nowMs, entryPrice: pos.entryPrice,
+              strategy: cfg.kinds.includes(pos.kind) }));
+          } catch { /* the paper lane goes on whatever the listener did */ }
           continue;
         }
         checkExits(pos, nowMs);

@@ -33,6 +33,7 @@ const RUNTIME_FILES = Object.freeze([
   "dexscreener-consensus.mjs",
   "desk-mirror.mjs",
   "snipe-trend.mjs",
+  "snipe-trend-live.mjs",
   /* THE LAUNCH LANE, once it can sign. Its modules were dynamic imports the runner never
      validated, which was defensible while the lane could only observe. snipe-execute.mjs
      builds and signs curve transactions with the same key as jupiter.mjs, so it and every
@@ -132,6 +133,9 @@ const ALLOWED_ENV = new Set([
   "SNIPE_MIN_RECENT_TRADES",
   "SNIPE_TREND",
   "SNIPE_TREND_KINDS",
+  "SNIPE_TREND_TICKET_SOL",
+  "SNIPE_TREND_MAX_OPEN",
+  "SNIPE_TREND_MAX_DAILY_LOSS_SOL",
   /* THE FEE LANE (2026-09-26) — the desk's only revenue that does not depend on winning a
      trade. FEE_CLAIM is off | dry | live; "dry" reads the vaults and records what it would
      have claimed without signing anything, which is what it ships as the moment a creator

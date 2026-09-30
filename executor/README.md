@@ -1754,6 +1754,41 @@ current setting.
 printf 'SNIPE_TREND_KINDS="variant"\n' >> ~/claudeco-executor/.cc-executor.env
 ```
 
+**Real money: `SNIPE_TREND=live` (2026-09-30).** The owner asked for the variants strategy to
+trade for real. In `live` the paper lane keeps running exactly as before (it is the comparison),
+and `snipe-trend-live.mjs` buys every paper entry of the strategy's kinds for real:
+
+- **Through the sniper's own signing port** (`snipe-execute.mjs`): the same wallet, both
+  providers simulating, the SOL reserve, the hard-stop and pause files, the Mac power boundary,
+  and the one journal — so the launch lane and the trend lane can never both hold one coin, an
+  unresolved intent on either freezes both, and every fill counts in the same daily risk. It
+  therefore needs the launch lane armed (`SNIPE_LANE=execute` on a live install); without it the
+  log says so and the trend lane stays on paper.
+- **The paper lane's exits, exactly**: out at -25%, a coin that has not reached +10% in three
+  minutes is cut, a winner past +30% rides until it falls 25% from its own peak, nothing is held
+  past an hour — plus a **graduation guard** that sells at 75 SOL of real curve reserve, because a
+  coin that completes its curve can no longer be sold by this bot (sell it by hand if one does).
+- **Its own limits**, small by default: `SNIPE_TREND_TICKET_SOL` 0.05 (hard cap 0.5),
+  `SNIPE_TREND_MAX_OPEN` 2, and `SNIPE_TREND_MAX_DAILY_LOSS_SOL` 0.15 — after that much realized
+  trend loss in 24 hours it makes no new buy until the loss rolls off; exits always continue.
+- **A book that survives a restart**: open positions are written to
+  `.cc-executor.sqlite.trend-live.json` (0600, atomic) after every change and managed again on
+  start; every closed trade is appended to `.cc-executor.sqlite.trend-live.jsonl`.
+
+The agent page's trend panel shows the live book (holding, sold, realized total and 24h, the loss
+stop, the last problem) above the paper comparison. Be clear-eyed about the evidence: over 178
+paper trades to 2026-09-30 the variants strategy was slightly negative (-0.038 SOL), and a real
+fill pays more than the paper model (slippage, landing a slot or two later).
+
+Change the existing line in place — the runner refuses an env file that names a variable twice,
+so appending a second `SNIPE_TREND` would stop the bot at launch:
+
+```sh
+sed -i '' 's/^SNIPE_TREND="shadow"$/SNIPE_TREND="live"/' ~/claudeco-executor/.cc-executor.env
+chmod 600 ~/claudeco-executor/.cc-executor.env
+grep '^SNIPE_TREND' ~/claudeco-executor/.cc-executor.env
+```
+
 ### The volume spike
 
 > *"When volume spikes on a token, that's a sign to get in and ride the wave."* — the owner,

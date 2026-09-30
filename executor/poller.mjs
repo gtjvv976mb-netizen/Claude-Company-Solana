@@ -2526,7 +2526,8 @@ const snipeStatus = {
   lane: null, feed: null,  // references, read by the builder below and never serialized
   flowTap: null, momentum: null, remote: null,
   grpcWatchdog: null,      // the thing that revives the gRPC stream; its counters ride in `flow`
-  trend: null, trendDetector: null,   // the trend lane (snipe-trend.mjs), shadow only
+  trend: null, trendDetector: null,   // the trend lane (snipe-trend.mjs), paper
+  trendLive: null,                    // the trend lane with real money (snipe-trend-live.mjs), when SNIPE_TREND=live
 };
 const setSnipeState = (state, error) => {
   snipeStatus.state = state;
@@ -2676,7 +2677,8 @@ function snipeHeartbeat() {
      and what those would-have trades did. Shadow only: no row here ever moved money. */
   try {
     const t = snipeStatus.trend?.stats?.();
-    if (t) out.trend = { ...t, detector: snipeStatus.trendDetector?.stats?.() ?? null, openRows: snipeStatus.trend.open().slice(0, 8) };
+    if (t) out.trend = { ...t, detector: snipeStatus.trendDetector?.stats?.() ?? null, openRows: snipeStatus.trend.open().slice(0, 8),
+      live: (() => { try { return snipeStatus.trendLive?.stats?.() ?? null; } catch { return null; } })() };
   } catch {}
   /* THE MOMENTUM SOURCE'S PRE-FILTER TALLY — what arrived, what survived, and the clause for
      every row that did not. "0 of 70 survived, 51 bonded, 19 too young" and "the endpoint is
@@ -3922,6 +3924,25 @@ if (SNIPE_LANE_MODE !== "off") {
       laneReader("primary", RPC),
       laneReader("secondary", SECONDARY_RPC),
     ];
+    /* WHAT THE WALLET HOLDS, so a lane can tell a sell that FAILED from a position that has
+       already GONE (see createSnipeLane below). Built once, on a live install only, and shared
+       by the launch lane and the live trend lane. */
+    const snipeHoldingsReader = snipeExecutor ? {
+      async read(mint) {
+        const res = await new Connection(RPC, solanaRpcConnectionConfig())
+          .getParsedTokenAccountsByOwner(kp.publicKey, { mint: new PublicKey(String(mint)) });
+        /* NO ACCOUNT AT ALL IS A DEFINITE ZERO: an owner with no token account for a
+           mint holds none of it. Several accounts are summed, never picked between. An
+           amount that will not parse makes the whole answer null — unknown, not zero. */
+        let total = 0n;
+        for (const v of res?.value ?? []) {
+          const amount = v?.account?.data?.parsed?.info?.tokenAmount?.amount;
+          if (!/^\d+$/.test(String(amount ?? ""))) return { qtyRaw: null };
+          total += BigInt(String(amount));
+        }
+        return { qtyRaw: total.toString() };
+      },
+    } : null;
     /* THE FEED. Launches arrive over this bot's own RPC WebSocket (the venue's watch() on a
        Connection built here and handed in — the adapter never opens one), corroborated by
        the pump.fun listing poll so a dropped socket is a degraded feed rather than a
@@ -3980,9 +4001,9 @@ if (SNIPE_LANE_MODE !== "off") {
        clones — and record what buying each one would have done under lottery exits. It signs
        nothing. It needs the gRPC stream for both halves (names at launch, prices after), so
        without SNIPE_GRPC_* it says so and stays off. See snipe-trend.mjs. */
-    let trendShadow = null, trendDetector = null;
-    if (laneCfg.trendMode === "shadow") {
-      if (!grpcCfg) log("[snipe] SNIPE_TREND=shadow needs the gRPC stream (SNIPE_GRPC_*) for launch names and prices — trend lane OFF");
+    let trendShadow = null, trendDetector = null, trendLive = null;
+    if (laneCfg.trendMode === "shadow" || laneCfg.trendMode === "live") {
+      if (!grpcCfg) log(`[snipe] SNIPE_TREND=${laneCfg.trendMode} needs the gRPC stream (SNIPE_GRPC_*) for launch names and prices — trend lane OFF`);
       else {
         const trendMod = await import("./snipe-trend.mjs");
         const trendFile = `${STATE_DB}.trend-shadow.jsonl`;
@@ -3997,11 +4018,46 @@ if (SNIPE_LANE_MODE !== "off") {
           log: (m) => log(`[snipe] ${m}`),
         });
         const kinds = laneCfg.trendKinds === "all" ? ["variant", "subtopic"] : [laneCfg.trendKinds];
+        /* REAL MONEY (owner, 2026-09-30), only with the sniper's signing port: SNIPE_TREND=live
+           on a bot whose launch lane is not armed (SNIPE_LANE=execute on a live install) runs the
+           paper lane alone and says why, rather than refusing to start. See snipe-trend-live.mjs. */
+        if (laneCfg.trendMode === "live") {
+          if (!snipeExecutor) log("[snipe] SNIPE_TREND=live needs the launch lane armed (SNIPE_LANE=execute on a live install) — "
+            + "its buys go through that lane's signing port. Running the trend lane on PAPER only.");
+          else {
+            try {
+              const liveMod = await import("./snipe-trend-live.mjs");
+              const liveFile = `${STATE_DB}.trend-live.json`;
+              const liveLog = `${STATE_DB}.trend-live.jsonl`;
+              trendLive = liveMod.createTrendLive({
+                executor: snipeExecutor, venue: PUMPFUN_VENUE, readers: laneReaders, holdingsReader: snipeHoldingsReader,
+                feeBps: () => (Number.isFinite(Number(laneCfg.venueFeeBps)) ? Number(laneCfg.venueFeeBps)
+                  : (Number.isFinite(Number(PUMPFUN_VENUE.feeObservation?.totalFeeBps)) ? Number(PUMPFUN_VENUE.feeObservation.totalFeeBps) : null)),
+                cfg: { ticketSol: laneCfg.trendTicketSol, maxOpen: laneCfg.trendMaxOpen, maxDailyLossSol: laneCfg.trendMaxDailyLossSol },
+                load: () => (fs.existsSync(liveFile) ? JSON.parse(fs.readFileSync(liveFile, "utf8")) : null),
+                save: (state) => {
+                  const tmp = `${liveFile}.tmp`;
+                  fs.writeFileSync(tmp, JSON.stringify(state), { mode: 0o600 });
+                  fs.renameSync(tmp, liveFile);
+                },
+                onClose: (row) => { try { fs.appendFileSync(liveLog, `${JSON.stringify(row)}\n`, { mode: 0o600 }); } catch {} },
+                log: (m) => log(`[snipe] ${m}`),
+              });
+              snipeStatus.trendLive = trendLive;
+            } catch (error) {
+              trendLive = null;
+              log(`[snipe] live trend lane did not start (${error?.message ?? error}) — running the trend lane on PAPER only`);
+            }
+          }
+        }
         trendShadow = trendMod.createTrendShadow({
           cfg: { kinds },
           parents: () => trendDetector.parents(),
           log: (m) => log(`[snipe] ${m}`),
           onClose: (row) => { try { fs.appendFileSync(trendFile, `${JSON.stringify(row)}\n`, { mode: 0o600 }); } catch {} },
+          /* The paper lane's entry is the live lane's signal: it buys only the strategy's kinds,
+             inside its own limits. */
+          ...(trendLive ? { onEnter: (sig) => { trendLive.onSignal(sig); } } : {}),
         });
         /* The scorecard survives restarts: the rows already written come back, the newest
            five thousand, so "variants over several days" is one number on the page. */
@@ -4019,7 +4075,11 @@ if (SNIPE_LANE_MODE !== "off") {
         log(`[snipe] trend lane in SHADOW: parents are pump.fun coins at $${trendMod.TREND_DEFAULTS.minParentMcapUsd / 1e6}M+ `
           + `within ${trendMod.TREND_DEFAULTS.maxHoursToReach}h of launch; related launches are followed at `
           + `${trendMod.TREND_DEFAULTS.ticketSol} SOL with lottery exits and written to ${trendFile}; the strategy trades `
-          + `${kinds.join(" + ")}${kinds.length < 2 ? " (the other kind is kept as its comparison)" : ""}. Nothing is signed.`);
+          + `${kinds.join(" + ")}${kinds.length < 2 ? " (the other kind is kept as its comparison)" : ""}. `
+          + (trendLive
+            ? `LIVE: the strategy's entries are BOUGHT FOR REAL at ${trendLive.cfg.ticketSol} SOL, at most `
+              + `${trendLive.cfg.maxOpen} open, no new buy after -${trendLive.cfg.maxDailyLossSol} SOL realized in 24h.`
+            : "Nothing is signed."));
       }
     }
     const grpcSource = grpcCfg ? feedMod.grpcSubscribeSource({
@@ -4047,7 +4107,7 @@ if (SNIPE_LANE_MODE !== "off") {
           try {
             const atMs = Date.now();
             for (const ev of eventsFromLogs(notification?.logs)) {
-              if (ev?.kind === "trade") trendShadow.onTrade(ev, atMs);
+              if (ev?.kind === "trade") { trendShadow.onTrade(ev, atMs); if (trendLive) trendLive.onTrade(ev, atMs); }
               else if (ev?.mint && ev?.name !== undefined) trendShadow.onCreate(ev, atMs);
             }
           } catch { /* counted nowhere on purpose: the tap above already counts decode failures */ }
@@ -4235,22 +4295,7 @@ if (SNIPE_LANE_MODE !== "off") {
          not a trading decision and it prices nothing — it decides whether to keep retrying
          a sell, and walletHoldsNothing fails closed, so an unreadable answer changes
          nothing at all. */
-      ...(snipeExecutor ? { holdingsReader: {
-        async read(mint) {
-          const res = await new Connection(RPC, solanaRpcConnectionConfig())
-            .getParsedTokenAccountsByOwner(kp.publicKey, { mint: new PublicKey(String(mint)) });
-          /* NO ACCOUNT AT ALL IS A DEFINITE ZERO: an owner with no token account for a
-             mint holds none of it. Several accounts are summed, never picked between. An
-             amount that will not parse makes the whole answer null — unknown, not zero. */
-          let total = 0n;
-          for (const v of res?.value ?? []) {
-            const amount = v?.account?.data?.parsed?.info?.tokenAmount?.amount;
-            if (!/^\d+$/.test(String(amount ?? ""))) return { qtyRaw: null };
-            total += BigInt(String(amount));
-          }
-          return { qtyRaw: total.toString() };
-        },
-      } } : {}),
+      ...(snipeHoldingsReader ? { holdingsReader: snipeHoldingsReader } : {}),
       /* THE DESK'S STATE OBJECT, SO THE TWO BOOKS CAN SEE EACH OTHER — which is the
          opposite of mixing them, and the distinction is the whole design.
          The lane keeps its positions under S.snipes and the desk keeps its under
@@ -4363,6 +4408,9 @@ if (SNIPE_LANE_MODE !== "off") {
       /* The trend lane's clock rides the lane's own tick — first, and in its own catch, so a
          faulted or backing-off launch lane still closes paper positions on time. */
       if (trendShadow) { try { trendShadow.tick(Date.now()); } catch { /* shadow only */ } }
+      /* The live trend lane prices and sells what it holds on the same clock, never awaited
+         here: a slow sell must not hold the launch lane's tick. It runs one tick at a time. */
+      if (trendLive) void trendLive.tick(Date.now()).catch(() => {});
       if (laneFaulted) return;
       if (laneRetryAt && Date.now() < laneRetryAt) return;
       try {
@@ -4404,7 +4452,7 @@ if (SNIPE_LANE_MODE !== "off") {
       const recovered = await snipeExecutor.recoverPending();
       for (const r of recovered) {
         if (r.outcome !== "finalized") { log(`[snipe] recovery ${r.mint}: ${r.side} ${r.outcome}`); continue; }
-        const onBook = (() => { try { return Boolean(lane.positionFor(r.mint)); } catch { return false; } })();
+        const onBook = (() => { try { return Boolean(lane.positionFor(r.mint)) || Boolean(trendLive?.holds(r.mint)); } catch { return false; } })();
         log(`[snipe] RECOVERED ${r.side} on ${r.mint}: ${r.fill?.signature ?? "?"} finalized — ` +
           (r.side === "buy"
             ? (onBook ? "the book holds this position" : "NO BOOK ENTRY for this position: sell it by hand or restore it before arming again")

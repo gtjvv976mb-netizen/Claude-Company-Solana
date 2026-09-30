@@ -147,7 +147,7 @@ export const RISK_MODES = Object.freeze({
 });
 export const RISK_MODE_NAMES = Object.freeze(["off", ...Object.keys(RISK_MODES)]);
 /** The trend lane's modes (snipe-trend.mjs TREND_MODES, repeated here so this file imports nothing new). */
-export const TREND_MODE_NAMES = Object.freeze(["off", "shadow"]);
+export const TREND_MODE_NAMES = Object.freeze(["off", "shadow", "live"]);
 export const TREND_KIND_NAMES = Object.freeze(["all", "variant", "subtopic"]);
 
 /** The only two modes this file admits. `execute` is listed so a caller can NAME it and
@@ -313,12 +313,19 @@ export const SNIPE_LANE_DEFAULTS = Object.freeze({
      minWalletReserveLamports). 0.01 SOL: on 2026-09-27 a buy spent the wallet to 0.00067 SOL and
      the exit could not pay its own fee. Mac-only — it is money, not what is bought. */
   minWalletReserveSol: 0.01,
-  /* THE TREND LANE (snipe-trend.mjs): "off" or "shadow". Read by the poller, not by this lane —
-     the trend lane follows launches related to a runaway coin and, in shadow, signs nothing. */
+  /* THE TREND LANE (snipe-trend.mjs): "off", "shadow" or "live". Read by the poller, not by this
+     lane — the trend lane follows launches related to a runaway coin; in shadow it signs nothing,
+     and in live (snipe-trend-live.mjs) it buys the strategy's kinds through this lane's port. */
   trendMode: "off",
   /* Which related-launch kinds the trend STRATEGY trades: "all", "variant" or "subtopic". The
      others are still followed on paper as its comparison. */
   trendKinds: "all",
+  /* THE LIVE TREND LANE'S OWN LIMITS (snipe-trend-live.mjs), read only when SNIPE_TREND=live:
+     SOL per buy, positions open at once, and the 24h realized trend loss after which it makes
+     no new buy. Small on purpose — this lane is a lottery ticket. */
+  trendTicketSol: 0.05,
+  trendMaxOpen: 2,
+  trendMaxDailyLossSol: 0.15,
   /* THE "IS ANYONE TRADING IT NOW" FLOOR: at least this many trades on the coin in the last five
      minutes, counted off the gRPC trade tape (snipe-volume.mjs measureActivity). Undefined by
      default like the spike: measured on every candidate, kills nothing until a number is set.
@@ -460,6 +467,9 @@ export const SNIPE_ENV = Object.freeze({
   SNIPE_MIN_RECENT_TRADES: Object.freeze({ key: "minRecentTrades", parse: "number" }),
   SNIPE_TREND: Object.freeze({ key: "trendMode", parse: "trend" }),
   SNIPE_TREND_KINDS: Object.freeze({ key: "trendKinds", parse: "trendKinds" }),
+  SNIPE_TREND_TICKET_SOL: Object.freeze({ key: "trendTicketSol", parse: "number" }),
+  SNIPE_TREND_MAX_OPEN: Object.freeze({ key: "trendMaxOpen", parse: "number" }),
+  SNIPE_TREND_MAX_DAILY_LOSS_SOL: Object.freeze({ key: "trendMaxDailyLossSol", parse: "number" }),
   SNIPE_MIN_AGE_HOURS: Object.freeze({ key: "minAgeHours", parse: "number" }),
   SNIPE_MIN_LIQUIDITY_USD: Object.freeze({ key: "minLiquidityUsd", parse: "number" }),
   SNIPE_MIN_VOLUME_24H_USD: Object.freeze({ key: "minVolume24hUsd", parse: "number" }),
@@ -585,6 +595,16 @@ export function snipeLaneConfig(env = {}) {
      operator never typed is how a bot ends up refusing on a number nobody chose. */
   /* Whole basis points, at most 20%: past that it is not room for a trade landing in between,
      it is buying whatever the price has become. */
+  /* The live trend lane's limits: a lottery ticket, never a position (hard cap 0.5 SOL). */
+  if (!(out.trendTicketSol > 0 && out.trendTicketSol <= 0.5))
+    throw new SnipeLaneError("mode_invalid", `SNIPE_TREND_TICKET_SOL=${out.trendTicketSol} must be above 0 and at most 0.5 SOL`,
+      { name: "SNIPE_TREND_TICKET_SOL", value: out.trendTicketSol });
+  if (!(Number.isInteger(out.trendMaxOpen) && out.trendMaxOpen >= 1 && out.trendMaxOpen <= 10))
+    throw new SnipeLaneError("mode_invalid", `SNIPE_TREND_MAX_OPEN=${out.trendMaxOpen} must be a whole number from 1 to 10`,
+      { name: "SNIPE_TREND_MAX_OPEN", value: out.trendMaxOpen });
+  if (!(out.trendMaxDailyLossSol > 0 && out.trendMaxDailyLossSol <= 10))
+    throw new SnipeLaneError("mode_invalid", `SNIPE_TREND_MAX_DAILY_LOSS_SOL=${out.trendMaxDailyLossSol} must be above 0 and at most 10 SOL`,
+      { name: "SNIPE_TREND_MAX_DAILY_LOSS_SOL", value: out.trendMaxDailyLossSol });
   if (!Number.isInteger(out.entrySlippageBps) || out.entrySlippageBps < 0 || out.entrySlippageBps > 2_000)
     throw new SnipeLaneError("mode_invalid",
       `SNIPE_ENTRY_SLIPPAGE_BPS=${out.entrySlippageBps} must be a whole number of basis points from 0 to 2000`,

@@ -13,9 +13,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 
-<meta name="cc-build" content="2026-09-30 10:39 UTC">
-<meta name="cc-commit" content="91dd82c96092ef8a45bc9b01a819f1f3e5911477">
-<script>console.log("Claude Company build 2026-09-30 10:39 UTC")</script>
+<meta name="cc-build" content="2026-09-30 16:40 UTC">
+<meta name="cc-commit" content="e59d35da9bc269c6e53282048381436ca7806fa8">
+<script>console.log("Claude Company build 2026-09-30 16:40 UTC")</script>
 <script>window.__API_BASE__="https://claude-company-api.onrender.com";</script>
 <script>window.__RH_API_BASE__="https://claude-company-robinhood-api.onrender.com";</script>
 <style>
@@ -118,7 +118,9 @@ footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--line);color:v
   <div class="sstat err" id="buyfail"></div>
   <div class="sstat wait" id="feeddown"></div>
   <section id="trendbox" hidden>
-    <h2>Trend lane — shadow</h2>
+    <h2 id="trendtitle">Trend lane — shadow</h2>
+    <p class="lede" id="trendlive" hidden></p>
+    <div id="trendliverows"></div>
     <p class="lede" id="trendlede"></p>
     <div id="trendparents" class="lede"></div>
     <div id="trendrows"></div>
@@ -261,6 +263,30 @@ async function load() {
       const other = ks[0] === "variant" ? "subtopics" : "variants";
       $("trendlede").textContent += ` Strategy — ${line(`${ks[0]}s`, st)}. Comparison — ${line(other, cmp || { n: 0, wins: 0, winRate: null, pnlSol: 0 })}`
         + `${tr.sinceMs ? ` (since ${new Date(tr.sinceMs).toLocaleString()})` : ""}.`;
+    }
+    /* THE REAL-MONEY HALF, when SNIPE_TREND=live: what it holds and what it has realized. Paper
+       stays below it as the comparison. Text nodes only, as above. */
+    const lv = tr.live;
+    $("trendtitle").textContent = lv ? "Trend lane — LIVE (real money) + paper comparison" : "Trend lane — shadow";
+    $("trendlive").hidden = !lv;
+    const lbox = $("trendliverows"); lbox.textContent = "";
+    if (lv) {
+      $("trendlive").textContent = `LIVE: ${lv.entered} bought, ${lv.exited} sold (${lv.wins} won, ${lv.losses} lost), `
+        + `realized ${sol(lv.realizedSumSol)} total, ${sol(lv.realized24hSol)} in 24h, at ${lv.ticketSol} SOL a ticket, `
+        + `at most ${lv.maxOpen} open.`
+        + (lv.lossStop ? ` LOSS STOP: -${lv.maxDailyLossSol} SOL reached in 24h — no new buys until it rolls off.` : "")
+        + (lv.lastError ? ` Last problem (${lv.lastError.where}): ${lv.lastError.message}` : "");
+      for (const p of (lv.open || [])) {
+        const div = document.createElement("div"); div.className = "sstat";
+        div.textContent = `HOLDING ${p.symbol} — ${p.kind} of ${p.parent}: ${p.x ?? "?"}x, ${Math.round((p.heldMs || 0) / 1000)}s`
+          + (p.exiting ? ` · selling${p.exitError ? ` (${p.exitError})` : ""}` : "");
+        lbox.appendChild(div);
+      }
+      for (const r of (lv.recent || [])) {
+        const div = document.createElement("div"); div.className = "sstat";
+        div.textContent = `SOLD ${r.symbol} — ${r.kind} of ${r.parent}: ${r.realizedSol === null ? "result not read" : sol(r.realizedSol)} · ${r.reason}`;
+        lbox.appendChild(div);
+      }
     }
     const box = $("trendrows"); box.textContent = "";
     for (const r of (tr.recent || [])) {
